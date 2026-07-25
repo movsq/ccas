@@ -31,7 +31,13 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd):
             choice = pickers.choose("project", [history.abbreviate(d) for d in dirs], gui)
             if choice is None:
                 return None
-            target = os.path.expanduser(choice.replace("~", os.path.expanduser("~"), 1))
+            # The picker lists abbreviated paths and fuzzel echoes unmatched
+            # input verbatim, so what comes back may be a ~ path the user typed
+            # for a project that does not exist yet.
+            target = os.path.expanduser(choice)
+        if not os.path.isdir(target):
+            if not pickers.confirm_create(history.abbreviate(target), gui):
+                return None
         return target, _claude()
 
     rows = _rows(slug)
@@ -75,6 +81,11 @@ def run(slug: str, mode: str, arg, gui: bool, cwd) -> int:
     if resolved is None:
         return 1
     workdir, argv = resolved
+    if mode == "new":
+        # resolve() has already confirmed anything that did not exist. Only
+        # "new" creates: a resume whose directory has since been deleted should
+        # fail loudly rather than come back as an empty resurrected folder.
+        os.makedirs(workdir, exist_ok=True)
     env = accounts.env_for(slug)
     if gui:
         inner = " ".join(f"'{a}'" for a in argv)

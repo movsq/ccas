@@ -85,3 +85,71 @@ def test_prompt_returns_none_when_cancelled(monkeypatch):
 
     monkeypatch.setattr(pickers.subprocess, "run", lambda *a, **k: Result())
     assert pickers.prompt("nickname:", gui=True) is None
+
+
+def _confirm_run(monkeypatch, returncode, stdout):
+    seen = {}
+
+    class Result:
+        pass
+
+    Result.returncode, Result.stdout = returncode, stdout
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        seen["input"] = kwargs.get("input")
+        return Result()
+
+    monkeypatch.setattr(pickers.subprocess, "run", fake_run)
+    return seen
+
+
+def test_confirm_create_accepts_the_first_row(monkeypatch):
+    seen = _confirm_run(monkeypatch, 0, "0\n")
+    assert pickers.confirm_create("~/code/new", gui=True) is True
+    assert seen["input"].split("\n")[0] == pickers.CREATE_ROW
+
+
+def test_confirm_create_shows_the_path_in_green_above_the_row(monkeypatch):
+    """The path is the thing being decided, so it gets the colour, not the row."""
+    seen = _confirm_run(monkeypatch, 0, "0\n")
+    pickers.confirm_create("~/code/new", gui=True)
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--mesg") + 1] == "~/code/new"
+    assert cmd[cmd.index("--message-color") + 1] == pickers.CREATE_COLOR
+
+
+def test_confirm_create_is_wide_enough_for_the_path(monkeypatch):
+    """Measured live: fuzzel's default 30 columns cut the row to 'create proje…'."""
+    long_path = "~/very/deeply/nested/place/for/a/brand/new/project"
+    seen = _confirm_run(monkeypatch, 0, "0\n")
+    pickers.confirm_create(long_path, gui=True)
+    cmd = seen["cmd"]
+    assert int(cmd[cmd.index("--width") + 1]) > len(long_path)
+
+
+def test_confirm_create_declines_on_the_cancel_row(monkeypatch):
+    _confirm_run(monkeypatch, 0, "1\n")
+    assert pickers.confirm_create("~/code/new", gui=True) is False
+
+
+def test_confirm_create_declines_when_dismissed(monkeypatch):
+    _confirm_run(monkeypatch, 1, "")
+    assert pickers.confirm_create("~/code/new", gui=True) is False
+
+
+def test_confirm_create_refuses_free_text(monkeypatch):
+    """Without --only-match fuzzel echoes typed text back, and any non-empty
+    stdout here would read as consent to create a directory."""
+    seen = _confirm_run(monkeypatch, 0, "0\n")
+    pickers.confirm_create("~/code/new", gui=True)
+    assert "--only-match" in seen["cmd"]
+
+
+def test_confirm_create_asks_on_the_terminal(monkeypatch):
+    monkeypatch.setattr(pickers.subprocess, "run",
+                        lambda *a, **k: pytest.fail("must not spawn fuzzel"))
+    monkeypatch.setattr("builtins.input", lambda _prompt: "y")
+    assert pickers.confirm_create("~/code/new", gui=False) is True
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+    assert pickers.confirm_create("~/code/new", gui=False) is False

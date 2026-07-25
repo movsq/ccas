@@ -110,6 +110,45 @@ def test_unknown_mode_raises(tmp_path):
         launch.resolve("work", "sideways", None, True, None)
 
 
+def test_new_in_a_missing_directory_asks_before_creating(tmp_path, monkeypatch):
+    asked = {}
+    monkeypatch.setattr(launch.pickers, "confirm_create",
+                        lambda path, gui: asked.setdefault("path", path) or True)
+    target = tmp_path / "brand" / "new"
+    workdir, _argv = launch.resolve("work", "new", str(target), True, None)
+    assert workdir == str(target)
+    assert asked["path"] == str(target)
+
+
+def test_new_in_a_missing_directory_is_abandoned_when_declined(tmp_path, monkeypatch):
+    monkeypatch.setattr(launch.pickers, "confirm_create", lambda path, gui: False)
+    assert launch.resolve("work", "new", str(tmp_path / "nope"), True, None) is None
+
+
+def test_new_in_an_existing_directory_never_asks(tmp_path, monkeypatch):
+    monkeypatch.setattr(launch.pickers, "confirm_create",
+                        lambda *a: pytest.fail("existing project needs no confirmation"))
+    launch.resolve("work", "new", str(tmp_path / "proj"), True, None)
+
+
+def test_a_typed_tilde_path_is_expanded_before_the_existence_check(tmp_path, monkeypatch):
+    """The picker lists abbreviated paths, so what comes back can start with ~."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(launch.pickers, "choose", lambda *a, **k: "~/proj")
+    workdir, _argv = launch.resolve("work", "new", None, True, None)
+    assert workdir == str(tmp_path / "proj")
+
+
+def test_run_creates_the_confirmed_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(launch.accounts, "relink", lambda slug: None)
+    monkeypatch.setattr(launch.pickers, "confirm_create", lambda path, gui: True)
+    monkeypatch.setattr(launch.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"returncode": 0})())
+    target = tmp_path / "brand" / "new"
+    assert launch.run("work", "new", str(target), True, None) == 0
+    assert target.is_dir()
+
+
 def test_never_invokes_claude_by_bare_name(tmp_path):
     _, argv = launch.resolve("work", "new", str(tmp_path / "proj"), True, None)
     assert argv[0] != "claude"
