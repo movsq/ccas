@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 163 tests green.
+**State:** built, installed, and working on the real system. 164 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -17,16 +17,29 @@ still accurate except where §"Deviations" below says otherwise.
 - Spike findings: `docs/superpowers/spike-waybar-menu.md`
 - Live results: `docs/superpowers/task-11-live-integration.md`
 
-Two real accounts were added and both reported `loggedIn: true` under their own
-`CLAUDE_CONFIG_DIR` (`vo-se` → vo.sedlacek@gmail.com, `vsed` →
-vsedlacek1337@gmail.com). `vo-se` was then removed while testing the Manage
-submenu, so the live registry currently holds `vsed` alone.
+Both real accounts report `loggedIn: true` under their own `CLAUDE_CONFIG_DIR`.
+The live registry as of 2026-07-25 15:20:
 
-**The central guarantee holds:** `~/.claude/.credentials.json` mtime has been
-`1784954438` through every install, uninstall, reinstall and account add. CCAS
-has never written to `~/.claude`.
+| slug | email | nickname | colour | signal |
+|---|---|---|---|---|
+| `vsed` | vsedlacek1337@gmail.com | `vsed` | 4 | 1 |
+| `vo-se-15th` | vo.sedlacek@gmail.com | `vo.se` | 0 | 2 |
 
-Run the suite with `cd ~/ccas && python -m pytest` (163 passing, ~0.6 s).
+`vsed` is the default. `vo-se` was removed and re-added while testing Manage,
+hence the `-15th` suffix from the slug de-duplicator. Read the registry rather
+than trusting this table — the user edits it by clicking.
+
+**The central guarantee holds:** CCAS has never written to `~/.claude`. There
+are no symlinks in it and `accounts.relink()` only ever links inward.
+
+Do not verify that against a fixed mtime, though. `.credentials.json` read
+`1784954438` for the whole build session, but it moved to `1784983478` on
+2026-07-25 at 14:44 when the user's usage limits reset — Claude Code running
+under the *default* account (no `CLAUDE_CONFIG_DIR`) refreshes that token
+itself. Compare the mtime before and after your own command instead; see
+`CLAUDE.md` for the snippet.
+
+Run the suite with `cd ~/ccas && python -m pytest` (164 passing, ~0.6 s).
 
 ---
 
@@ -35,7 +48,7 @@ Run the suite with `cd ~/ccas && python -m pytest` (163 passing, ~0.6 s).
 - Placeholder module, add flow, OAuth login, both accounts isolated.
 - Waybar modules render in `modules-center`, one per account, in palette colour.
 - The menu opens with nested submenus: title row, New session, Resume last
-  session, Resume from history ▸, Display as ▸, ☐ Hide icon, Color ▸, Manage ▸.
+  session, Resume from history ▸, Display as ▸, ○ Hide icon, Color ▸, Manage ▸.
 - Uninstall restores `config.jsonc` and `.bashrc` byte-for-byte (diffed).
 
 - **Launching, all three paths:** New session (existing and freshly created
@@ -56,9 +69,6 @@ Run the suite with `cd ~/ccas && python -m pytest` (163 passing, ~0.6 s).
 3. **`icon only` + `Hide icon`** should fire the notification exactly once, stay
    clickable while invisible, and re-arm after leaving the combination.
 
-Note: `vo-se` was removed during testing, so the registry now holds one account
-(`vsed`, colour renumbered to 0 peach, nickname cleared).
-
 ---
 
 ## Deviations from the written plan
@@ -77,7 +87,8 @@ These are all deliberate and committed. Do not "fix" them back.
 | 8 | A setting change rewrites the menu and full-reloads | See "Stale ●/○ markers" below. |
 | 9 | A cleared nickname shows nothing on the bar, not the email | User preference. `display_name()` keeps the fallback where identity matters. |
 | 10 | The menu is headed by the email, with the nickname on a second row | The plan's single nickname-or-email title hid the address the account is actually identified by. |
-| 11 | The render tick writes `menu.xml`/`history.tsv` **only** when it is also going to reload | Reordering is not a change (see "The bar resetting itself"), and writing without reloading desynchronises the cached rows from the tsv the actions index. |
+| 11 | The render tick writes `menu.xml`/`history.tsv` **only** when it is also going to reload | Reordering is not a change (see "The bar resetting itself"), and writing without reloading desynchronises the cached rows from the tsv the actions index. `ccs config` is the unconditional rebuild. |
+| 12 | `Hide icon` is marked `●`/`○`, not `☑`/`☐` | FontAwesome sits first in the bar's font stack and covers U+2611 but not U+2610. See "The Hide icon box never looked checked". |
 
 ---
 
@@ -181,6 +192,29 @@ at different sessions. Write and reload together, or not at all.
 an account with no history would otherwise compare empty-to-empty and never get
 its `menu.xml` written. That regression was caught by
 `test_render_regenerates_the_menu_file`.
+
+### The Hide icon box never looked checked
+
+Reported live: "the togglebox for hidden icon doesn't fill when enabled." The
+state was persisting correctly and `menu.xml` really did say `☑` — the glyph was
+the problem.
+
+`~/.config/waybar/style.css` sets
+`font-family: FontAwesome, "JetBrainsMono Nerd Font Mono", monospace`, and
+FontAwesome is consulted first for every codepoint it covers. It covers `☑`
+(U+2611) and not `☐` (U+2610), so the checked box came from FontAwesome and the
+unchecked one fell through to DejaVu — different sizes, different weights, and at
+11 px the "on" state was a small faint box that read as empty. Rendered with
+`pango-view` against that exact stack to confirm it rather than guess.
+
+`menu.MARK_ON`/`MARK_OFF` (`●`/`○`, U+25CF/U+25CB) are now the single vetted
+pair, shared by the display rows, the colour rows and this toggle. Vet any new
+glyph the same way — the `pango-view` command is in `CLAUDE.md`.
+
+The fix also exposed that `ccs render` no longer forces a rebuild (it writes only
+when it reloads), so the new XML never reached the menus on disk. `ccs config`
+now rewrites every account's menu unconditionally, which is what `install.sh`
+runs — so "re-run `./install.sh` after any code change" is true again.
 
 ### Rename cancel was destructive
 

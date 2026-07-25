@@ -6,11 +6,23 @@ bug found on the real system; this file is the rules that must not be broken.
 
 ## Hard invariants
 
-**Never write to `~/.claude`.** CCAS reads it and symlinks *into* it. That
-guarantee is the entire point of the design. `~/.claude/.credentials.json` mtime
-has been `1784954438` since before the first commit — check it with
-`stat -c %Y ~/.claude/.credentials.json` after anything that touches account
-state, and treat a change as a bug, not a surprise.
+**Never write to `~/.claude`.** CCAS only ever *reads* it; the symlinks live in
+the account directory and point *at* it, never the reverse (`accounts.relink`).
+That guarantee is the entire point of the design.
+
+Check it **around your own command**, not against a constant:
+
+```bash
+before=$(stat -c %Y ~/.claude/.credentials.json); <the command>
+[ "$before" = "$(stat -c %Y ~/.claude/.credentials.json)" ] || echo BUG
+find ~/.claude -maxdepth 1 -type l    # must stay empty
+```
+
+A hardcoded baseline (`1784954438`, quoted in older notes) is **not** a valid
+canary. Claude Code running under the default account — no `CLAUDE_CONFIG_DIR`,
+which includes the session you are probably in — refreshes that file's OAuth
+token on its own; it moved to `1784983478` the moment the user's limits reset.
+Prove the write was not ours before calling it a bug.
 
 **Never invoke `claude` by bare name from inside the code.** The install adds a
 `claude()` shell function to `~/.bashrc`; a bare call re-enters it and loops
@@ -54,6 +66,23 @@ render tick must not — it gates itself on `menu.session_set_changed()`.
 menu it cached at the last reload, so a write without a reload leaves the
 visible row and the `hist-i` action pointing at different sessions. Never move
 one out from under the other.
+
+**`ccs render` no longer forces a rebuild** — it writes only when it reloads, so
+a code change that alters the XML will not reach the menus on disk. `ccs config`
+(what `install.sh` runs) is the unconditional rebuild of every account's menu.
+
+**Only use glyphs that survive the bar's font stack.** `style.css` here starts
+`font-family: FontAwesome, "JetBrainsMono Nerd Font Mono", monospace`, and
+FontAwesome wins for any codepoint it happens to cover. `☑` (U+2611) is in
+FontAwesome, `☐` (U+2610) is not — so a checkbox pair rendered from two
+different fonts at two different sizes and the checked state looked empty.
+`menu.MARK_ON`/`MARK_OFF` (U+25CF/U+25CB) are the vetted pair; every stateful
+row uses them. Check a new glyph before shipping it:
+
+```bash
+pango-view --font="FontAwesome, JetBrainsMono Nerd Font Mono, monospace 28" \
+           -q -t '○ off  ● on  <new glyph>' -o /tmp/g.png
+```
 
 **`session_set_changed()` is set-based on purpose.** It compared the newest uuid
 once, and with two live Claude sessions taking turns being newest, the bar
