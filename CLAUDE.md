@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~209 tests, under a second). They are the specification —
+1. `python -m pytest` (~252 tests, under a second). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -25,6 +25,7 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `waybar.py` | the managed blocks in `config.jsonc` and `~/.bashrc`, plus reload/signal. |
 | `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
 | `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
+| `usage.py` | the per-account usage reading: recording it, both source shapes, the three states, and how each is said. |
 | `pickers.py` | fzf vs fuzzel, and `is_gui()`. |
 | `launch.py` | resolving a launch request into a cwd and argv. |
 | `doctor.py` | the read-only audit. |
@@ -161,6 +162,29 @@ before touching that path. Two rules there are load-bearing:
 the picker stays a pure function of the account dict. It is not in the label, so
 changing it touches the bar not at all — `cli._refresh_all()` is now just a save.
 
+## Usage limits
+
+`docs/usage-limits-research.md` is the measurement; **do not re-run its probes**,
+one costs real quota. Four rules hold the feature up:
+
+- **CCAS never wires the hook.** Every account's `settings.json` is a symlink to
+  `~/.claude/settings.json`, so writing it breaks the invariant. `ccs doctor`
+  reports the exact line and the user adds it.
+- **`ccs statusline` is a wrapper, not a statusline.** The user already had one.
+  Same bytes to the delegate, its stdout verbatim, its exit code ours, no
+  timeout — and every recording failure swallowed, because a statusline that
+  raises is visible in every prompt of every session.
+- **Only an account records.** `usage.account_slug()` returns None unless
+  `CLAUDE_CONFIG_DIR` resolves to a directory directly under `accounts_root()`,
+  so the default account — the one an agent is probably in — writes nothing.
+- **Write only on a change**, and let `waybar.signal()` ride on the write. The
+  hook fires every few hundred milliseconds; the numbers move every few minutes.
+
+The display is the **reset time, not the percentage**: `resets_at` is an absolute
+anchor, so past means the window rolled over and future makes the recorded
+percentage a lower bound (`≥`). That is also why there is no staleness cutoff
+anywhere — for the 5-hour window, stale and rolled-over are the same test.
+
 ## GUI vs terminal
 
 `pickers.is_gui()` is a **fallback only**. Waybar inherits stdin from the
@@ -239,7 +263,7 @@ still generated files.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~209 tests, under a second
+cd ~/ccas && python -m pytest    # ~252 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs                              # pick account → mode; Add is on the picker, Rename/Remove under Manage…
 ccs list                         # accounts
@@ -247,6 +271,8 @@ ccs doctor                       # audit the four places that drift; rc 1 if any
 ccs config                       # rewrite the managed block in config.jsonc and reload
 ccs headless [<slug>]            # show / toggle which account runs `ccs -p`
 ccs dangerous [<slug>]           # show / toggle --dangerously-skip-permissions per account
+ccs usage [<slug>]               # both quota windows, their age and their source
+ccs statusline [<delegate> …]    # the recording hook; wired by hand in ~/.claude/settings.json
 ccs -p "…" / ccs -c / ccs -r     # real claude under the runner account
 ccs -- mcp list                  # claude's own subcommands need the --
 ./uninstall.sh [--purge]         # strip managed blocks; --purge also trashes ~/.cc-accounts

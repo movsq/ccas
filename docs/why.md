@@ -37,6 +37,7 @@ These are all deliberate and committed. Do not "fix" them back.
 | 14 | CCAS no longer installs a `claude()` shell function; `ccs -p …` is the terminal entry point | User's call: keep the real `claude` theirs. See "The passthrough" below. |
 | 15 | `ccs doctor` audits the install and never repairs it | A repair would mask the fault. See "The doctor" below. |
 | 16 | An account directory is named after the **email**, not the nickname | The nickname is optional and the directory is not. See "Why the nickname named the directory" below. |
+| 17 | The usage row is the picker's `--mesg`/`--header`, not a menu row | The spec was written against `menu.xml`, which was retired before it was built. See "The usage row outlived the menu it was designed for" below. |
 | 12 | `Hide icon` is marked `●`/`○`, not `☑`/`☐` | FontAwesome sits first in the bar's font stack and covers U+2611 but not U+2610. See "The Hide icon box never looked checked". |
 
 ---
@@ -360,6 +361,40 @@ climb `stat` field 4 from the affected process and print
 `grep -c '^CLAUDE_CODE_CHILD_SESSION=' /proc/$p/environ` at each hop. The
 variable appears at the exact hop that introduced it. Reading `env` inside the
 agent's own `Bash` tool proves nothing — that tool sets the marker itself.
+
+---
+
+### The usage row outlived the menu it was designed for
+
+`docs/superpowers/specs/2026-07-25-usage-limits-design.md` puts the per-account
+usage row in `menu.xml`, as an insensitive `GtkMenuItem` under the email and the
+nickname. Between that spec and its implementation, `menu.xml` was retired
+altogether — the bar's click now runs `ccs --gui <slug>` and the rows are
+generated fresh per click.
+
+So the row moved to where that screen now lives: `pickers.choose(..., note=…)`,
+which is fuzzel's `--mesg` and fzf's `--header`. Both put text above the rows
+that cannot be selected, which is what "insensitive" bought in the GtkMenu, and
+both honour a newline, so the second line the 7-day window sometimes needs costs
+nothing.
+
+Two paragraphs of the spec died with the menu and are worth not re-deriving:
+
+- The spec argues at length that **a usage change must never trigger a reload**,
+  because a cached `menu.xml` can only be refreshed by SIGUSR2 and that would put
+  back the flicker `session_set_changed()` was written to remove. There is no
+  cache left. The picker reads `usage.read()` at the moment it opens, so the row
+  is never stale, and the argument is moot rather than wrong.
+- It also lists verifying `·` (U+00B7) against **Waybar's FontAwesome-first font
+  stack**. Nothing usage-related renders in that stack any more: the bar label
+  carries only digits, `:`, `%` and `7d`, and `·`/`≥` appear only in fuzzel and
+  fzf. `fc-list ':charset=00b7'` and `:charset=2265` both resolve there, and a
+  `pango-view` render of the finished row is clean.
+
+What did still need measuring was the label, and it holds: rendered at the bar's
+own font, the clock run inks rows 16–25 — the nickname's exact band — and the
+glyph stays at 15–26 whether the third run is there or not. `ICON_RISE` did not
+move.
 
 ---
 
