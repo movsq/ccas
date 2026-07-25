@@ -50,6 +50,17 @@ def _refresh_all(reg) -> None:
     waybar.reload()
 
 
+def _toggle_headless(reg, slug: str) -> None:
+    """Point the headless runner at this account, or clear it if it already is.
+
+    Choosing the account that is already the runner clears it, which is how the
+    user gets the one-time prompt back.
+    """
+    current = registry.headless_slug(reg)
+    registry.set_headless(reg, None if current == slug else slug)
+    _refresh_all(reg)
+
+
 def _runner_slug(reg, args, gui):
     """Which account a `claude <args>` run belongs to, or None to abort.
 
@@ -229,11 +240,20 @@ def cmd_tty(args, gui=None) -> int:
 def cmd_mode_menu(slug: str, gui: bool) -> int:
     cwd = os.getcwd()
     short = history.abbreviate(cwd)
+    reg = registry.load()
+    account = registry.find(reg, slug)
+    # Same row, same marks as the Waybar menu — this is the terminal way in.
+    mark = menu.MARK_ON if account and account.get("headless") else menu.MARK_OFF
+    headless_row = f"{mark} Headless runner"
     options = [f"New here  ({short})", f"Resume last in  {short}",
-               f"History in  {short}…", "All projects…"]
+               f"History in  {short}…", "All projects…", headless_row]
     choice = pickers.choose("mode", options, gui)
     if choice is None:
         return 1
+    # Before the launch rows: the last of those is this dispatch's catch-all.
+    if choice == headless_row:
+        _toggle_headless(reg, slug)
+        return 0
     if choice.startswith("New here"):
         return launch.run(slug, "new", cwd, gui, cwd)
     if choice.startswith("Resume last"):
@@ -287,11 +307,7 @@ def main(argv) -> int:
             return 0
         if registry.find(reg, rest[0]) is None:
             return 1
-        # Clicking the account that is already the runner clears it, which is
-        # how the user gets the one-time prompt back.
-        current = registry.headless_slug(reg)
-        registry.set_headless(reg, None if current == rest[0] else rest[0])
-        _refresh_all(reg)
+        _toggle_headless(reg, rest[0])
         return 0
     if command == "default":
         reg = registry.load()

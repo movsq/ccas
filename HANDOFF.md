@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 178 tests green.
+**State:** built, installed, and working on the real system. 180 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -39,7 +39,7 @@ under the *default* account (no `CLAUDE_CONFIG_DIR`) refreshes that token
 itself. Compare the mtime before and after your own command instead; see
 `CLAUDE.md` for the snippet.
 
-Run the suite with `cd ~/ccas && python -m pytest` (178 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (180 passing, ~0.6 s).
 
 ---
 
@@ -70,7 +70,9 @@ The headless runner was verified the same day: the first `claude -p "say hi"`
 asked which account, the second ran straight through, `echo hi | claude -p`
 answered without prompting, and the `●` sits on the chosen account's menu row.
 
-Every area of the tool has now been exercised on the real system.
+Every area of the tool has now been exercised on the real system, with one
+exception added afterwards: the `Headless runner` row at the bottom of the
+terminal mode menu is covered by tests but has not been clicked yet.
 
 ---
 
@@ -201,9 +203,15 @@ its `menu.xml` written. That regression was caught by
 
 `claude -p "say hi"` ran under `reg["default"]` with nothing showing which
 account that was. Requested shape, and the one implemented: mark an account as
-the runner once, from the `○ Headless runner` menu row or `ccs headless <slug>`,
-and never think about it again. Clicking the marked account clears it, which is
-how the one-time prompt comes back.
+the runner once and never think about it again. Choosing the marked account
+clears it, which is how the one-time prompt comes back.
+
+Three ways in, all the same toggle (`cli._toggle_headless`): the
+`○ Headless runner` row in the Waybar menu, the same row at the bottom of the
+terminal mode menu (`ccs <slug>` or bare `claude`, after the account pick), and
+`ccs headless [<slug>]` directly. The mode-menu row is checked **before** the
+launch branches, because `"All projects…"` is that dispatch's catch-all and would
+otherwise swallow it.
 
 `cli._runner_slug()` resolves, in order:
 

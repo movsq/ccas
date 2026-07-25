@@ -472,3 +472,40 @@ def test_setting_the_headless_runner_rewrites_every_menu(monkeypatch):
     assert f"{cli.menu.MARK_OFF} Headless runner" in (
         paths.account_dir("other") / "menu.xml").read_text()
     assert reloads, "the marks are baked into the cached menu"
+
+
+def test_mode_menu_offers_the_headless_runner_and_shows_its_state(monkeypatch):
+    """The third way in. The Waybar row and `ccs headless` both existed, but the
+    terminal path — pick an account, then pick what to do with it — had no way to
+    say "this is the one that answers claude -p"."""
+    make_account("work")
+    monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
+    seen = []
+
+    def fake_choose(prompt, options, gui):
+        seen.append(options)
+        return next(o for o in options if "Headless runner" in o)
+
+    monkeypatch.setattr(cli.pickers, "choose", fake_choose)
+
+    assert cli.cmd_mode_menu("work", False) == 0
+    assert f"{cli.menu.MARK_OFF} Headless runner" in seen[0]
+    assert registry.headless_slug(registry.load()) == "work"
+
+    assert cli.cmd_mode_menu("work", False) == 0
+    assert f"{cli.menu.MARK_ON} Headless runner" in seen[1], "state is visible"
+    assert registry.headless_slug(registry.load()) is None, "picking it again clears"
+
+
+def test_mode_menu_still_launches_the_other_four_rows(monkeypatch):
+    """The headless row is appended, not spliced in — 'All projects…' is the
+    catch-all in this dispatch and must not swallow the new row."""
+    make_account("work")
+    calls = []
+    monkeypatch.setattr(cli.launch, "run",
+                        lambda *a, **k: calls.append(a) or 0)
+    for i in range(4):
+        monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, i=i: o[i])
+        assert cli.cmd_mode_menu("work", False) == 0
+    assert [c[1] for c in calls] == ["new", "last", "search", "new"]
+    assert len(calls) == 4
