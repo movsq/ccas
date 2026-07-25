@@ -280,11 +280,16 @@ building on them; delete the line once you have.
   and the text ink the same rows at `ICON_RISE = "-800"`, and pango-view
   rasterises at its own DPI — proportional to the bar, not identical to it. The
   earlier `x-large` value *was* measured on the real bar; this one was not.
-- **Waybar is running from a hand-started `setsid`** (was PID 3250290), because
-  a broken intermediate `label.py` took the bar down mid-session. A relogin puts
-  it back under whatever normally supervises it. If the bar behaves oddly and
-  the process has no supervisor, that is why.
-
 Do not verify any of this by asking the user to click things — automate it.
 `grim` plus ink-extent maths, `pango-view --markup` for glyph metrics with no
 bar involved, `swaymsg -t get_tree` to find out what is covering the bar.
+
+Waybar is still running from a hand-started `setsid`, and a relogin puts it back
+under whatever normally supervises it. That much was already known; what it
+*cost* was found on 2026-07-25 and is no longer a guess. The bar had been
+restarted from inside an agent session, so it carried
+`CLAUDE_CODE_CHILD_SESSION=1` and silently disabled transcript saving for every
+session launched off it — while `ccs` typed in a terminal was fine, which is
+what made it look random. **Never restart a long-lived process from inside an
+agent shell without scrubbing the environment**; `docs/why.md` has the `/proc`
+walk that identifies the carrier and the scrubbed restart command.

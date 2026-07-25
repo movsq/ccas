@@ -325,6 +325,42 @@ both runs now ink rows 8–17 of the bar. Measured, not eyeballed: crop the bar
 out of `grim -o DP-1` and take the min/max ink row per column group — the four
 runs must report the same pair.
 
+### A bar started from inside an agent session silently killed transcripts
+
+Sessions opened by clicking the bar stopped saving transcripts — `⚠ Transcript
+saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker`. The same account
+opened by typing `ccs`, or by typing `claude`, saved normally. That asymmetry is
+the whole diagnosis: nothing in CCAS sets that variable (`accounts.env_for` sets
+only `CCAS_INNER`), so it had to be arriving from the parent process, and only
+one parent differs between the two paths.
+
+Waybar itself was the carrier. It had been restarted mid-session from a Claude
+Code `Bash` call — a broken intermediate `label.py` took the bar down — so it
+inherited that session's whole environment: `CLAUDE_CODE_CHILD_SESSION=1`,
+`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CONFIG_DIR`, even `CLAUDE_EFFORT`.
+Claude Code reads the child marker as "you are a nested sub-session" and disables
+transcript persistence. Every `ccs --gui launch` off the bar inherited it; every
+terminal Sway spawned did not.
+
+The fix is to restart the bar from a scrubbed environment — not to unset the
+variable in CCAS, which would paper over a poisoned parent while leaving
+`CLAUDE_CONFIG_DIR` and the rest of it in place:
+
+```bash
+killall waybar
+setsid env $(env | grep -oE '^(CLAUDE[A-Z_]*|CCAS[A-Z_]*|AI_AGENT)=' \
+             | tr -d = | sed 's/^/-u /') waybar >/dev/null 2>&1 &
+```
+
+Two lessons outlast this bug. **A long-lived process started from an agent shell
+carries that shell's environment for its entire life**, and it hands it to every
+child — so restarting a daemon from inside a session is not equivalent to
+restarting it from a terminal. And the diagnosis is a `/proc` walk, not a guess:
+climb `stat` field 4 from the affected process and print
+`grep -c '^CLAUDE_CODE_CHILD_SESSION=' /proc/$p/environ` at each hop. The
+variable appears at the exact hop that introduced it. Reading `env` inside the
+agent's own `Bash` tool proves nothing — that tool sets the marker itself.
+
 ---
 
 ---
