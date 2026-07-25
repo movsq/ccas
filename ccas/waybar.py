@@ -29,36 +29,18 @@ def _ccs() -> str:
 
 
 def module_config(account: dict) -> dict:
-    slug = account["slug"]
     ccs = _ccs()
-    actions = {
-        "new": f"{ccs} launch {slug} new",
-        "last": f"{ccs} launch {slug} last",
-        "search": f"{ccs} launch {slug} search",
-        "search-more": f"{ccs} launch {slug} search",
-        "hide": f"{ccs} hide {slug} toggle",
-        "headless": f"{ccs} headless {slug}",
-        "dangerous": f"{ccs} dangerous {slug}",
-        "mng-add": f"{ccs} manage add",
-        "mng-rename": f"{ccs} manage rename {slug}",
-        "mng-remove": f"{ccs} manage remove {slug}",
-    }
-    for i in range(paths.HIST_SLOTS):
-        actions[f"hist-{i}"] = f"{ccs} launch {slug} hist {i}"
-    ids = {"nickname": "disp-nickname", "index": "disp-index",
-           "claude code": "disp-cc", "icon only": "disp-icon"}
-    for mode in paths.DISPLAY_MODES:
-        actions[ids[mode]] = f"{ccs} display {slug} '{mode}'"
-    for i in range(len(paths.PALETTE)):
-        actions[f"color-{i}"] = f"{ccs} color {slug} {i}"
     return {
-        "exec": f"{ccs} render {slug}",
+        "exec": f"{ccs} render {account['slug']}",
         "interval": 30,
         "signal": account["signal"],
         "tooltip": False,
-        "menu": "on-click",
-        "menu-file": str(paths.account_dir(slug) / "menu.xml"),
-        "menu-actions": actions,
+        # Not a menu-file: Waybar parses that once when the module is built and
+        # only a full SIGUSR2 reload re-parses it, so keeping a cached menu
+        # fresh meant rebuilding the bar every time a session appeared. This
+        # opens the same screen `ccs <slug>` opens in a terminal, generated per
+        # click. --gui comes from _ccs(); stdin sniffing cannot be trusted here.
+        "on-click": f"{ccs} {account['slug']}",
     }
 
 

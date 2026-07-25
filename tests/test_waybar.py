@@ -45,23 +45,25 @@ def reg(*slugs):
 def test_module_uses_absolute_paths_everywhere():
     mod = waybar.module_config(reg("work")["accounts"][0])
     assert mod["exec"].startswith("/home/fixed/.local/bin/ccs")
-    assert mod["menu-file"].startswith("/")
-    for command in mod["menu-actions"].values():
-        assert command.startswith("/home/fixed/.local/bin/ccs")
+    assert mod["on-click"].startswith("/home/fixed/.local/bin/ccs")
 
 
-def test_module_declares_the_fixed_history_slots():
-    actions = waybar.module_config(reg("work")["accounts"][0])["menu-actions"]
-    assert "hist-0" in actions
-    assert f"hist-{paths.HIST_SLOTS - 1}" in actions
-    assert f"hist-{paths.HIST_SLOTS}" not in actions
-
-
-def test_module_carries_signal_and_menu_wiring():
+def test_module_carries_signal_and_the_click():
     mod = waybar.module_config(reg("work")["accounts"][0])
     assert mod["signal"] == 1
-    assert mod["menu"] == "on-click"
     assert mod["interval"] == 30
+    assert mod["on-click"].endswith("--gui work")
+
+
+def test_the_module_declares_no_cached_menu():
+    """Waybar parses menu-file once when the module is built and only SIGUSR2
+    re-parses it, so a cached menu is a menu that has to be invalidated by
+    rebuilding the whole bar. The click opens the picker instead, which is
+    generated per click and cannot go stale."""
+    mod = waybar.module_config(reg("work")["accounts"][0])
+    assert "menu" not in mod
+    assert "menu-file" not in mod
+    assert "menu-actions" not in mod
 
 
 def test_apply_inserts_block_and_registers_modules(_isolate):
@@ -232,14 +234,7 @@ def test_generated_commands_all_force_gui_mode():
     terminal path — see test_cli's passthrough gui test for the other half."""
     account = {"slug": "work", "signal": 1, "display": "index",
                "color": 0, "hide_icon": False}
-    for command in waybar.module_config(account)["menu-actions"].values():
-        assert "--gui" in command, command
+    mod = waybar.module_config(account)
+    assert "--gui" in mod["exec"]
+    assert "--gui" in mod["on-click"]
     assert "--gui" in waybar.placeholder_config()["on-click"]
-
-
-def test_the_dangerous_action_is_generated_with_gui():
-    account = {"slug": "work", "signal": 1, "display": "index",
-               "color": 0, "hide_icon": False, "dangerous": False}
-    action = waybar.module_config(account)["menu-actions"]["dangerous"]
-    assert action.endswith("dangerous work")
-    assert "--gui" in action
