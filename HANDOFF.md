@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 198 tests green.
+**State:** built, installed, and working on the real system. 199 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -39,7 +39,7 @@ under the *default* account (no `CLAUDE_CONFIG_DIR`) refreshes that token
 itself. Compare the mtime before and after your own command instead; see
 `CLAUDE.md` for the snippet.
 
-Run the suite with `cd ~/ccas && python -m pytest` (198 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (199 passing, ~0.6 s).
 
 ---
 
@@ -287,6 +287,11 @@ exactly the registry's modules and they sit in `HOST_LIST`; and per account, tha
 every symlink resolves under `~/.claude`, that nothing shared is unlinked, and
 that `menu.xml`/`history.tsv` exist.
 
+Account rows are labelled by `label.display_name()` — the nickname, falling back
+to the email — not by the slug: "i still see vsed in doctor" after a rename, and
+the slug is a filesystem detail. It stays in the detail line, next to the path
+and the command that fixes it.
+
 **It never writes** — not even a `relink`, tempting as that is: a doctor that
 repairs on sight masks the fault it was run to find. Every failing check names
 the command that fixes it instead (`ccs config`, `ccs relink`, `./install.sh`).
@@ -361,7 +366,7 @@ when empty, keeping uninstall byte-for-byte either way.
 ## Useful commands
 
 ```bash
-cd ~/ccas && python -m pytest          # 198 tests, ~0.6 s
+cd ~/ccas && python -m pytest          # 199 tests, ~0.6 s
 ./install.sh                           # idempotent; re-run after any code change
 ccs list                               # accounts table
 ccs doctor                             # audit the install; rc 1 if anything failed

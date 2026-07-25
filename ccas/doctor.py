@@ -14,7 +14,7 @@ import os
 import re
 from collections import namedtuple
 
-from . import paths, registry, waybar
+from . import label, paths, registry, waybar
 
 Check = namedtuple("Check", "ok label detail")
 
@@ -35,18 +35,22 @@ def _claude_home_has_no_symlinks() -> Check:
 
 def _binaries() -> list:
     out = []
-    for label, path in (("claude binary", paths.claude_bin()),
-                        ("ccs binary", paths.ccs_bin())):
+    for name, path in (("claude binary", paths.claude_bin()),
+                       ("ccs binary", paths.ccs_bin())):  # not `label`: module name
         ok = path.exists() and os.access(path, os.X_OK)
-        out.append(Check(ok, label, "" if ok else f"{path} is missing or not executable"))
+        out.append(Check(ok, name, "" if ok else f"{path} is missing or not executable"))
     return out
 
 
 def _account_checks(account: dict) -> list:
     slug = account["slug"]
+    # Rows are named the way the user names the account, not the way the
+    # filesystem does. The slug still identifies what is wrong, so it stays in
+    # the detail line, which is where the path and the fix already live.
+    name = label.display_name(account)
     directory = paths.account_dir(slug)
     if not directory.is_dir():
-        return [Check(False, f"{slug}: account directory",
+        return [Check(False, f"{name}: account directory",
                       f"{directory} is missing; run `ccs relink`")]
 
     home = paths.claude_home()
@@ -67,13 +71,14 @@ def _account_checks(account: dict) -> list:
         f"not under ~/.claude: {', '.join(sorted(strays))}" if strays else "",
         f"never linked: {', '.join(sorted(missing))}" if missing else "",
     ]))
-    checks = [Check(not detail, f"{slug}: symlinks resolve",
-                    detail + ("; run `ccs relink`" if detail else ""))]
+    checks = [Check(not detail, f"{name}: symlinks resolve",
+                    f"{directory}: {detail}; run `ccs relink`" if detail else "")]
 
-    for name in ("menu.xml", "history.tsv"):
-        present = (directory / name).exists()
-        checks.append(Check(present, f"{slug}: {name}",
-                            "" if present else "missing; run `ccs config`"))
+    for filename in ("menu.xml", "history.tsv"):
+        present = (directory / filename).exists()
+        checks.append(Check(present, f"{name}: {filename}",
+                            "" if present else
+                            f"{directory / filename} is missing; run `ccs config`"))
     return checks
 
 

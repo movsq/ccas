@@ -160,7 +160,7 @@ once already, back when the bashrc function was the terminal path.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~198 tests, under a second
+cd ~/ccas && python -m pytest    # ~199 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs list                         # accounts
 ccs doctor                       # audit the four places that drift; rc 1 if any failed

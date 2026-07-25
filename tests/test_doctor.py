@@ -181,3 +181,21 @@ def test_doctor_is_ours_and_the_escape_still_reaches_claudes(monkeypatch):
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
     assert cli.main(["--", "doctor"]) == 0
     assert runs[0][1:] == ["doctor"]
+
+
+def test_account_rows_are_labelled_by_nickname(monkeypatch):
+    """The slug names a directory; the nickname is what the user calls the
+    account. `label.display_name` falls back to the email, never to nothing —
+    an unlabelled row would be worse than a slug (user feedback)."""
+    reg = healthy()
+    reg["accounts"][0]["nickname"] = "vsed2"
+    registry.save(reg)
+    labels = [c.label for c in doctor.run(registry.load())]
+    assert "vsed2: symlinks resolve" in labels
+    assert not any(l.startswith("work:") for l in labels)
+
+    reg = registry.load()
+    reg["accounts"][0]["nickname"] = None
+    registry.save(reg)
+    labels = [c.label for c in doctor.run(registry.load())]
+    assert "work@x.com: symlinks resolve" in labels
