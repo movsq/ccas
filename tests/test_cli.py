@@ -654,3 +654,69 @@ def test_add_writes_the_menu_before_waybar_points_at_it(monkeypatch):
     directory = paths.account_dir("someone")
     assert (directory / "menu.xml").exists()
     assert (directory / "history.tsv").exists()
+
+
+def test_account_picker_offers_add_even_with_one_account(monkeypatch):
+    """The picker used to be skipped when there was only one account — a
+    one-row list asks nothing. Once it carries the Add row that stops being
+    true, and skipping it puts Add out of reach for exactly the user most
+    likely to want a second account."""
+    make_account("work")
+    seen = []
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda p, o, g: seen.append(o) or o[0])
+    monkeypatch.setattr(cli, "cmd_mode_menu", lambda slug, gui: 0)
+
+    assert cli.cmd_tty([], gui=False) == 0
+    assert seen, "the picker was skipped"
+    assert seen[0] == ["work", cli.ADD_ROW]
+
+
+def test_choosing_the_add_row_adds_an_account(monkeypatch):
+    """Not a slug, so the account lookup would raise StopIteration on it."""
+    make_account("work")
+    calls = []
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: cli.ADD_ROW)
+    monkeypatch.setattr(cli, "cmd_add", lambda gui: calls.append(gui) or 0)
+    monkeypatch.setattr(cli, "cmd_mode_menu",
+                        lambda *a: pytest.fail("add is not a launch"))
+
+    assert cli.cmd_tty([], gui=False) == 0
+    assert calls == [False], "gui is passed through to the login window"
+
+
+def test_choosing_an_account_still_reaches_the_mode_menu(monkeypatch):
+    """The common path. The Add row is compared before the account lookup, so
+    this pins that it did not swallow real accounts."""
+    make_account("work")
+    make_account("other")
+    seen = []
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: o[1])
+    monkeypatch.setattr(cli, "cmd_mode_menu",
+                        lambda slug, gui: seen.append(slug) or 0)
+    monkeypatch.setattr(cli, "cmd_add", lambda gui: pytest.fail("no login"))
+
+    assert cli.cmd_tty([], gui=False) == 0
+    assert seen == ["other"]
+
+
+def test_no_accounts_still_goes_straight_to_add(monkeypatch):
+    """fuzzel exits instantly on empty stdin, so a picker whose only row is Add
+    would be a dead end in GUI mode. With nothing to choose between, don't ask."""
+    calls = []
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda p, o, g: pytest.fail("nothing to pick between"))
+    monkeypatch.setattr(cli, "cmd_add", lambda gui: calls.append(gui) or 0)
+
+    assert cli.cmd_tty([], gui=False) == 0
+    assert calls == [False]
+
+
+def test_cancelling_the_account_picker_adds_nothing(monkeypatch):
+    make_account("work")
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: None)
+    monkeypatch.setattr(cli, "cmd_add", lambda gui: pytest.fail("no login"))
+    monkeypatch.setattr(cli, "cmd_mode_menu",
+                        lambda *a: pytest.fail("no session"))
+
+    assert cli.cmd_tty([], gui=False) == 1

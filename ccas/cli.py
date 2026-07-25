@@ -16,6 +16,11 @@ from . import (accounts, doctor, history, label, launch, menu, paths, pickers,
 NO_ACCOUNT_ARGS = {"--version", "-v", "--help", "-h",
                    "doctor", "install", "update", "upgrade", "gateway"}
 
+# The one row of the account picker that is not an account. ASCII '+' rather
+# than a glyph: the vetted-glyph rule is about Waybar's FontAwesome-first stack,
+# and this row is drawn by fzf or fuzzel, whose fonts nothing here has measured.
+ADD_ROW = "+  Add account…"
+
 
 def notify(text: str) -> None:
     subprocess.run(["notify-send", "Claude accounts", text], check=False,
@@ -262,13 +267,17 @@ def cmd_tty(args, gui=None) -> int:
         return subprocess.run([str(paths.claude_bin()), *args],
                               env=accounts.env_for(slug), check=False).returncode
     if not reg["accounts"]:
+        return cmd_add(gui)  # nothing to pick between, and fuzzel dies on an empty list
+    # No shortcut for a single account any more: the list is no longer a
+    # pointless one row, and skipping it hid Add from the user most likely to
+    # want a second account.
+    names = [label.display_name(a) for a in reg["accounts"]]
+    choice = pickers.choose("account", [*names, ADD_ROW], gui)
+    if choice is None:
+        return 1
+    if choice == ADD_ROW:  # before the lookup — it is not a display name
         return cmd_add(gui)
-    slug = reg["accounts"][0]["slug"]
-    if len(reg["accounts"]) > 1:
-        choice = pickers.choose("account", [label.display_name(a) for a in reg["accounts"]], gui)
-        if choice is None:
-            return 1
-        slug = next(a["slug"] for a in reg["accounts"] if label.display_name(a) == choice)
+    slug = next(a["slug"] for a in reg["accounts"] if label.display_name(a) == choice)
     return cmd_mode_menu(slug, gui)
 
 
