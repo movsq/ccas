@@ -22,6 +22,14 @@ def test_env_overrides_redirect_everything(monkeypatch, tmp_path):
     assert paths.projects_root() == tmp_path / "claude" / "projects"
 
 
+def test_usage_file_is_never_relinked_over(monkeypatch):
+    """usage.json is per-account state, like .claude.json and .credentials.json.
+    If ~/.claude ever grows one, relink must not link it over the real reading."""
+    importlib.reload(paths)
+    assert paths.USAGE_FILE == "usage.json"
+    assert paths.USAGE_FILE in paths.BLOCKLIST
+
+
 def test_trash_dir_is_under_home_and_never_deleted(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_TRASH", str(tmp_path / "trash"))
     importlib.reload(paths)

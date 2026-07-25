@@ -21,7 +21,12 @@ DISPLAY_MODES = ["nickname", "index", "claude code", "icon only"]
 # a bound on the scan, not on what fits on screen.
 HIST_SLOTS = 300
 
-BLOCKLIST = {".credentials.json", ".claude.json", "menu.xml", "history.tsv"}
+# The recorded usage reading, in the account directory. Per-account by
+# definition — a link to a shared one would report the wrong account's quota.
+USAGE_FILE = "usage.json"
+
+BLOCKLIST = {".credentials.json", ".claude.json", "menu.xml", "history.tsv",
+             USAGE_FILE}
 
 
 def _env(name: str, default: Path) -> Path:
