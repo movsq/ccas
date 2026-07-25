@@ -19,14 +19,20 @@ Per account, in the managed block:
     "format": "{}",
     "return-type": "json",
     "exec": "…/ccs render vsed",
-    "menu": "on-click",
-    "menu-file": "/home/fixed/.cc-accounts/vsed/menu.xml",
+    "on-click": "…/ccs --gui vsed",
     …
 }
 ```
 
-and the module ids appended to `modules-center`. The widget id you style is
+plus the module ids appended to `modules-center`. The widget id you style is
 `#custom-cc-<slug>` — the module name with the slash turned into a dash.
+
+The click opens the same picker `ccs <slug>` opens in a terminal. CCAS used to
+emit `menu`, `menu-file` and `menu-actions` here instead, pointing at a
+generated `menu.xml` per account; it no longer does. Waybar parses `menu-file`
+once when the module is built, so keeping that menu current meant reloading the
+whole bar every time a Claude session appeared — see
+`docs/superpowers/specs/2026-07-25-fuzzel-only-menu-design.md`.
 
 ## The font stack matters
 
@@ -126,10 +132,11 @@ Notes:
 | `style.css` | `killall -SIGUSR2 waybar` |
 | `config.jsonc` (module added/removed) | `killall -SIGUSR2 waybar` |
 | label markup (`label.py`) | `./install.sh`, then the next render tick |
-| `menu.xml` contents | `killall -SIGUSR2 waybar` — the menu is cached at startup |
+| account settings (colour, nickname, display) | nothing — `ccs` signals `SIGRTMIN+n` itself |
 
-Waybar caches `menu-file` at startup, and a per-module `SIGRTMIN+n` repaints the
-**label only**. Anything baked into the XML needs the full reload.
+A per-module `SIGRTMIN+n` repaints the **label only**, which since CCAS stopped
+using `menu-file` is the only thing on the bar a setting can change. Waybar does
+cache `menu-file` at startup; that is exactly why CCAS no longer uses one.
 
 **`ccs` runs the installed copy, not the repo.** Editing `label.py` and then
 running `ccs render` tests the code as of the last `./install.sh`. Re-install

@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~237 tests, under a second). They are the specification —
+1. `python -m pytest` (~209 tests, under a second). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -23,9 +23,8 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `registry.py` | `accounts.json`: slugs, colours, display mode, `headless`, `default`. |
 | `accounts.py` | the account directory: create, `relink` (the never-write-to-`~/.claude` guarantee), `rename`, trash, `env_for`. |
 | `waybar.py` | the managed blocks in `config.jsonc` and `~/.bashrc`, plus reload/signal. |
-| `menu.py` | `menu.xml` + `history.tsv`, and `session_set_changed()` which gates reloads. |
 | `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
-| `label.py` | the bar label and `display_name()`. |
+| `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
 | `pickers.py` | fzf vs fuzzel, and `is_gui()`. |
 | `launch.py` | resolving a launch request into a cwd and argv. |
 | `doctor.py` | the read-only audit. |
@@ -82,10 +81,6 @@ is the canary. `CCAS_NO_RELOAD=1` suppresses signalling the live bar.
 repair inside it would mask the fault it is looking for — including a `relink`,
 tempting as that is. It reports and says which command fixes it.
 
-**Point Waybar at a menu only after writing it.** `cmd_add` writes `menu.xml`
-before `waybar.apply()` adds the module, because `menu-file` is read on the
-reload that follows. Anything new that creates a module must keep that order.
-
 **A slug is permanent; a nickname is not.** The slug is the account directory
 name and the Waybar module id. `cmd_add` names the directory after the email —
 but only *after* login returns it, via `accounts.rename()` in the one window
@@ -111,21 +106,17 @@ Established by the Task 0 spike (`docs/superpowers/spike-waybar-menu.md`);
   full reload.
 - Nested submenus work, and `menu-actions` reaches nested items.
 - A `GtkMenu` does not scroll usefully: 219 items filled a 1440 px screen.
-  `paths.MENU_HIST_ITEMS` caps what is shown, `HIST_SLOTS` governs the actions
-  and `history.tsv`. Shown row *i* → `hist-i` → tsv line *i*; keep them aligned.
 
-So: a **user-initiated** change may reload (the flicker is expected). The 30 s
-render tick must not — it gates itself on `menu.session_set_changed()`.
+CCAS no longer uses `menu-file` at all: the bar's click runs `ccs --gui <slug>`,
+the same picker `ccs <slug>` opens in a terminal, generated fresh per click. The
+facts above are why — a menu you cannot invalidate has to be invalidated by
+rebuilding the bar, and that is what blinked the bar every time a new session
+appeared. See `docs/superpowers/specs/2026-07-25-fuzzel-only-menu-design.md`.
 
-**Write and reload are one operation.** The tick rewrites `menu.xml` and
-`history.tsv` only when it is also going to reload. Waybar is still showing the
-menu it cached at the last reload, so a write without a reload leaves the
-visible row and the `hist-i` action pointing at different sessions. Never move
-one out from under the other.
-
-**`ccs render` no longer forces a rebuild** — it writes only when it reloads, so
-a code change that alters the XML will not reach the menus on disk. `ccs config`
-(what `install.sh` runs) is the unconditional rebuild of every account's menu.
+So the only thing that still reloads is a change to the **set of modules**
+(`cmd_add`, `cmd_rm`), because that rewrites `config.jsonc`, which Waybar reads
+at startup. Every other setting is a `waybar.signal(n)`; the 30 s render tick
+prints a label and nothing else.
 
 **The bar label is sized in pango markup, not CSS.** `label.ICON_SIZE`,
 `ICON_RISE` and `TEXT_SIZE` — a CSS `font-size` scales glyph and nickname
@@ -147,19 +138,13 @@ per slug (`#custom-cc-<slug>`; GTK CSS has no prefix matching), documented in
 FontAwesome wins for any codepoint it happens to cover. `☑` (U+2611) is in
 FontAwesome, `☐` (U+2610) is not — so a checkbox pair rendered from two
 different fonts at two different sizes and the checked state looked empty.
-`menu.MARK_ON`/`MARK_OFF` (U+25CF/U+25CB) are the vetted pair; every stateful
+`label.MARK_ON`/`MARK_OFF` (U+25CF/U+25CB) are the vetted pair; every stateful
 row uses them. Check a new glyph before shipping it:
 
 ```bash
 pango-view --font="FontAwesome, JetBrainsMono Nerd Font Mono, monospace 28" \
            -q -t '○ off  ● on  <new glyph>' -o /tmp/g.png
 ```
-
-**`session_set_changed()` is set-based on purpose.** It compared the newest uuid
-once, and with two live Claude sessions taking turns being newest, the bar
-reloaded itself every few minutes for nothing. Session *order* changing is not a
-reason to reload; a session *appearing* is. It must still return True when no
-snapshot exists at all, or an account with no history never gets a menu file.
 
 ## The headless runner
 
@@ -173,8 +158,8 @@ before touching that path. Two rules there are load-bearing:
   not choose.
 
 `headless` is a per-account bool kept exclusive by `registry.set_headless()`, so
-the menu stays a pure function of the account dict. Changing it rewrites *every*
-menu via `cli._refresh_all()`.
+the picker stays a pure function of the account dict. It is not in the label, so
+changing it touches the bar not at all — `cli._refresh_all()` is now just a save.
 
 ## GUI vs terminal
 
@@ -209,8 +194,9 @@ once already, back when the bashrc function was the terminal path.
   failing test → verify it fails → implement → verify it passes → commit.
 - One commit per coherent change. **Never co-sign or co-author** (global rule).
 - Verify on the real system rather than reasoning about it: `./install.sh`,
-  `ccs render <slug>`, read the generated file. `grim` plus PIL cropping gives
-  you a screenshot; Waybar is on `HDMI-A-1` (x 2560–4480), `DP-1` is x 0–2560.
+  `ccs render <slug>`, read `~/.config/waybar/config.jsonc`. `grim` plus PIL
+  cropping gives you a screenshot; Waybar is on `HDMI-A-1` (x 2560–4480),
+  `DP-1` is x 0–2560.
 - **`ccs` runs the installed copy, not this repo.** `install.sh` stages the
   package into `~/.local/share/ccas`, so any test that goes through the `ccs`
   command exercises the code as of the last install. Editing a module and then
@@ -247,17 +233,18 @@ The fake `claude` needs two cases: `auth login` writes
 `script` is load-bearing. `pickers.is_gui()` is `not sys.stdin.isatty()`, so a
 pipe or `</dev/null` takes the **fuzzel** path and the run dies with no prompt.
 A pty makes it the terminal path. Then audit the result with `ccs doctor` — that
-is how the missing-`menu.xml` bug in `cmd_add` was found.
+is how the missing-`menu.xml` bug in `cmd_add` was found, back when `cmd_add`
+still generated files.
 
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~237 tests, under a second
+cd ~/ccas && python -m pytest    # ~209 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs                              # pick account → mode; Add is on the picker, Rename/Remove under Manage…
 ccs list                         # accounts
 ccs doctor                       # audit the four places that drift; rc 1 if any failed
-ccs config                       # force a rebuild of every menu.xml (render does not)
+ccs config                       # rewrite the managed block in config.jsonc and reload
 ccs headless [<slug>]            # show / toggle which account runs `ccs -p`
 ccs dangerous [<slug>]           # show / toggle --dangerously-skip-permissions per account
 ccs -p "…" / ccs -c / ccs -r     # real claude under the runner account
