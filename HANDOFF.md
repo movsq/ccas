@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 186 tests green.
+**State:** built, installed, and working on the real system. 198 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -39,7 +39,7 @@ under the *default* account (no `CLAUDE_CONFIG_DIR`) refreshes that token
 itself. Compare the mtime before and after your own command instead; see
 `CLAUDE.md` for the snippet.
 
-Run the suite with `cd ~/ccas && python -m pytest` (186 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (198 passing, ~0.6 s).
 
 ---
 
@@ -101,6 +101,7 @@ These are all deliberate and committed. Do not "fix" them back.
 | 11 | The render tick writes `menu.xml`/`history.tsv` **only** when it is also going to reload | Reordering is not a change (see "The bar resetting itself"), and writing without reloading desynchronises the cached rows from the tsv the actions index. `ccs config` is the unconditional rebuild. |
 | 13 | `claude -p` resolves an account instead of silently using the default | User request. See "The headless runner" below. |
 | 14 | CCAS no longer installs a `claude()` shell function; `ccs -p …` is the terminal entry point | User's call: keep the real `claude` theirs. See "The passthrough" below. |
+| 15 | `ccs doctor` audits the install and never repairs it | A repair would mask the fault. See "The doctor" below. |
 | 12 | `Hide icon` is marked `●`/`○`, not `☑`/`☐` | FontAwesome sits first in the bar's font stack and covers U+2611 but not U+2610. See "The Hide icon box never looked checked". |
 
 ---
@@ -270,6 +271,30 @@ and never grows a `.ccas-orig` for a file we never touched. Existing shells keep
 the stale function until they are restarted, which is why `paths.claude_bin()`
 remains mandatory.
 
+### The doctor
+
+`ccas/doctor.py`. CCAS writes into four places that drift apart — `config.jsonc`,
+`~/.bashrc`, the account directories, the registry — and every bug found on the
+real system was drift between them rather than a logic error. Each was caught by
+hand; `doctor.run()` is those checks in one pass, returning `Check(ok, label,
+detail)` records that `cli.cmd_doctor` prints, rc 1 if any failed.
+
+What it asserts: no symlinks in `~/.claude` (the invariant everything rests on,
+and deliberately the first line of output); both binaries exist and are
+executable; no legacy `claude()` block in `~/.bashrc`; `default` points at a real
+account and at most one account is marked `headless`; the Waybar block lists
+exactly the registry's modules and they sit in `HOST_LIST`; and per account, that
+every symlink resolves under `~/.claude`, that nothing shared is unlinked, and
+that `menu.xml`/`history.tsv` exist.
+
+**It never writes** — not even a `relink`, tempting as that is: a doctor that
+repairs on sight masks the fault it was run to find. Every failing check names
+the command that fixes it instead (`ccs config`, `ccs relink`, `./install.sh`).
+
+Verified live 2026-07-25: all 14 checks green on the real install, and a negative
+control run (`CCAS_CLAUDE_BIN=/nonexistent CCAS_BASHRC=<a fake with the old
+block> ccs doctor`) flagged exactly those two and exited 1.
+
 ### The Hide icon box never looked checked
 
 Reported live: "the togglebox for hidden icon doesn't fill when enabled." The
@@ -336,9 +361,10 @@ when empty, keeping uninstall byte-for-byte either way.
 ## Useful commands
 
 ```bash
-cd ~/ccas && python -m pytest          # 186 tests, ~0.6 s
+cd ~/ccas && python -m pytest          # 198 tests, ~0.6 s
 ./install.sh                           # idempotent; re-run after any code change
 ccs list                               # accounts table
+ccs doctor                             # audit the install; rc 1 if anything failed
 ccs render vsed                        # force menu.xml + history.tsv rebuild
 ccs -p "say hi"                        # real claude under the runner account
 ccs -- mcp list                        # claude's own subcommands need the --

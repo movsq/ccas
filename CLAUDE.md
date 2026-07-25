@@ -47,6 +47,10 @@ and every one of them is env-overridable (`CCAS_HOME`, `CCAS_ACCOUNTS_ROOT`,
 `CCAS_CCS_BIN`, `CCAS_CLAUDE_BIN`). `test_relink_never_touches_mtimes_in_claude_home`
 is the canary. `CCAS_NO_RELOAD=1` suppresses signalling the live bar.
 
+**`ccs doctor` never writes.** It exists to police the invariants above, so a
+repair inside it would mask the fault it is looking for — including a `relink`,
+tempting as that is. It reports and says which command fixes it.
+
 ## Read the live state before you write it
 
 This repo's tools mutate the user's real configuration. Read the registry, the
@@ -156,9 +160,10 @@ once already, back when the bashrc function was the terminal path.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~186 tests, under a second
+cd ~/ccas && python -m pytest    # ~198 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs list                         # accounts
+ccs doctor                       # audit the four places that drift; rc 1 if any failed
 ccs config                       # force a rebuild of every menu.xml (render does not)
 ccs headless [<slug>]            # show / toggle which account runs `ccs -p`
 ccs -p "…" / ccs -c / ccs -r     # real claude under the runner account

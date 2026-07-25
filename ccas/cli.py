@@ -3,7 +3,8 @@ import os
 import subprocess
 import sys
 
-from . import accounts, history, label, launch, menu, paths, pickers, registry, waybar
+from . import (accounts, doctor, history, label, launch, menu, paths, pickers,
+               registry, waybar)
 
 
 # `claude <args>` normally resolves an account, because almost everything it can
@@ -144,6 +145,12 @@ def cmd_list() -> int:
         color = paths.PALETTE[a["color"]][0]
         print(f"{star} {i}  {a['slug']:<14} {a['email']:<28} {color:<7} {a['display']}")
     return 0
+
+
+def cmd_doctor() -> int:
+    checks = doctor.run(registry.load())
+    print(doctor.report(checks))
+    return 1 if any(not c.ok for c in checks) else 0
 
 
 def cmd_add(gui: bool) -> int:
@@ -292,6 +299,9 @@ def main(argv) -> int:
 
     if command == "list":
         return cmd_list()
+    # `doctor` is a claude subcommand too; `ccs -- doctor` reaches that one.
+    if command == "doctor":
+        return cmd_doctor()
     if command == "add":
         return cmd_add(gui)
     if command == "rm":
