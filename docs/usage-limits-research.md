@@ -117,3 +117,33 @@ So the number is "as of your last session activity in that account" — good for
 the account you are actually using, arbitrarily stale for one left idle. Any
 display must carry its age, and fall back to the `.claude.json` cache (A) when
 the hook has never run.
+
+## Show the reset time, not the percentage
+
+`resets_at` is an **absolute anchor**, not a rolling recompute. The same value
+came back from three readings taken ~40 minutes apart:
+
+```
+~/.claude.json  fetched 17:03  five_hour.resets_at = 2026-07-25T17:30:00.266410Z
+/usage probe    fetched 18:47  five_hour.resets_at = 2026-07-25T17:29:59.990326Z
+API call        fetched 18:52  five_hour.resets_at = 2026-07-25T17:29:59.990326Z
+```
+
+That is what rescues the whole feature from the freshness problem above. A
+percentage decays in value the moment it is written; a reset time does not:
+
+- **past** → the window has rolled over since the reading, so the old ceiling is
+  gone. Knowable with no fetch at all.
+- **future** → the reading is still inside the current window, so its percentage
+  is a valid *lower bound* — usage only climbs within a window. "≥94%, clears at
+  19:30" is honest and actionable from a stale cache.
+
+So the reset time is the headline and the percentage is the qualifier, not the
+other way round. Note the two sources disagree on format: the statusline gives
+unix epoch seconds, `.claude.json` gives an ISO 8601 string.
+
+One consequence to design for: if the 5-hour window is anchored to first use
+rather than to fixed clock slots, then once it has rolled over there is no next
+`resets_at` until the account is used again. The display for that state is
+"open", not a time — and that is the *good* state, so it should not read like
+missing data.
