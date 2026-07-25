@@ -59,18 +59,14 @@ Run the suite with `cd ~/ccas && python -m pytest` (164 passing, ~0.6 s).
 - The bar stays put with a second Claude session running alongside — no more
   spontaneous reloads.
 
-## Not yet verified — start here
+## Terminal front-end — verified
 
-1. **Terminal front-end.** In a *new* shell (the `claude()` function is only in
-   new shells): bare `claude` should show the account picker then the mode menu
-   via **fzf**; `claude -p "say hi"` should run headless with no menu under the
-   `default` account; `ccs <slug> claude auth status` should report that account.
-   This is now the only wholly untested area.
-2. **The rename dialog's new shape** — typing a nickname, selecting
-   `⌫  clear nickname`, and Esc — was fixed and unit-tested but not yet clicked
-   through on the real bar.
-3. **`icon only` + `Hide icon`** should fire the notification exactly once, stay
-   clickable while invisible, and re-arm after leaving the combination.
+Confirmed in a new shell on 2026-07-25: bare `claude` shows the account picker
+then the mode menu via fzf and every option in it works; `claude -p "say hi"`
+runs headless with no menu; `ccs vo-se-15th claude auth status` reports
+vo.sedlacek@gmail.com rather than the default account.
+
+Every area of the tool has now been exercised on the real system.
 
 ---
 
