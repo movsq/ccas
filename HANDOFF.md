@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 160 tests green.
+**State:** built, installed, and working on the real system. 163 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -26,7 +26,7 @@ submenu, so the live registry currently holds `vsed` alone.
 `1784954438` through every install, uninstall, reinstall and account add. CCAS
 has never written to `~/.claude`.
 
-Run the suite with `cd ~/ccas && python -m pytest` (160 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (163 passing, ~0.6 s).
 
 ---
 
@@ -77,6 +77,7 @@ These are all deliberate and committed. Do not "fix" them back.
 | 8 | A setting change rewrites the menu and full-reloads | See "Stale ●/○ markers" below. |
 | 9 | A cleared nickname shows nothing on the bar, not the email | User preference. `display_name()` keeps the fallback where identity matters. |
 | 10 | The menu is headed by the email, with the nickname on a second row | The plan's single nickname-or-email title hid the address the account is actually identified by. |
+| 11 | The render tick writes `menu.xml`/`history.tsv` **only** when it is also going to reload | Reordering is not a change (see "The bar resetting itself"), and writing without reloading desynchronises the cached rows from the tsv the actions index. |
 
 ---
 
@@ -150,6 +151,36 @@ always a user-initiated click, so the reload flicker is acceptable; the 30 s
 render tick still gates itself on `session_set_changed()` and does not flicker
 on its own. The per-module signal call was dropped as redundant — `reload()`
 subsumes it.
+
+### The bar resetting itself every few minutes
+
+Reported live: Waybar "just reset for no reason", repeatedly. It was not a
+crash — the process was 1 d 17 h old throughout — it was our own `SIGUSR2`.
+
+`session_set_changed()` compared the **newest** uuid. With two Claude sessions
+alive, whichever was last written to becomes the newest, so every switch
+between them looked like a changed session set and the 30 s tick reloaded the
+whole bar. Four hand-overs in the 90 minutes before the report, in
+`~`, `~/4s` and `~/ccas`.
+
+It now compares the **set** of uuids, so reordering is not a change; only a
+genuinely new session is. Diagnose the same class of thing with:
+
+```bash
+ps -o pid,lstart,etime -C waybar          # same pid ⇒ a reload, not a restart
+python -c "from ccas import history, menu; print(menu.session_set_changed('vsed', history.scan()))"
+```
+
+The write is now bound to the same condition, which is the subtle half. Waybar
+is still showing the menu it cached at the last reload, and `hist-i` resolves
+against line *i* of `history.tsv` — so rewriting the pair every tick *without*
+reloading would have left the visible row and the session it launches pointing
+at different sessions. Write and reload together, or not at all.
+
+`session_set_changed()` also has to return True when no snapshot exists at all:
+an account with no history would otherwise compare empty-to-empty and never get
+its `menu.xml` written. That regression was caught by
+`test_render_regenerates_the_menu_file`.
 
 ### Rename cancel was destructive
 

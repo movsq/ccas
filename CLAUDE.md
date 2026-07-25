@@ -49,6 +49,18 @@ Established by the Task 0 spike (`docs/superpowers/spike-waybar-menu.md`):
 So: a **user-initiated** change may reload (the flicker is expected). The 30 s
 render tick must not — it gates itself on `menu.session_set_changed()`.
 
+**Write and reload are one operation.** The tick rewrites `menu.xml` and
+`history.tsv` only when it is also going to reload. Waybar is still showing the
+menu it cached at the last reload, so a write without a reload leaves the
+visible row and the `hist-i` action pointing at different sessions. Never move
+one out from under the other.
+
+**`session_set_changed()` is set-based on purpose.** It compared the newest uuid
+once, and with two live Claude sessions taking turns being newest, the bar
+reloaded itself every few minutes for nothing. Session *order* changing is not a
+reason to reload; a session *appearing* is. It must still return True when no
+snapshot exists at all, or an account with no history never gets a menu file.
+
 ## GUI vs terminal
 
 `pickers.is_gui()` is a **fallback only**. Waybar inherits stdin from the
