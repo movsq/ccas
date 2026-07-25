@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~252 tests, under a second). They are the specification —
+1. `python -m pytest` (~254 tests, under a second). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -200,6 +200,16 @@ and must use fzf. Two tests pin the pair
 `test_passthrough_does_not_force_gui_mode`), because this exact mistake was made
 once already, back when the bashrc function was the terminal path.
 
+**`cmd_mode_menu`'s launch verbs are the one thing that differs by door**, and
+they must stay that way. It scopes them to `os.getcwd()` — the user's directory
+from a terminal, *Waybar's* from a click — so `gui` gets the GtkMenu's
+directory-free `New session` / `Resume last session` / `Resume from history…`
+with `cwd=None`, and the terminal keeps `New here (…)` and its siblings.
+Everything below the verbs is identical from both. Do not collapse the two lists
+back into one to tidy it up: `docs/why.md` has what shipped when they were one,
+and `resolve()` ignoring cwd under `gui` is what made the labels lie rather than
+merely mislead.
+
 ## fuzzel
 
 - Exits instantly (rc=1) on **empty stdin**, whatever `--lines` says. A prompt
@@ -274,7 +284,7 @@ still generated files.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~252 tests, under a second
+cd ~/ccas && python -m pytest    # ~254 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs                              # pick account → mode; Add is on the picker, Rename/Remove under Manage…
 ccs list                         # accounts
