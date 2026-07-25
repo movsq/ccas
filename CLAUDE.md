@@ -262,3 +262,28 @@ ccs -p "…" / ccs -c / ccs -r     # real claude under the runner account
 ccs -- mcp list                  # claude's own subcommands need the --
 ./uninstall.sh [--purge]         # strip managed blocks; --purge also trashes ~/.cc-accounts
 ```
+
+## Unverified — claims made but never measured
+
+Written 2026-07-25. These shipped on reasoning, not evidence. Check them before
+building on them; delete the line once you have.
+
+- **The bar styling was never seen working.** `#custom-cc-*` spacing, `:hover`
+  and `:active` went into `~/.config/waybar/style.css` with zero live
+  confirmation — a window was covering the bar on `DP-1` and `grim` came back
+  with no teal glyph in it. Nothing proves any of the three renders.
+- **`:active` is the shakiest of them.** Waybar's custom module is
+  EventBox-backed and GTK's active state is a button concept, so the press
+  effect may simply never fire. `:hover` is documented; the press is a guess.
+- **`ICON_SIZE = "150%"` was aligned offline only.** `pango-view` says the glyph
+  and the text ink the same rows at `ICON_RISE = "-800"`, and pango-view
+  rasterises at its own DPI — proportional to the bar, not identical to it. The
+  earlier `x-large` value *was* measured on the real bar; this one was not.
+- **Waybar is running from a hand-started `setsid`** (was PID 3250290), because
+  a broken intermediate `label.py` took the bar down mid-session. A relogin puts
+  it back under whatever normally supervises it. If the bar behaves oddly and
+  the process has no supervisor, that is why.
+
+Do not verify any of this by asking the user to click things — automate it.
+`grim` plus ink-extent maths, `pango-view --markup` for glyph metrics with no
+bar involved, `swaymsg -t get_tree` to find out what is covering the bar.
