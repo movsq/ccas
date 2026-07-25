@@ -4,6 +4,36 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 `CLAUDE_CONFIG_DIR` of its own. `HANDOFF.md` has the narrative history and every
 bug found on the real system; this file is the rules that must not be broken.
 
+## Start here
+
+1. `python -m pytest` (~206 tests, under a second). They are the specification —
+   every rule below is pinned by one, and the docstrings say which bug it was.
+2. `ccs doctor` — is the live install healthy *before* you change anything?
+3. `HANDOFF.md` for why the code looks the way it does. This file is what must
+   not be broken; that one is the story.
+
+Python 3.14, **stdlib only** at runtime, no build step. The entry point is
+`bin/ccs` (`python -m ccas` does not work — there is no `__main__`), and
+`install.sh` stages the package to `~/.local/share/ccas` and drops a launcher at
+`~/.local/bin/ccs`.
+
+| module | what it owns |
+|---|---|
+| `paths.py` | every filesystem location, each `CCAS_*`-overridable. Nothing else may hardcode a path. |
+| `registry.py` | `accounts.json`: slugs, colours, display mode, `headless`, `default`. |
+| `accounts.py` | the account directory: create, `relink` (the never-write-to-`~/.claude` guarantee), `rename`, trash, `env_for`. |
+| `waybar.py` | the managed blocks in `config.jsonc` and `~/.bashrc`, plus reload/signal. |
+| `menu.py` | `menu.xml` + `history.tsv`, and `session_set_changed()` which gates reloads. |
+| `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
+| `label.py` | the bar label and `display_name()`. |
+| `pickers.py` | fzf vs fuzzel, and `is_gui()`. |
+| `launch.py` | resolving a launch request into a cwd and argv. |
+| `doctor.py` | the read-only audit. |
+| `cli.py` | argument dispatch and the command bodies. |
+
+One test file per module, same name. Add tests to the file that owns the
+behaviour, not to `test_cli.py` by default.
+
 ## Hard invariants
 
 **Never write to `~/.claude`.** CCAS only ever *reads* it; the symlinks live in
@@ -35,8 +65,9 @@ exported into launched sessions as a second guard.
 offer bought nothing that the passthrough does not. Any first argument beginning
 with `-` (`ccs -p …`, `-c`, `-r`) goes to the real `claude` under the resolved
 runner account, and `ccs -- mcp list` is the escape for claude's own subcommands,
-which would otherwise read as `ccs` commands. Whatever is added to `main()`'s dispatch, those two branches must
-stay ahead of the account-slug lookup and behind the `--gui` strip.
+which would otherwise read as `ccs` commands. Whatever is added to `main()`'s
+dispatch, those two branches must stay ahead of the account-slug lookup and
+behind the `--gui` strip.
 
 **Never delete.** Everything moves to `~/.claude_trash/` (global CLAUDE.md rule).
 `install.sh` and `uninstall.sh` both obey this — do not "simplify" them to `rm`.
@@ -172,6 +203,9 @@ once already, back when the bashrc function was the terminal path.
   a stale install before suspecting the test.
 - `git remote origin` is `github.com/movsq/ccas` (private). Push when the user
   asks; the user set it up so work is not only on this disk.
+- `~/.bashrc` changes only reach **new** shells — which is why the terminal
+  entry point is `ccs`, not a shell function.
+- Update `HANDOFF.md` when behaviour changes — it is what the next session reads.
 
 ### Exercising a flow that would touch real state
 
@@ -194,9 +228,6 @@ The fake `claude` needs two cases: `auth login` writes
 pipe or `</dev/null` takes the **fuzzel** path and the run dies with no prompt.
 A pty makes it the terminal path. Then audit the result with `ccs doctor` — that
 is how the missing-`menu.xml` bug in `cmd_add` was found.
-- `~/.bashrc` changes only reach **new** shells — which is why the terminal
-  entry point is `ccs`, not a shell function.
-- Update `HANDOFF.md` when behaviour changes — it is what the next session reads.
 
 ## Commands
 
