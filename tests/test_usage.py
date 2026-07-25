@@ -1,0 +1,213 @@
+import importlib
+import json
+
+import ccas.paths as paths
+import ccas.usage as usage
+
+
+def env(monkeypatch, tmp_path):
+    monkeypatch.setenv("CCAS_HOME", str(tmp_path / "claude"))
+    monkeypatch.setenv("CCAS_ACCOUNTS_ROOT", str(tmp_path / "accts"))
+    monkeypatch.setenv("CCAS_NO_RELOAD", "1")
+    importlib.reload(paths)
+    (tmp_path / "claude").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "accts" / "work").mkdir(parents=True, exist_ok=True)
+    return tmp_path
+
+
+def statusline(five=(94.0, 1785000600), seven=(19.0, 1785229200)):
+    limits = {}
+    if five:
+        limits["five_hour"] = {"used_percentage": five[0], "resets_at": five[1]}
+    if seven:
+        limits["seven_day"] = {"used_percentage": seven[0], "resets_at": seven[1]}
+    return {"rate_limits": limits}
+
+
+# ── the two input shapes ──────────────────────────────────────────────────────
+
+def test_both_shapes_normalise_to_the_same_reading():
+    """The statusline gives 0-100 under used_percentage and epoch seconds; the
+    .claude.json cache gives 0-100 under utilization and an ISO 8601 string with
+    a Z and fractional seconds. One fact, two shapes; only this module sees both.
+    """
+    hook = usage.from_statusline(statusline(), now=1784999999.0)
+    cache = usage.from_cache({"cachedUsageUtilization": {
+        "fetchedAtMs": 1784999999000,
+        "utilization": {
+            "five_hour": {"utilization": 94, "resets_at": "2026-07-25T17:30:00.266410Z"},
+            "seven_day": {"utilization": 19, "resets_at": "2026-07-28T09:00:00Z"}}}})
+    assert hook["five_hour"] == {"percent": 94.0, "resets_at": 1785000600}
+    assert cache["five_hour"] == {"percent": 94.0, "resets_at": 1785000600}
+    assert hook["fetched_at"] == cache["fetched_at"] == 1784999999.0
+    assert hook["source"] == "statusline" and cache["source"] == "cache"
+
+
+def test_a_window_may_be_independently_absent():
+    """The docs are explicit that five_hour and seven_day each come and go."""
+    reading = usage.from_statusline(statusline(seven=None), now=1.0)
+    assert reading["five_hour"] is not None
+    assert reading["seven_day"] is None
+
+
+def test_a_payload_without_rate_limits_is_not_a_reading():
+    """Before the first API response, and for non-subscribers, the key is simply
+    absent — which must not be mistaken for "no quota used"."""
+    assert usage.from_statusline({}, now=1.0) is None
+    assert usage.from_statusline({"rate_limits": {}}, now=1.0) is None
+    assert usage.from_cache({}) is None
+
+
+# ── classification ────────────────────────────────────────────────────────────
+
+def test_a_future_reset_bounds_the_percentage():
+    reading = usage.from_statusline(statusline(five=(94.0, 2000)), now=1000.0)
+    state = usage.state(reading, "five_hour", now=1500.0)
+    assert state.kind == usage.BOUNDED
+    assert state.percent == 94.0
+
+
+def test_a_past_reset_means_the_window_rolled_over():
+    """No age cutoff anywhere: a 5-hour reading older than five hours must have
+    a reset in the past, so staleness and rollover are the same test."""
+    reading = usage.from_statusline(statusline(five=(94.0, 2000)), now=1000.0)
+    assert usage.state(reading, "five_hour", now=999999.0).kind == usage.OPEN
+    assert usage.state(None, "five_hour", now=1.0).kind == usage.ABSENT
+
+
+# ── recording ─────────────────────────────────────────────────────────────────
+
+def test_record_writes_the_reading_into_the_account_directory(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    assert usage.record("work", statusline(), now=10.0) is True
+    written = json.loads((paths.account_dir("work") / paths.USAGE_FILE).read_text())
+    assert written["five_hour"]["percent"] == 94.0
+    assert written["fetched_at"] == 10.0
+
+
+def test_an_unchanged_reading_is_not_rewritten(monkeypatch, tmp_path):
+    """The statusline fires every few hundred ms and utilisation moves every few
+    minutes. Writing every time would be thousands of writes an hour — and the
+    signal that rides on a write would be thousands of pkills."""
+    env(monkeypatch, tmp_path)
+    usage.record("work", statusline(), now=10.0)
+    path = paths.account_dir("work") / paths.USAGE_FILE
+    before = path.stat().st_mtime_ns
+    assert usage.record("work", statusline(), now=99.0) is False
+    assert path.stat().st_mtime_ns == before
+    # fetched_at stays the moment the reading was first seen, not the last tick.
+    assert json.loads(path.read_text())["fetched_at"] == 10.0
+
+
+def test_an_empty_payload_never_clobbers_a_good_reading(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    usage.record("work", statusline(), now=10.0)
+    assert usage.record("work", {}, now=20.0) is False
+    written = json.loads((paths.account_dir("work") / paths.USAGE_FILE).read_text())
+    assert written["five_hour"]["percent"] == 94.0
+
+
+# ── which account, and the invariant ──────────────────────────────────────────
+
+def test_the_default_account_is_not_an_account(monkeypatch, tmp_path):
+    """CLAUDE_CONFIG_DIR unset, or pointing at ~/.claude, is the default account.
+    settings.json is shared, so the hook fires there too — and recording there
+    would mean writing inside ~/.claude, which nothing in CCAS may ever do."""
+    env(monkeypatch, tmp_path)
+    assert usage.account_slug({}) is None
+    assert usage.account_slug({"CLAUDE_CONFIG_DIR": str(paths.claude_home())}) is None
+    assert usage.account_slug(
+        {"CLAUDE_CONFIG_DIR": str(paths.claude_home() / "projects")}) is None
+
+
+def test_an_account_directory_resolves_to_its_slug(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    assert usage.account_slug(
+        {"CLAUDE_CONFIG_DIR": str(paths.account_dir("work"))}) == "work"
+    assert usage.account_slug(
+        {"CLAUDE_CONFIG_DIR": str(paths.account_dir("work")) + "/"}) == "work"
+    assert usage.account_slug({"CLAUDE_CONFIG_DIR": str(tmp_path)}) is None
+
+
+# ── reading back ──────────────────────────────────────────────────────────────
+
+def test_read_prefers_whichever_source_is_fresher(monkeypatch, tmp_path):
+    """A `/usage` run leaves a cache behind for an account whose hook never
+    fired; a wired hook must not then be dragged backwards by that old cache."""
+    env(monkeypatch, tmp_path)
+    directory = paths.account_dir("work")
+    (directory / ".claude.json").write_text(json.dumps({"cachedUsageUtilization": {
+        "fetchedAtMs": 5000, "utilization": {
+            "five_hour": {"utilization": 11, "resets_at": "2026-07-25T17:30:00Z"}}}}))
+
+    assert usage.read("work")["five_hour"]["percent"] == 11.0   # cache alone
+
+    usage.record("work", statusline(five=(94.0, 1785000600)), now=1.0)
+    assert usage.read("work")["five_hour"]["percent"] == 11.0   # cache is fresher
+
+    usage.record("work", statusline(five=(96.0, 1785000600)), now=6000.0)
+    assert usage.read("work")["five_hour"]["percent"] == 96.0   # hook is fresher
+
+
+def test_read_of_an_account_with_nothing_recorded(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    assert usage.read("work") is None
+
+
+# ── formatting ────────────────────────────────────────────────────────────────
+
+def test_the_bar_shows_the_clock_coloured_by_pressure():
+    reading = usage.from_statusline(statusline(five=(94.0, 2000), seven=None), now=0)
+    text, attrs = usage.bar(reading, now=1000.0)
+    assert text == usage.reset_clock(2000)
+    assert attrs == f"color='{usage.PEACH}'"
+
+    quiet = usage.from_statusline(statusline(five=(12.0, 2000), seven=None), now=0)
+    assert usage.bar(quiet, now=1000.0)[1] == f"alpha='{usage.DIM}'"
+
+
+def test_an_open_or_absent_window_puts_nothing_on_the_bar():
+    """No pressure and no data both mean nothing to warn about. The difference
+    between them is said in words, in the picker and in `ccs doctor`."""
+    rolled = usage.from_statusline(statusline(five=(94.0, 2000), seven=None), now=0)
+    assert usage.bar(rolled, now=999999.0) is None
+    assert usage.bar(None, now=1000.0) is None
+
+
+def test_the_seven_day_window_takes_over_only_when_it_binds():
+    """Its reset is days away, so the clock is not the actionable fact there."""
+    both = usage.from_statusline(statusline(five=(40.0, 2000), seven=(94.0, 900000)), now=0)
+    assert usage.bar(both, now=1000.0) == ("7d 94%", f"color='{usage.RED}'")
+
+    below = usage.from_statusline(statusline(five=(40.0, 2000), seven=(82.0, 900000)), now=0)
+    assert usage.bar(below, now=1000.0)[0] == usage.reset_clock(2000)
+
+    outranked = usage.from_statusline(statusline(five=(97.0, 2000), seven=(94.0, 900000)), now=0)
+    assert usage.bar(outranked, now=1000.0)[0] == usage.reset_clock(2000)
+
+
+def test_the_lines_name_the_state_in_words():
+    bounded = usage.from_statusline(statusline(five=(94.0, 2000), seven=None), now=0)
+    assert usage.lines(bounded, now=1000.0) == [
+        f"5h ≥94% · clears {usage.reset_time(2000, 1000.0)}"]
+    assert usage.lines(bounded, now=999999.0) == ["5h window open"]
+    assert usage.lines(None, now=1000.0) == [usage.NOT_WIRED]
+
+
+def test_a_binding_seven_day_window_earns_its_own_line():
+    reading = usage.from_statusline(statusline(five=(94.0, 2000), seven=(91.0, 900000)), now=0)
+    assert usage.lines(reading, now=1000.0)[1] == \
+        f"7d ≥91% · clears {usage.reset_time(900000, 1000.0)}"
+
+    quiet = usage.from_statusline(statusline(five=(94.0, 2000), seven=(19.0, 900000)), now=0)
+    assert len(usage.lines(quiet, now=1000.0)) == 1
+
+
+def test_reset_time_names_the_day_only_when_it_is_another_one():
+    """A 5-hour window can cross midnight and a 7-day one always lands on
+    another day, so a bare %H:%M would be ambiguous exactly when it matters."""
+    import time as _time
+    noon = _time.mktime((2026, 7, 25, 12, 0, 0, 0, 0, -1))
+    assert usage.reset_time(noon + 3600, noon) == "13:00"
+    assert usage.reset_time(noon + 86400, noon) == _time.strftime(
+        "%a %H:%M", _time.localtime(noon + 86400))
