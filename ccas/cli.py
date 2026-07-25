@@ -144,7 +144,7 @@ def cmd_render(slug: str) -> int:
     account = registry.find(reg, slug)
     if account is None:
         return 1
-    print(label.render(account, registry.index_of(reg, slug)))
+    print(label.render(account, registry.index_of(reg, slug), usage.read(slug)))
     return 0
 
 

@@ -1,4 +1,5 @@
 import importlib
+import time
 import io
 import json
 import types
@@ -1020,3 +1021,17 @@ def test_statusline_signals_the_bar_only_when_the_reading_changed(monkeypatch, t
     _feed(monkeypatch, PAYLOAD, paths.account_dir("work"))
     assert cli.main(["statusline"]) == 0
     assert fired == [signal], "an unchanged reading is not news for the bar"
+
+
+def test_render_puts_the_recorded_reading_on_the_bar(monkeypatch):
+    """The 30 s tick is what keeps the clock on screen when no signal fired."""
+    make_account()
+    payload = json.dumps({"rate_limits": {"five_hour": {
+        "used_percentage": 94.0, "resets_at": time.time() + 3600}}})
+    _feed(monkeypatch, payload, paths.account_dir("work"))
+    cli.main(["statusline"])
+
+    out = io.StringIO()
+    monkeypatch.setattr(cli.sys, "stdout", out)
+    assert cli.main(["render", "work"]) == 0
+    assert time.strftime("%H:%M", time.localtime(time.time() + 3600)) in out.getvalue()

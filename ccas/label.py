@@ -2,6 +2,9 @@
 from xml.sax.saxutils import escape
 
 from . import paths
+# The function, not the module: `usage` is what the reading is called at every
+# call site, and the parameter should be able to keep that name.
+from .usage import bar as usage_bar
 
 ICON_SIZE = "150%"
 # The glyph sits high in the font, so at x-large it reads as floating above the
@@ -31,16 +34,26 @@ def display_name(account: dict) -> str:
     return account.get("nickname") or account["email"]
 
 
-def render(account: dict, index: int) -> str:
+def render(account: dict, index: int, usage=None, now=None) -> str:
+    """The bar label: the glyph, whatever the display mode asks for, and — when
+    the 5-hour window is bounded — the clock it clears at, coloured by pressure.
+
+    `usage` is a reading from usage.read(); None renders the bar as it was
+    before the feature existed, which is also what an open window renders as.
+    """
     color = paths.PALETTE[account["color"]][1]
     if account["hide_icon"]:
         icon = f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' alpha='1'>{paths.GLYPH}</span>"
     else:
         icon = f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' color='{color}'>{paths.GLYPH}</span>"
 
+    token = usage_bar(usage, now)
+    token = (f"<span size='{TEXT_SIZE}' {token[1]}>{pango_escape(token[0])}</span>"
+             if token else "")
+
     mode = account["display"]
     if mode == "icon only":
-        return icon
+        return f"{icon} {token}" if token else icon
     if mode == "index":
         text = str(index)
     elif mode == "claude code":
@@ -51,7 +64,10 @@ def render(account: dict, index: int) -> str:
         # email address. display_name keeps its fallback for the menu title and
         # the account chooser, where a blank row would be unpickable.
         text = account.get("nickname") or ""
-    return f"{icon} <span size='{TEXT_SIZE}'>{pango_escape(text)}</span>" if text else icon
+    if text:
+        return " ".join(filter(None, [
+            icon, f"<span size='{TEXT_SIZE}'>{pango_escape(text)}</span>", token]))
+    return f"{icon} {token}" if token else icon
 
 
 def check_invisible_warning(account: dict) -> bool:

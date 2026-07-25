@@ -1,4 +1,5 @@
 import ccas.label as label
+import ccas.usage as usage
 
 
 def account(**kw):
@@ -98,3 +99,42 @@ def test_the_state_marks_are_the_vetted_codepoints():
     re-checking the new glyph against that exact stack with pango-view."""
     assert label.MARK_ON == "●"
     assert label.MARK_OFF == "○"
+
+
+# ── the usage token ───────────────────────────────────────────────────────────
+
+def reading(percent=94.0, resets_at=2000):
+    return {"fetched_at": 0.0, "source": "statusline",
+            "five_hour": {"percent": percent, "resets_at": resets_at},
+            "seven_day": None}
+
+
+def test_every_display_mode_carries_the_usage_token():
+    """CCAS is an account chooser and the question it answers is a quota
+    question, so usage is the bar's subject — including in `icon only`."""
+    for mode in ("nickname", "index", "claude code", "icon only"):
+        rendered = label.render(account(display=mode), 1, reading(), now=1000.0)
+        assert usage.reset_clock(2000) in rendered
+        assert rendered.startswith("<span size='150%'")
+
+
+def test_the_token_follows_the_name_rather_than_replacing_it():
+    rendered = label.render(account(), 1, reading(), now=1000.0)
+    assert rendered.endswith(
+        f"<span size='110%'>work</span> "
+        f"<span size='110%' color='{usage.PEACH}'>{usage.reset_clock(2000)}</span>")
+
+
+def test_a_cleared_nickname_still_leaves_room_for_the_token():
+    rendered = label.render(account(nickname=""), 1, reading(), now=1000.0)
+    assert rendered == (
+        "<span size='150%' rise='-800' color='#f38ba8'>✻</span> "
+        f"<span size='110%' color='{usage.PEACH}'>{usage.reset_clock(2000)}</span>")
+
+
+def test_no_reading_renders_the_bar_exactly_as_before():
+    """Open and absent are both "nothing to warn about", and the label is a
+    warning device. The difference between them is said in words elsewhere."""
+    assert label.render(account(), 1, None, now=1000.0) == label.render(account(), 1)
+    rolled_over = label.render(account(), 1, reading(), now=999999.0)
+    assert rolled_over == label.render(account(), 1)
