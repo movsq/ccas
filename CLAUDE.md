@@ -127,6 +127,21 @@ one out from under the other.
 a code change that alters the XML will not reach the menus on disk. `ccs config`
 (what `install.sh` runs) is the unconditional rebuild of every account's menu.
 
+**The bar label is sized in pango markup, not CSS.** `label.ICON_SIZE`,
+`ICON_RISE` and `TEXT_SIZE` — a CSS `font-size` scales glyph and nickname
+together, which is never what is wanted. `ICON_RISE` is the non-obvious one:
+both runs share a baseline and `✻` carries more ink above it than a digit, so an
+enlarged glyph rides high beside its own label. Changing any of the three means
+re-checking the pair, and **measure it — do not eyeball it**. Render the exact
+markup with `pango-view --markup` and compare the two runs' ink extents; that
+works with the bar covered or off-screen, which `grim` does not. Recipe and
+constants table: `docs/waybar-setup.md`.
+
+**CCAS does not own `style.css`.** It writes the managed block in
+`config.jsonc` and nothing else. Spacing, hover and press feedback are hand-set
+per slug (`#custom-cc-<slug>`; GTK CSS has no prefix matching), documented in
+`docs/waybar-setup.md`. Back the file up before touching it — it is the user's.
+
 **Only use glyphs that survive the bar's font stack.** `style.css` here starts
 `font-family: FontAwesome, "JetBrainsMono Nerd Font Mono", monospace`, and
 FontAwesome wins for any codepoint it happens to cover. `☑` (U+2611) is in
