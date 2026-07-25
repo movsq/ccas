@@ -89,9 +89,27 @@ def test_shown_rows_map_to_the_matching_tsv_index():
     assert f'id="hist-{last}"' in xml
 
 
-def test_title_row_uses_nickname_then_email():
-    assert ">work<" in menu.build_xml(account(), [])
-    assert ">w@example.com<" in menu.build_xml(account(nickname=None), [])
+def test_the_email_heads_the_menu_and_the_nickname_sits_under_it():
+    """The email is what identifies the account; the nickname is only a label
+    for the bar, so it goes second and only when there is one."""
+    xml = menu.build_xml(account(), [])
+    assert xml.index(">w@example.com<") < xml.index(">work<")
+
+
+def test_no_nickname_row_when_unset():
+    xml = menu.build_xml(account(nickname=None), [])
+    assert ">w@example.com<" in xml
+    assert 'id="title-nickname"' not in xml
+    assert 'id="title-nickname"' in menu.build_xml(account(), [])
+
+
+def test_both_title_rows_are_unclickable():
+    xml = menu.build_xml(account(), [])
+    root = ET.fromstring(xml)
+    for item_id in ("title", "title-nickname"):
+        obj = root.find(f".//object[@id='{item_id}']")
+        sensitive = obj.find("property[@name='sensitive']")
+        assert sensitive is not None and sensitive.text == "False", item_id
 
 
 def test_display_mode_state_is_rendered_into_labels():

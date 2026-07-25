@@ -12,7 +12,6 @@ from xml.sax.saxutils import escape
 
 from . import paths
 from .history import format_row
-from .label import display_name
 
 
 def _item(item_id: str, text: str) -> str:
@@ -31,9 +30,9 @@ def _separator() -> str:
     )
 
 
-def _title(text: str) -> str:
+def _title(text: str, item_id: str = "title") -> str:
     return (
-        f'    <child><object class="GtkMenuItem" id="title">'
+        f'    <child><object class="GtkMenuItem" id="{item_id}">'
         f'<property name="visible">True</property>'
         f'<property name="sensitive">False</property>'
         f'<property name="label">{escape(text)}</property>'
@@ -91,8 +90,14 @@ def build_xml(account: dict, sessions) -> str:
         + _item("mng-remove", "Remove this account…")
     )
 
+    # The email identifies the account; the nickname is only a label for the
+    # bar, so it sits underneath and only appears when one is set.
+    heading = _title(account["email"])
+    if account.get("nickname"):
+        heading += _title(account["nickname"], "title-nickname")
+
     body = (
-        _title(display_name(account))
+        heading
         + _separator()
         + _item("new", "New session")
         + _item("last", "Resume last session")
