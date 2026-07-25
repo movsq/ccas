@@ -87,6 +87,9 @@ ccs work claude auth status
   `docs/superpowers/spike-waybar-menu.md`.
 - Colour, display mode and hide state are Pango markup in the `exec` output, so
   they refresh flicker-free via the per-module signal and need no CSS.
+- Styling the modules — spacing, hover, press feedback, glyph size — is set up
+  by hand once. CCAS writes the Waybar *config*, never your `style.css`.
+  See `docs/waybar-setup.md`.
 - History is rebuilt from scratch on every render — 219 sessions in about 10 ms,
   by regex over a 64 KB head rather than JSON parsing. There is no cache to go
   stale.

@@ -100,7 +100,9 @@ not capture is a value you cannot restore. A nickname was lost this way.
 
 ## Waybar facts, measured not assumed
 
-Established by the Task 0 spike (`docs/superpowers/spike-waybar-menu.md`):
+Established by the Task 0 spike (`docs/superpowers/spike-waybar-menu.md`);
+`docs/waybar-setup.md` is the user-facing version, plus the styling CCAS does
+*not* own.
 
 - Waybar **caches `menu-file` at startup**. Rewriting `menu.xml` changes nothing
   on screen until `killall -SIGUSR2 waybar`.
