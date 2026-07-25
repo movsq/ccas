@@ -1,5 +1,7 @@
 import importlib
+import io
 import json
+import types
 import pytest
 
 import ccas.paths as paths
@@ -911,3 +913,110 @@ def test_picking_the_dangerous_row_toggles_it(monkeypatch):
         lambda prompt, options, gui: next(o for o in options if "permissions" in o))
     assert cli.cmd_mode_menu("a", gui=False) == 0
     assert registry.find(registry.load(), "a")["dangerous"] is True
+
+
+# ── the statusline wrapper ────────────────────────────────────────────────────
+
+PAYLOAD = json.dumps({"rate_limits": {
+    "five_hour": {"used_percentage": 94.0, "resets_at": 1785000600}}})
+
+
+def _delegate(tmp_path, body):
+    path = tmp_path / "delegate.sh"
+    path.write_text("#!/bin/bash\n" + body, encoding="utf-8")
+    path.chmod(0o755)
+    return str(path)
+
+
+def _stdin(monkeypatch, text):
+    monkeypatch.setattr(cli.sys, "stdin",
+                        types.SimpleNamespace(buffer=io.BytesIO(text.encode())))
+
+
+def _feed(monkeypatch, text, config_dir):
+    _stdin(monkeypatch, text)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
+
+
+def test_statusline_records_under_the_account_it_was_run_for(monkeypatch, tmp_path):
+    make_account()
+    _feed(monkeypatch, PAYLOAD, paths.account_dir("work"))
+    assert cli.main(["statusline"]) == 0
+    written = json.loads((paths.account_dir("work") / paths.USAGE_FILE).read_text())
+    assert written["five_hour"]["percent"] == 94.0
+
+
+def test_statusline_under_the_default_account_writes_nothing(monkeypatch, tmp_path):
+    """settings.json is shared, so the hook fires for ~/.claude too — including
+    the session an agent is most likely running in. Nothing under ~/.claude may
+    ever be written by CCAS, and here that holds by construction."""
+    make_account()
+    home = paths.claude_home()
+    before = {p: p.stat().st_mtime_ns for p in home.rglob("*")}
+
+    for config_dir in (home, home / "projects"):
+        _feed(monkeypatch, PAYLOAD, config_dir)
+        assert cli.main(["statusline"]) == 0
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    _stdin(monkeypatch, PAYLOAD)
+    assert cli.main(["statusline"]) == 0
+
+    assert {p: p.stat().st_mtime_ns for p in home.rglob("*")} == before
+    assert not list(paths.accounts_root().rglob(paths.USAGE_FILE))
+
+
+def test_statusline_hands_the_delegate_the_same_bytes_and_its_output_back(
+        monkeypatch, tmp_path, capfd):
+    make_account()
+    _feed(monkeypatch, PAYLOAD, paths.account_dir("work"))
+    echo = _delegate(tmp_path, f"cat > {tmp_path}/seen.json\necho -n 'my prompt'\n")
+    assert cli.main(["statusline", echo]) == 0
+    assert capfd.readouterr().out == "my prompt"
+    assert (tmp_path / "seen.json").read_text() == PAYLOAD
+
+
+def test_statusline_passes_the_delegate_its_own_arguments(monkeypatch, tmp_path, capfd):
+    make_account()
+    _feed(monkeypatch, PAYLOAD, paths.account_dir("work"))
+    args = _delegate(tmp_path, "echo -n \"$1/$2\"\n")
+    assert cli.main(["statusline", args, "one", "two"]) == 0
+    assert capfd.readouterr().out == "one/two"
+
+
+def test_a_broken_delegate_still_leaves_the_recording(monkeypatch, tmp_path, capfd):
+    """The two halves are independent: the user's statusline is theirs and must
+    not be able to lose us a reading, and a lost reading must not blank it."""
+    make_account()
+    _feed(monkeypatch, PAYLOAD, paths.account_dir("work"))
+    assert cli.main(["statusline", str(tmp_path / "does-not-exist")]) != 0
+    capfd.readouterr()
+
+    _feed(monkeypatch, PAYLOAD, paths.account_dir("work"))
+    assert cli.main(["statusline", _delegate(tmp_path, "exit 3")]) == 3
+    assert json.loads((paths.account_dir("work") / paths.USAGE_FILE).read_text())
+
+
+def test_garbage_on_stdin_does_not_break_the_statusline(monkeypatch, tmp_path, capfd):
+    """A statusline that raises is visible in every session; recording is the
+    optional half of this command."""
+    make_account()
+    _feed(monkeypatch, "not json at all", paths.account_dir("work"))
+    assert cli.main(["statusline", _delegate(tmp_path, "echo -n ok")]) == 0
+    assert capfd.readouterr().out == "ok"
+
+
+def test_statusline_signals_the_bar_only_when_the_reading_changed(monkeypatch, tmp_path):
+    """A per-module signal repaints the label and never rebuilds the bar — but
+    the hook fires every few hundred ms, so it may only ride on a real change."""
+    make_account()
+    fired = []
+    monkeypatch.setattr(cli.waybar, "signal", lambda n: fired.append(n))
+    signal = registry.find(registry.load(), "work")["signal"]
+
+    _feed(monkeypatch, PAYLOAD, paths.account_dir("work"))
+    assert cli.main(["statusline"]) == 0
+    assert fired == [signal]
+
+    _feed(monkeypatch, PAYLOAD, paths.account_dir("work"))
+    assert cli.main(["statusline"]) == 0
+    assert fired == [signal], "an unchanged reading is not news for the bar"

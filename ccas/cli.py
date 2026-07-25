@@ -1,10 +1,11 @@
 """Argument dispatch."""
+import json
 import os
 import subprocess
 import sys
 
 from . import (accounts, doctor, history, label, launch, paths, pickers,
-               registry, waybar)
+               registry, usage, waybar)
 
 
 # `claude <args>` normally resolves an account, because almost everything it can
@@ -145,6 +146,43 @@ def cmd_render(slug: str) -> int:
         return 1
     print(label.render(account, registry.index_of(reg, slug)))
     return 0
+
+
+def cmd_statusline(args) -> int:
+    """Record the usage numbers Claude Code hands the statusline, then delegate.
+
+    Wired by the user, once, in ~/.claude/settings.json — CCAS cannot write that
+    file, because every account's settings.json is a symlink to it:
+
+        "statusLine": {"type": "command",
+                       "command": "…/ccs statusline …/statusline.sh"}
+
+    A wrapper, not a replacement: the user already had a statusline and this
+    must not cost them it. So the delegate gets the same bytes on stdin, its
+    stdout goes out verbatim, and its exit code is ours. No timeout — a hung
+    delegate hangs identically without the wrapper.
+
+    Recording is the optional half and swallows everything: a statusline that
+    raises is visible in every session, in every prompt, until it is fixed.
+    """
+    data = sys.stdin.buffer.read()
+    try:
+        slug = usage.account_slug()
+        if slug and usage.record(slug, json.loads(data.decode("utf-8", "replace"))):
+            account = registry.find(registry.load(), slug)
+            if account:
+                # Label only, never the menu, and only on a real change.
+                waybar.signal(account["signal"])
+    except Exception:  # noqa: BLE001 - see the docstring
+        pass
+
+    if not args:
+        return 0
+    try:
+        return subprocess.run([args[0], *args[1:]], input=data, check=False).returncode
+    except OSError as exc:
+        print(f"ccs statusline: {args[0]}: {exc.strerror}", file=sys.stderr)
+        return 127
 
 
 def cmd_list() -> int:
@@ -453,6 +491,8 @@ def main(argv) -> int:
         for slug in targets:
             accounts.relink(slug)
         return 0
+    if command == "statusline":
+        return cmd_statusline(rest)
     if command == "render":
         return cmd_render(rest[0]) if rest else 1
     if command == "config":
