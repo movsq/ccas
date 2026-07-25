@@ -242,9 +242,12 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     short = history.abbreviate(cwd)
     reg = registry.load()
     account = registry.find(reg, slug)
-    # Same row, same marks as the Waybar menu — this is the terminal way in.
-    mark = menu.MARK_ON if account and account.get("headless") else menu.MARK_OFF
-    headless_row = f"{mark} Headless runner"
+    # Same marks as the Waybar menu, but the wording says what picking it does.
+    # Sat among four verbs in a flat fzf list, a bare "○ Headless runner" reads
+    # as a status line rather than something you can act on.
+    headless_row = (f"{menu.MARK_ON} Headless runner — pick to clear"
+                    if account and account.get("headless")
+                    else f"{menu.MARK_OFF} Select as headless runner")
     options = [f"New here  ({short})", f"Resume last in  {short}",
                f"History in  {short}…", "All projects…", headless_row]
     choice = pickers.choose("mode", options, gui)

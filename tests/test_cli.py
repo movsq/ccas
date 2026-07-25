@@ -484,16 +484,19 @@ def test_mode_menu_offers_the_headless_runner_and_shows_its_state(monkeypatch):
 
     def fake_choose(prompt, options, gui):
         seen.append(options)
-        return next(o for o in options if "Headless runner" in o)
+        return next(o for o in options if "headless runner" in o.lower())
 
     monkeypatch.setattr(cli.pickers, "choose", fake_choose)
 
     assert cli.cmd_mode_menu("work", False) == 0
-    assert f"{cli.menu.MARK_OFF} Headless runner" in seen[0]
+    assert f"{cli.menu.MARK_OFF} Select as headless runner" in seen[0]
     assert registry.headless_slug(registry.load()) == "work"
 
     assert cli.cmd_mode_menu("work", False) == 0
-    assert f"{cli.menu.MARK_ON} Headless runner" in seen[1], "state is visible"
+    # The mark carries the state, but on its own it does not read as something
+    # you can pick — in a flat fzf list of verbs it looks like a status line.
+    # The wording has to say what picking it does, in both directions.
+    assert f"{cli.menu.MARK_ON} Headless runner — pick to clear" in seen[1]
     assert registry.headless_slug(registry.load()) is None, "picking it again clears"
 
 

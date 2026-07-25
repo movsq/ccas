@@ -207,9 +207,12 @@ the runner once and never think about it again. Choosing the marked account
 clears it, which is how the one-time prompt comes back.
 
 Three ways in, all the same toggle (`cli._toggle_headless`): the
-`○ Headless runner` row in the Waybar menu, the same row at the bottom of the
-terminal mode menu (`ccs <slug>` or bare `claude`, after the account pick), and
-`ccs headless [<slug>]` directly. The mode-menu row is checked **before** the
+`○ Headless runner` row in the Waybar menu, a row at the bottom of the terminal
+mode menu (`ccs <slug>` or bare `claude`, after the account pick), and
+`ccs headless [<slug>]` directly. The terminal row is worded
+`○ Select as headless runner` / `● Headless runner — pick to clear` rather than
+reusing the bar's label: among four verbs in a flat fzf list the mark alone read
+as a status line, not as something pickable (user feedback). The mode-menu row is checked **before** the
 launch branches, because `"All projects…"` is that dispatch's catch-all and would
 otherwise swallow it.
 
