@@ -282,6 +282,14 @@ def main(argv) -> int:
     command, rest = argv[0], argv[1:]
     gui = True if forced_gui else pickers.is_gui()
 
+    # `ccs -p "…"` in place of the old `claude()` shell function: anything that
+    # starts with a flag is claude's, not ours. `--` is the escape for claude's
+    # own subcommands (mcp, doctor, update), which read as ccs commands.
+    if command == "--":
+        return cmd_tty(rest, gui)
+    if command.startswith("-"):
+        return cmd_tty(argv, gui)
+
     if command == "list":
         return cmd_list()
     if command == "add":
@@ -339,7 +347,7 @@ def main(argv) -> int:
         for account in reg["accounts"]:
             menu.write(account, sessions)
         waybar.apply(reg)
-        waybar.apply_bashrc()
+        waybar.strip_bashrc()
         waybar.reload()
         return 0
     if command == "launch":

@@ -56,7 +56,7 @@ def test_install_is_idempotent_in_a_sandbox(tmp_path):
     assert (tmp_path / "bin" / "ccs").exists()
 
 
-def test_install_emits_the_placeholder_and_the_bashrc_function(tmp_path):
+def test_install_emits_the_placeholder_and_leaves_bare_claude_alone(tmp_path):
     env = dict(os.environ)
     env.update({
         "CCAS_HOME": str(tmp_path / "claude"),
@@ -77,8 +77,8 @@ def test_install_emits_the_placeholder_and_the_bashrc_function(tmp_path):
     assert proc.returncode == 0, proc.stderr
     assert "custom/cc-setup" in (tmp_path / "config.jsonc").read_text()
     bashrc = (tmp_path / "bashrc").read_text()
-    assert "claude()" in bashrc
-    assert "export EDITOR=vim" in bashrc, "the user's own bashrc must survive"
+    assert "claude()" not in bashrc, "`claude` is the user's, not ours; `ccs -p` is ours"
+    assert bashrc == "export EDITOR=vim\n", "the user's own bashrc must survive"
 
 
 def test_uninstall_restores_both_files_byte_for_byte(tmp_path):

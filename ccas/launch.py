@@ -2,8 +2,10 @@
 
 resolve() is deliberately side-effect free so it can be tested; run() is the
 thin layer that relinks, then either spawns kitty (GUI) or execs in place (TTY).
-Every argv here starts with the absolute claude binary path — a bare "claude"
-would re-enter the shell function from ~/.bashrc and loop forever.
+Every argv here starts with the absolute claude binary path. CCAS no longer
+writes the `claude()` shell function (`ccs -p …` replaced it), but a shell opened
+before that install still has the old one loaded, where a bare "claude" re-enters
+it and loops forever. Absolute path, always.
 """
 import os
 import subprocess

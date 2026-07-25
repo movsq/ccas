@@ -130,18 +130,33 @@ def test_generated_block_is_valid_json_once_comments_are_stripped(_isolate):
     assert not any(k.startswith("custom/cc-sep") for k in data), "no divider module"
 
 
-def test_bashrc_block_defines_a_recursion_safe_function():
-    block = waybar.bashrc_block()
-    assert "claude()" in block
-    assert "CCAS_INNER" in block
-    assert "command claude" in block
+def test_strip_bashrc_removes_a_legacy_claude_function():
+    """CCAS used to shadow `claude` with a shell function. `ccs -p` does the same
+    job without owning a binary the user did not offer, so an install now takes
+    the old block back out."""
+    legacy = (f"# {waybar.RULE}\n# {waybar.START}\nclaude() {{ :; }}\n"
+              f"# {waybar.END}\n# {waybar.RULE}\n")
+    paths.bashrc().write_text("export EDITOR=vim\n" + legacy, encoding="utf-8")
+    waybar.strip_bashrc()
+    text = paths.bashrc().read_text()
+    assert "claude()" not in text
+    assert text == "export EDITOR=vim\n", "the user's own bashrc must survive"
 
 
-def test_apply_bashrc_is_idempotent():
-    waybar.apply_bashrc()
-    once = paths.bashrc().read_text()
-    waybar.apply_bashrc()
-    assert paths.bashrc().read_text() == once
+def test_strip_bashrc_leaves_an_unmanaged_bashrc_alone():
+    """Nothing of ours in there means nothing to do — no rewrite, and no
+    .ccas-orig backup of a file we never touched."""
+    paths.bashrc().write_text("export EDITOR=vim\n", encoding="utf-8")
+    before = paths.bashrc().stat().st_mtime_ns
+    waybar.strip_bashrc()
+    assert paths.bashrc().stat().st_mtime_ns == before
+    assert not list(paths.bashrc().parent.glob("*.ccas-orig"))
+
+
+def test_strip_bashrc_does_not_create_a_missing_bashrc():
+    assert not paths.bashrc().exists()
+    waybar.strip_bashrc()
+    assert not paths.bashrc().exists()
 
 
 def test_reload_and_signal_are_suppressed_by_the_sandbox_flag(monkeypatch):
@@ -210,8 +225,13 @@ def test_stale_entries_from_an_earlier_layout_are_cleared(_isolate):
     assert data["modules-center"] == ["custom/cc-work"]
 
 
-def test_bashrc_function_does_not_force_gui_mode():
-    """The shell function is the terminal entry point: it must use fzf, not
-    fuzzel. --gui belongs only on waybar-generated commands."""
-    assert "--gui" not in waybar.bashrc_block()
-    assert "ccs tty" in waybar.bashrc_block()
+def test_generated_commands_all_force_gui_mode():
+    """--gui belongs on every waybar-generated command and nowhere else; the
+    terminal entry point (`ccs -p …`) must be free to pick fzf. Pinned because
+    the mistake was made once already, back when a bashrc function was the
+    terminal path — see test_cli's passthrough gui test for the other half."""
+    account = {"slug": "work", "signal": 1, "display": "index",
+               "color": 0, "hide_icon": False}
+    for command in waybar.module_config(account)["menu-actions"].values():
+        assert "--gui" in command, command
+    assert "--gui" in waybar.placeholder_config()["on-click"]

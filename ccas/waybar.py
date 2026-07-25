@@ -195,31 +195,24 @@ def strip(path, comment: str = "//") -> None:
     _atomic_write(path, text)
 
 
-def bashrc_block() -> str:
-    return (
-        f"# {RULE}\n"
-        f"# {START}\n"
-        "claude() {\n"
-        '  if [ -n "$CCAS_INNER" ]; then\n'
-        '    command claude "$@"\n'
-        "  else\n"
-        f'    {paths.ccs_bin()} tty "$@"\n'  # no --gui: this path is a terminal
-        "  fi\n"
-        "}\n"
-        f"# {END}\n"
-        f"# {RULE}\n"
-    )
+def strip_bashrc() -> None:
+    """Take out the `claude()` function older installs wrote.
 
-
-def apply_bashrc() -> None:
+    CCAS used to shadow `claude` so a bare invocation resolved an account. That
+    reached only new shells, and it is the whole reason bare `claude` must never
+    be called from inside the code. `ccs -p …` does the same job without owning a
+    binary the user did not offer, so the block is now removed rather than
+    written. Only rewrites when the block is really there: an unmanaged bashrc
+    keeps its mtime and never grows a backup of a file we never touched.
+    """
     path = paths.bashrc()
     if not path.exists():
-        path.write_text("", encoding="utf-8")
+        return
+    text = path.read_text(encoding="utf-8")
+    if START not in text:
+        return
     _backup_once(path)
-    text = _strip_text(path.read_text(encoding="utf-8"), "#")
-    if text and not text.endswith("\n"):
-        text += "\n"
-    _atomic_write(path, text + bashrc_block())
+    _atomic_write(path, _strip_text(text, "#"))
 
 
 def reload() -> None:

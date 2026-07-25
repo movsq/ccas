@@ -512,3 +512,53 @@ def test_mode_menu_still_launches_the_other_four_rows(monkeypatch):
         assert cli.cmd_mode_menu("work", False) == 0
     assert [c[1] for c in calls] == ["new", "last", "search", "new"]
     assert len(calls) == 4
+
+
+def test_a_leading_flag_is_passed_through_to_claude(monkeypatch):
+    """`ccs -p "hi"` replaces the `claude()` shell function. Owning the user's
+    `claude` bought nothing that this does not, and cost the recursion hazard."""
+    make_account("a")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    assert cli.main(["-p", "hi"]) == 0
+    argv, config_dir = runs[0]
+    assert argv[1:] == ["-p", "hi"]
+    assert argv[0].startswith("/"), "never a bare name; see paths.claude_bin"
+    assert config_dir.endswith("/a")
+
+
+def test_a_double_dash_passes_claude_subcommands_through(monkeypatch):
+    """`mcp`, `doctor`, `update` are claude subcommands but read as ccs ones, so
+    the non-flag case needs the explicit escape."""
+    make_account("a")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    assert cli.main(["--", "mcp", "list"]) == 0
+    assert runs[0][0][1:] == ["mcp", "list"]
+
+
+def test_the_gui_flag_still_comes_off_before_the_passthrough(monkeypatch):
+    make_account("a")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    assert cli.main(["--gui", "-p", "hi"]) == 0
+    assert runs[0][0][1:] == ["-p", "hi"], "--gui is ours, not claude's"
+
+
+def test_passthrough_with_no_accounts_fails(capsys):
+    assert cli.main(["-p", "hi"]) == 1
+
+
+def test_passthrough_does_not_force_gui_mode(monkeypatch):
+    """The other half of test_waybar's --gui test: `ccs -p` is typed at a real
+    terminal, so its prompts must use fzf. --gui is waybar's alone."""
+    make_account("a")
+    make_account("b")
+    _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.pickers, "is_gui", lambda: False)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    seen = []
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda prompt, options, gui: seen.append(gui) or options[0])
+    assert cli.main(["-p", "hi"]) == 0
+    assert seen == [False]
