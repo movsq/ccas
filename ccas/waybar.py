@@ -17,11 +17,9 @@ START = "═══ CCAS — managed block, start ═══"
 END = "═══ CCAS — managed block, end ═══"
 RULE = "═" * 70
 
-# The account icons live at the end of modules-left, just after the workspaces,
-# preceded by an em-dash divider. Appending them to modules-right instead put
-# them flush against the screen edge.
-SEP_NAME = "custom/cc-sep"
-HOST_LIST = "modules-left"
+# The account icons live in the centre group. Appending them to modules-right
+# put them flush against the screen edge.
+HOST_LIST = "modules-center"
 
 
 def _ccs() -> str:
@@ -70,22 +68,17 @@ def placeholder_config() -> dict:
     }
 
 
-def separator_config() -> dict:
-    return {"format": "—", "tooltip": False}
-
-
 def module_names(reg: dict):
     if not reg["accounts"]:
-        return [SEP_NAME, "custom/cc-setup"]
-    return [SEP_NAME] + [f"custom/cc-{a['slug']}" for a in reg["accounts"]]
+        return ["custom/cc-setup"]
+    return [f"custom/cc-{a['slug']}" for a in reg["accounts"]]
 
 
 def render_block(reg: dict) -> str:
-    modules = {SEP_NAME: separator_config()}
     if reg["accounts"]:
-        modules.update({f"custom/cc-{a['slug']}": module_config(a) for a in reg["accounts"]})
+        modules = {f"custom/cc-{a['slug']}": module_config(a) for a in reg["accounts"]}
     else:
-        modules["custom/cc-setup"] = placeholder_config()
+        modules = {"custom/cc-setup": placeholder_config()}
     body = ",\n".join(
         f'    {json.dumps(name)}: {json.dumps(cfg, indent=4, ensure_ascii=False)}'
         for name, cfg in modules.items()
@@ -120,17 +113,45 @@ def _patch_list(text: str, key: str, names) -> str:
     return re.sub(rf'"{re.escape(key)}"\s*:\s*(\[[^\]]*\])', repl, text, count=1)
 
 
+def _has_list(text: str, key: str) -> bool:
+    return re.search(rf'"{re.escape(key)}"\s*:\s*\[', text) is not None
+
+
+def _insert_empty_list(text: str, key: str) -> str:
+    """Add `"<key>": [],` after the opening brace when the config lacks it."""
+    lines = text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("{"):
+            lines.insert(i + 1, f'    "{key}": [],\n')
+            break
+    return "".join(lines)
+
+
+def _drop_empty_list(text: str, key: str) -> str:
+    """Remove `"<key>": [],` once it holds nothing.
+
+    Only ever fires on a list that is empty, and Waybar treats an absent group
+    and an empty one identically — so this cannot change how the bar renders.
+    It keeps uninstall byte-for-byte on configs that had no centre group.
+    """
+    return re.sub(rf'^[ \t]*"{re.escape(key)}"\s*:\s*\[\s*\],?[ \t]*\r?\n', "",
+                  text, count=1, flags=re.MULTILINE)
+
+
 def _patch_module_lists(text: str, names) -> str:
     """Put our modules in HOST_LIST and clear them from the other two.
 
-    Clearing the others matters on upgrade: an install that predates the move
-    left entries behind in modules-right, and a stale name Waybar cannot
-    resolve is a config error.
+    Clearing the others matters on upgrade: installs that predate a move leave
+    entries behind, and a module name Waybar cannot resolve is a config error.
     """
+    if names and not _has_list(text, HOST_LIST):
+        text = _insert_empty_list(text, HOST_LIST)
     text = _patch_list(text, HOST_LIST, names)
     for other in ("modules-left", "modules-center", "modules-right"):
         if other != HOST_LIST:
             text = _patch_list(text, other, [])
+    if not names:
+        text = _drop_empty_list(text, HOST_LIST)
     return text
 
 

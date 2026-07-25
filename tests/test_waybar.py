@@ -124,10 +124,10 @@ def test_generated_block_is_valid_json_once_comments_are_stripped(_isolate):
     data = json.loads(bare)
     assert data["custom/cc-personal"]["signal"] == 1
     assert data["custom/cc-work"]["signal"] == 2
-    assert data["modules-left"] == ["custom/launcher", waybar.SEP_NAME,
-                                    "custom/cc-personal", "custom/cc-work"]
+    assert data[waybar.HOST_LIST] == ["custom/cc-personal", "custom/cc-work"]
     assert data["modules-right"] == ["custom/stopwatch", "clock"], "must not sit at the edge"
-    assert data[waybar.SEP_NAME]["format"] == "—"
+    assert data["modules-left"] == ["custom/launcher"], "user's own groups untouched"
+    assert not any(k.startswith("custom/cc-sep") for k in data), "no divider module"
 
 
 def test_bashrc_block_defines_a_recursion_safe_function():
@@ -151,3 +151,60 @@ def test_reload_and_signal_are_suppressed_by_the_sandbox_flag(monkeypatch):
     waybar.reload()
     waybar.signal(3)
     assert called == []
+
+
+WITH_CENTER = """{
+    "modules-left": ["custom/launcher", "sway/workspaces"],
+    "modules-center": ["sway/mode"],
+    "modules-right": ["clock"]
+}
+"""
+
+
+def test_modules_are_added_to_an_existing_centre_group(_isolate):
+    _isolate.write_text(WITH_CENTER, encoding="utf-8")
+    waybar.apply(reg("work"))
+    data = json.loads("".join(
+        l for l in _isolate.read_text().splitlines(keepends=True)
+        if not l.strip().startswith("//")
+    ))
+    assert data["modules-center"] == ["sway/mode", "custom/cc-work"]
+
+
+def test_centre_group_is_created_when_the_config_lacks_one(_isolate):
+    """The fixture config has no modules-center; the modules must still land."""
+    waybar.apply(reg("work"))
+    data = json.loads("".join(
+        l for l in _isolate.read_text().splitlines(keepends=True)
+        if not l.strip().startswith("//")
+    ))
+    assert data["modules-center"] == ["custom/cc-work"]
+
+
+def test_strip_removes_a_centre_group_it_created(_isolate):
+    before = _isolate.read_text()
+    waybar.apply(reg("work"))
+    waybar.strip(paths.waybar_config())
+    assert _isolate.read_text() == before
+
+
+def test_strip_preserves_a_centre_group_the_user_had(_isolate):
+    _isolate.write_text(WITH_CENTER, encoding="utf-8")
+    before = _isolate.read_text()
+    waybar.apply(reg("work"))
+    waybar.strip(paths.waybar_config())
+    assert _isolate.read_text() == before
+
+
+def test_stale_entries_from_an_earlier_layout_are_cleared(_isolate):
+    _isolate.write_text(
+        '{\n    "modules-left": ["custom/launcher", "custom/cc-sep", "custom/cc-old"],\n'
+        '    "modules-right": ["clock", "custom/cc-setup"]\n}\n', encoding="utf-8")
+    waybar.apply(reg("work"))
+    data = json.loads("".join(
+        l for l in _isolate.read_text().splitlines(keepends=True)
+        if not l.strip().startswith("//")
+    ))
+    assert data["modules-left"] == ["custom/launcher"]
+    assert data["modules-right"] == ["clock"]
+    assert data["modules-center"] == ["custom/cc-work"]
