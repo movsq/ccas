@@ -167,19 +167,19 @@ own today — the same line already drawn around `style.css`.
 
 1. **The popup is no longer anchored at the pointer.** A GtkMenu opens where you
    clicked; fuzzel opens where fuzzel opens. Accepted deliberately, above.
-2. **Mouse-only navigation may be gone.** The GtkMenu is clickable end to end;
-   fuzzel is keyboard-first. Still **not measured**: the session was locked
-   (`swaylock`) when the implementation landed, so `grim` returned black and a
-   synthetic `swaymsg seat - cursor press` could not reach the picker past the
-   lock's input grab. What is known is documentary, not measured: fuzzel 1.14.1
-   carries a `--no-mouse` flag whose job is to *disable* mouse input, so it is on
-   by default. Settle it with a real click when the screen is unlocked, and add a
-   section to `docs/why.md` only if it turns out to be a regression.
+2. **Mouse-only navigation is not lost.** Measured on 2026-07-26, once the
+   screen was unlocked: pointing at a row highlights it and a left click selects
+   it and exits. The click was aimed at row *three* of five deliberately, so a
+   stray Enter — which commits the highlighted first row — could not be mistaken
+   for a pass; fuzzel printed `ROW-THREE`. So this is not the regression it was
+   written up as, and `docs/why.md` gets nothing.
 
-   The rows themselves are confirmed, without pixels: a stub `fuzzel` on `PATH`
+   The rows are confirmed twice over. Without pixels: a stub `fuzzel` on `PATH`
    in front of the installed `ccs --gui vsed` captured all ten rows, the prompt
    as the account's nickname, and the `Display as…` sub-prompt with the current
-   mode marked ●.
+   mode marked ●. With pixels: `grim` on the live picker shows `○` and `●`
+   rendering as a hollow ring and a filled dot of the same size — the pair
+   survives fuzzel's font stack as well as the bar's.
 3. **Colour and display are one prompt deeper** than a hover submenu. In exchange
    they become type-to-filter, and reachable from a terminal for the first time.
 

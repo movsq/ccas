@@ -221,6 +221,17 @@ once already, back when the bashrc function was the terminal path.
   `ccs render <slug>`, read `~/.config/waybar/config.jsonc`. `grim` plus PIL
   cropping gives you a screenshot; Waybar is on `HDMI-A-1` (x 2560–4480),
   `DP-1` is x 0–2560.
+- **Clicking something yourself: `swaymsg seat - cursor move`, never `cursor
+  set`.** `set` teleports the pointer — the cursor lands on the target and
+  `grim -c` proves it, but no motion event reaches a layer surface, so fuzzel
+  keeps highlighting the row it started on and the click that follows lands on
+  the wrong one. A relative `move` of a pixel or two delivers real motion; then
+  `cursor press button1` / `release button1` selects. Beware `move -1 0`: the
+  leading `-` is read as a swaymsg option. Locate the window by its **selection
+  bar** — the longest horizontal run of the highlight colour — rather than by
+  diffing before/after screenshots, which anything else moving on screen ruins.
+  Aim at a row that is *not* the highlighted first one, or a stray keypress is
+  indistinguishable from a successful click.
 - **`ccs` runs the installed copy, not this repo.** `install.sh` stages the
   package into `~/.local/share/ccas`, so any test that goes through the `ccs`
   command exercises the code as of the last install. Editing a module and then
