@@ -254,6 +254,7 @@ is how the missing-`menu.xml` bug in `cmd_add` was found.
 ```bash
 cd ~/ccas && python -m pytest    # ~206 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
+ccs                              # pick account → mode; Add is on the picker, Rename/Remove under Manage…
 ccs list                         # accounts
 ccs doctor                       # audit the four places that drift; rc 1 if any failed
 ccs config                       # force a rebuild of every menu.xml (render does not)
