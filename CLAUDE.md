@@ -90,6 +90,21 @@ reloaded itself every few minutes for nothing. Session *order* changing is not a
 reason to reload; a session *appearing* is. It must still return True when no
 snapshot exists at all, or an account with no history never gets a menu file.
 
+## The headless runner
+
+`claude <args>` resolves an account through `cli._runner_slug()`; read it before
+touching that path. Two rules there are load-bearing:
+
+- **Never prompt when `sys.stdin.isatty()` is false.** Pipes, scripts and cron
+  reach this code, and a prompt there blocks forever — the `is_gui` bug again.
+- `NO_ACCOUNT_ARGS` is a **deny**-list. Adding to it is safe; switching it to an
+  allow-list means an unknown flag silently runs under an account the user did
+  not choose.
+
+`headless` is a per-account bool kept exclusive by `registry.set_headless()`, so
+the menu stays a pure function of the account dict. Changing it rewrites *every*
+menu via `cli._refresh_all()`.
+
 ## GUI vs terminal
 
 `pickers.is_gui()` is a **fallback only**. Waybar inherits stdin from the
@@ -132,6 +147,7 @@ this exact mistake was made once already.
 cd ~/ccas && python -m pytest    # ~160 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs list                         # accounts
-ccs render <slug>                # force menu.xml + history.tsv rebuild
+ccs config                       # force a rebuild of every menu.xml (render does not)
+ccs headless [<slug>]            # show / toggle which account runs `claude -p`
 ./uninstall.sh [--purge]         # strip managed blocks; --purge also trashes ~/.cc-accounts
 ```

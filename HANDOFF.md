@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 164 tests green.
+**State:** built, installed, and working on the real system. 178 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -39,7 +39,7 @@ under the *default* account (no `CLAUDE_CONFIG_DIR`) refreshes that token
 itself. Compare the mtime before and after your own command instead; see
 `CLAUDE.md` for the snippet.
 
-Run the suite with `cd ~/ccas && python -m pytest` (164 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (178 passing, ~0.6 s).
 
 ---
 
@@ -87,6 +87,7 @@ These are all deliberate and committed. Do not "fix" them back.
 | 9 | A cleared nickname shows nothing on the bar, not the email | User preference. `display_name()` keeps the fallback where identity matters. |
 | 10 | The menu is headed by the email, with the nickname on a second row | The plan's single nickname-or-email title hid the address the account is actually identified by. |
 | 11 | The render tick writes `menu.xml`/`history.tsv` **only** when it is also going to reload | Reordering is not a change (see "The bar resetting itself"), and writing without reloading desynchronises the cached rows from the tsv the actions index. `ccs config` is the unconditional rebuild. |
+| 13 | `claude -p` resolves an account instead of silently using the default | User request. See "The headless runner" below. |
 | 12 | `Hide icon` is marked `●`/`○`, not `☑`/`☐` | FontAwesome sits first in the bar's font stack and covers U+2611 but not U+2610. See "The Hide icon box never looked checked". |
 
 ---
@@ -191,6 +192,36 @@ at different sessions. Write and reload together, or not at all.
 an account with no history would otherwise compare empty-to-empty and never get
 its `menu.xml` written. That regression was caught by
 `test_render_regenerates_the_menu_file`.
+
+### The headless runner
+
+`claude -p "say hi"` ran under `reg["default"]` with nothing showing which
+account that was. Requested shape, and the one implemented: mark an account as
+the runner once, from the `○ Headless runner` menu row or `ccs headless <slug>`,
+and never think about it again. Clicking the marked account clears it, which is
+how the one-time prompt comes back.
+
+`cli._runner_slug()` resolves, in order:
+
+1. `CCAS_ACCOUNT=<slug>` — one run only, never remembered.
+2. `NO_ACCOUNT_ARGS` (`--version`, `doctor`, `update`, …) → the default account,
+   no prompt. A **deny**-list on purpose: an unrecognised argument is far more
+   likely to start a session than not, and erring the other way runs it under an
+   account the user never chose.
+3. The marked runner, if there is one.
+4. **stdin is not a terminal** → the default account, silently. `echo hi | claude
+   -p`, scripts and cron must never meet a prompt; that is the same shape as the
+   `is_gui` bug — blocking on a stdin nobody can type into.
+5. Otherwise ask via fzf, remember the answer, and continue. Asked even when only
+   one account exists: the point is knowing which one answered.
+
+`headless` is a per-account boolean kept exclusive by `registry.set_headless()`,
+not a top-level key, so `menu.build_xml()` stays a pure function of the account
+dict it renders — the same shape as `hide_icon`. `registry.load()` backfills it
+for registries written before it existed, and `remove()` clears it with the
+account so a deleted slug cannot be resolved later. Setting it rewrites **every**
+account's menu (`cli._refresh_all`), because turning it on for one turns it off
+for the rest.
 
 ### The Hide icon box never looked checked
 
