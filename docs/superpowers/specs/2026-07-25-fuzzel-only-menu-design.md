@@ -78,6 +78,16 @@ grouping order: launch verbs, then appearance, then the two runner toggles, then
 `Manage…`; `Hide icon` is a mark row that toggles in place, like `headless` and
 `dangerous` beside it. All three use `MARK_ON`/`MARK_OFF`, the same as today.
 
+**The launch verbs are not shared, and this section was read as saying they
+were.** Corrected 2026-07-26, after the merged screen shipped with the
+terminal's rows on the bar. `cmd_mode_menu` scopes them to `os.getcwd()`, which
+is the user's directory from a terminal and *Waybar's* from a click, so under
+`gui` the GtkMenu's directory-free three — `New session`, `Resume last session`,
+`Resume from history…` — stand in for `New here (…)`, `Resume last in …`,
+`History in ……` and `All projects…`, and `launch.run` is passed `cwd=None`.
+Everything below the verbs is identical from both doors. `docs/why.md` has what
+the wrong version did.
+
 The picker's prompt becomes `label.display_name(account)` — the identity that
 was the menu's title row. Considered and rejected: passing the email through
 fuzzel's `--mesg`, which would mean a new parameter on `pickers.choose()` for a

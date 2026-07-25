@@ -396,6 +396,33 @@ own font, the clock run inks rows 16–25 — the nickname's exact band — and 
 glyph stays at 15–26 whether the third run is there or not. `ICON_RISE` did not
 move.
 
+### The bar's picker inherited a "here" the bar does not have
+
+Retiring `menu.xml` converged two screens onto one, and the merge went the wrong
+way. The plan says to splice the GtkMenu's three appearance rows *into* the
+terminal's list, so what a bar click opened was the terminal screen with three
+rows added: `New here  (~)`, `Resume last in  ~`, `History in  ~…`, `All
+projects…`. The GtkMenu's own verbs — `New session`, `Resume last session`,
+`Resume from history` — never named a directory, and that was not an oversight.
+
+`cmd_mode_menu` takes its scope from `os.getcwd()`. Under a terminal that is the
+directory the user is standing in, which is the entire point of that screen.
+Under a bar click it is *Waybar's* working directory, `~` or wherever the
+compositor was started — a directory the user never chose and cannot see. Two of
+the three labels were also lying: `launch.resolve` filters its rows on cwd only
+`if cwd is not None and not gui`, so `Resume last in ~` resumed the globally
+newest session and `History in ~…` listed every project. Only `New here` obeyed
+the label, and it obeyed it by starting a session in `~`.
+
+So the launch verbs are now the one part of the screen that differs by door:
+`gui` gets the GtkMenu's three, and is handed `scope = None` so `resolve()` is
+told what it was already doing. Everything below them — appearance, the two
+runner toggles, `Manage…` — is identical from both, in the GtkMenu's grouping.
+
+The general shape of this: a screen that merges two callers inherits the
+assumptions of whichever one it was copied from, and `os.getcwd()` is the
+assumption that survives a merge invisibly, because it is never passed in.
+
 ---
 
 ---

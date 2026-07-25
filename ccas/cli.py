@@ -385,9 +385,19 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
                   else f"{label.MARK_OFF} Skip permissions (dangerous)")
     hide_row = (f"{label.MARK_ON if account and account['hide_icon'] else label.MARK_OFF}"
                 " Hide icon")
+    # The launch verbs are the one part of this screen that is not the same from
+    # both doors. A terminal has a cwd the user chose and scoping to it is the
+    # point; a bar click has Waybar's cwd — `~`, wherever the compositor started
+    # it — which is nobody's "here". So the bar gets the GtkMenu's three verbs,
+    # which never mentioned a directory, and `resolve()` (which already ignores
+    # cwd under gui) is told so by being handed None.
+    scope = None if gui else cwd
+    launch_rows = (["New session", "Resume last session", "Resume from history…"]
+                   if gui else
+                   [f"New here  ({short})", f"Resume last in  {short}",
+                    f"History in  {short}…", "All projects…"])
     # The Waybar menu's grouping: launch verbs, appearance, runner toggles, manage.
-    options = [f"New here  ({short})", f"Resume last in  {short}",
-               f"History in  {short}…", "All projects…",
+    options = [*launch_rows,
                "Display as…", hide_row, "Color…",
                headless_row, danger_row, "Manage…"]
     # The account's identity, which used to be the menu's title row — a picker
@@ -413,12 +423,12 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     if choice == "Manage…":
         return cmd_manage_menu(slug, gui)
     if choice.startswith("New here"):
-        return launch.run(slug, "new", cwd, gui, cwd)
-    if choice.startswith("Resume last"):
-        return launch.run(slug, "last", None, gui, cwd)
-    if choice.startswith("History in"):
-        return launch.run(slug, "search", None, gui, cwd)
-    return launch.run(slug, "new", None, gui, None)
+        return launch.run(slug, "new", cwd, gui, scope)
+    if choice.startswith("Resume last"):  # …in <dir>, or the bar's …session
+        return launch.run(slug, "last", None, gui, scope)
+    if choice.startswith("History in") or choice == "Resume from history…":
+        return launch.run(slug, "search", None, gui, scope)
+    return launch.run(slug, "new", None, gui, None)  # All projects… / New session
 
 
 def cmd_manage_menu(slug: str, gui: bool) -> int:

@@ -452,6 +452,43 @@ def test_mode_menu_still_launches_the_other_four_rows(monkeypatch):
     assert len(calls) == 4
 
 
+def test_mode_menu_from_the_bar_uses_the_dropdown_verbs(monkeypatch):
+    """A bar click has no "here". `os.getcwd()` there is Waybar's directory —
+    `~`, wherever the compositor started it — so the terminal's cwd-scoped rows
+    offered to start a session in, and search the history of, a directory the
+    user never chose. The GtkMenu the picker replaced never had them.
+    """
+    make_account("work")
+    monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
+    seen = []
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda p, o, g, note=None: seen.append(o))
+
+    cli.cmd_mode_menu("work", gui=True)
+    assert seen[0][:3] == ["New session", "Resume last session",
+                           "Resume from history…"]
+    assert not [o for o in seen[0] if "here" in o or o == "All projects…"]
+
+    # The terminal keeps them: there the cwd is the user's own, and scoping to
+    # it is the whole reason that screen is shaped the way it is.
+    cli.cmd_mode_menu("work", gui=False)
+    assert seen[1][0].startswith("New here")
+    assert "All projects…" in seen[1]
+
+
+def test_the_bar_verbs_launch_unscoped(monkeypatch):
+    """The labels promise the whole history, not this directory's slice, so no
+    cwd may reach `launch.run` — `resolve()` filters on it under a terminal."""
+    make_account("work")
+    calls = []
+    monkeypatch.setattr(cli.launch, "run", lambda *a, **k: calls.append(a) or 0)
+    for i in range(3):
+        monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, i=i, note=None: o[i])
+        assert cli.cmd_mode_menu("work", gui=True) == 0
+    assert [(c[1], c[2], c[4]) for c in calls] == [
+        ("new", None, None), ("last", None, None), ("search", None, None)]
+
+
 def test_mode_menu_offers_display_colour_and_hide(monkeypatch):
     """The three settings that only the Waybar menu could reach. Once the bar's
     click opens this picker instead of a GtkMenu, this is the only way in."""
