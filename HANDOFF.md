@@ -55,6 +55,9 @@ Run the suite with `cd ~/ccas && python -m pytest` (164 passing, ~0.6 s).
   directories), Resume last session, Resume from history, and the fuzzel search.
 - Add, rename, remove from the Manage submenu. Hide icon.
 - Display and colour switching, including the ●/○ markers moving.
+- `Hide icon` shows ● when on and ○ when off (confirmed after the font fix).
+- The bar stays put with a second Claude session running alongside — no more
+  spontaneous reloads.
 
 ## Not yet verified — start here
 
