@@ -17,14 +17,10 @@ still accurate except where §"Deviations" below says otherwise.
 - Spike findings: `docs/superpowers/spike-waybar-menu.md`
 - Live results: `docs/superpowers/task-11-live-integration.md`
 
-Two real accounts are configured and confirmed working:
-
-| slug | email | colour |
-|---|---|---|
-| `vo-se` | vo.sedlacek@gmail.com | 0 peach |
-| `vsed` | vsedlacek1337@gmail.com | 1 red |
-
-Both report `loggedIn: true` under their own `CLAUDE_CONFIG_DIR`.
+Two real accounts were added and both reported `loggedIn: true` under their own
+`CLAUDE_CONFIG_DIR` (`vo-se` → vo.sedlacek@gmail.com, `vsed` →
+vsedlacek1337@gmail.com). `vo-se` was then removed while testing the Manage
+submenu, so the live registry currently holds `vsed` alone.
 
 **The central guarantee holds:** `~/.claude/.credentials.json` mtime has been
 `1784954438` through every install, uninstall, reinstall and account add. CCAS
@@ -37,7 +33,7 @@ Run the suite with `cd ~/ccas && python -m pytest` (158 passing, ~0.6 s).
 ## Verified live
 
 - Placeholder module, add flow, OAuth login, both accounts isolated.
-- Waybar modules render in `modules-center`: `✻ vo.se` peach, `✻ vsed` red.
+- Waybar modules render in `modules-center`, one per account, in palette colour.
 - The menu opens with nested submenus: title row, New session, Resume last
   session, Resume from history ▸, Display as ▸, ☐ Hide icon, Color ▸, Manage ▸.
 - Uninstall restores `config.jsonc` and `.bashrc` byte-for-byte (diffed).
