@@ -123,9 +123,12 @@ Notes:
 - **The selectors are per-slug.** GTK CSS has no attribute or prefix matching,
   so `#custom-cc-*` is not a thing — a new account gets no styling until you add
   its id here. That is the cost of CCAS not owning the stylesheet.
-- `:hover` is documented Waybar behaviour and reliable. `:active` is not: the
-  custom module is EventBox-backed and GTK's active state is a button concept,
-  so treat the press effect as a nice-to-have and check it on your setup.
+- `:hover` works — measured on this setup, the background lifts to exactly the
+  `rgba(255,255,255,0.10)` composite. **`:active` never fires**, also measured:
+  the custom module is EventBox-backed and GTK's active state is a button
+  concept, so a held button leaves the background at its hover value. The rule
+  above is kept only so the intent is on the page; delete it if a dead selector
+  bothers you, and do not spend time tuning its alpha.
 - Colour per account belongs in the label, not here — it comes from the
   registry's palette index via `ccs color <slug> <n>`, so a CSS `color` rule
   would fight it.

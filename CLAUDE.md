@@ -289,22 +289,27 @@ ccs -- mcp list                  # claude's own subcommands need the --
 ./uninstall.sh [--purge]         # strip managed blocks; --purge also trashes ~/.cc-accounts
 ```
 
-## Unverified — claims made but never measured
+## The bar's pointer states, measured
 
-Written 2026-07-25. These shipped on reasoning, not evidence. Check them before
-building on them; delete the line once you have.
+Settled 2026-07-26 by driving the pointer from `swaymsg` and sampling pixels;
+nothing here is a guess any more.
 
-- **`:hover` and `:active` were never seen firing.** They went into
-  `~/.config/waybar/style.css` on reasoning alone, and a still screenshot cannot
-  show either. The modules themselves *do* render — `grim -o HDMI-A-1` on
-  2026-07-26 caught both, so the earlier "nothing proves anything renders" is
-  settled; what is left is the two pointer states.
-- **`:active` is the shakier of the two.** Waybar's custom module is
-  EventBox-backed and GTK's active state is a button concept, so the press
-  effect may simply never fire. `:hover` is documented; the press is a guess.
-Do not verify any of this by asking the user to click things — automate it.
-`grim` plus ink-extent maths, `pango-view --markup` for glyph metrics with no
-bar involved, `swaymsg -t get_tree` to find out what is covering the bar.
+- **`:hover` fires.** The module's background goes `#353535` → `(73,73,73)`
+  under the pointer, which is `rgba(255,255,255,0.10)` composited over the bar
+  exactly as `style.css` asks for it.
+- **`:active` does not fire.** Held under `cursor press button1`, the background
+  stays at the hover value instead of reaching the `(97,97,97)` that 0.22 would
+  give. The suspected reason was the right one: Waybar's custom module is
+  EventBox-backed and GTK's active state is a button concept. The rule in
+  `style.css` is inert — harmless, but do not spend time tuning it.
+- **The click reaches the picker.** Pressing the module spawns
+  `fuzzel --dmenu --prompt <nickname> …`, so `on-click` works end to end on the
+  live bar, not just in the generated config.
+
+Never verify this sort of thing by asking the user to click things — automate
+it. `grim` plus ink-extent maths, `pango-view --markup` for glyph metrics with
+no bar involved, `swaymsg -t get_tree` to find out what is covering the bar, and
+the `cursor move` recipe under Working style to click something yourself.
 
 Waybar is still running from a hand-started `setsid`, and a relogin puts it back
 under whatever normally supervises it. That much was already known; what it
