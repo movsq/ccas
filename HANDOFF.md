@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 136 tests green.
+**State:** built, installed, and working on the real system. 148 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -30,7 +30,7 @@ Both report `loggedIn: true` under their own `CLAUDE_CONFIG_DIR`.
 `1784954438` through every install, uninstall, reinstall and account add. CCAS
 has never written to `~/.claude`.
 
-Run the suite with `cd ~/ccas && python -m pytest` (136 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (148 passing, ~0.6 s).
 
 ---
 
@@ -74,6 +74,7 @@ These are all deliberate and committed. Do not "fix" them back.
 | 4 | Generated commands carry `--gui` | See "The is_gui bug" below. |
 | 5 | Modules live in `modules-center`, no divider | User preference, changed twice: `modules-right` → end of `modules-left` with an em-dash → `modules-center` bare. `HOST_LIST` in `ccas/waybar.py` is the single knob. |
 | 6 | Menu shows 15 history rows, not 300 | See "The oversized menu" below. |
+| 7 | `New session` in a missing directory asks before creating it | See "Creating a project" below. |
 
 ---
 
@@ -114,6 +115,27 @@ while `HIST_SLOTS = 300` still governs `menu-actions` and `history.tsv`. A
 Indices still align because shown row *i* maps to `hist-i` maps to `history.tsv`
 line *i* — pinned by `test_shown_rows_map_to_the_matching_tsv_index`.
 
+### Creating a project
+
+The project picker is a fuzzel dmenu, and fuzzel echoes unmatched input back
+verbatim — so typing a path that has no directory behind it used to resolve
+fine and then die in kitty at `cd`, with the window closing instantly.
+
+`pickers.confirm_create()` now catches that: the path in green (`--mesg` plus
+`--message-color`, since fuzzel's default message grey reads as disabled text)
+above an off-white `— press Enter to create project` row. `launch.run()` mkdirs
+**only in `new` mode**, so a resume whose directory has since been deleted
+still fails loudly rather than resurrecting an empty folder.
+
+The ideal version of this is inline — the green path forming underneath the
+input as you type. **fuzzel cannot do that**: dmenu rows are fixed once stdin
+closes, there is no live-input hook and no markup mode (checked against fuzzel
+1.14.1's full option list). A separate confirm window is the closest thing
+without writing a custom layer-shell picker.
+
+`--only-match` is load-bearing: without it fuzzel echoes typed text, and any
+non-empty stdout here would read as consent to create a directory.
+
 ### Missing `modules-center`
 
 Moving to the centre group exposed that the patcher only rewrites keys that
@@ -142,7 +164,7 @@ when empty, keeping uninstall byte-for-byte either way.
 ## Useful commands
 
 ```bash
-cd ~/ccas && python -m pytest          # 136 tests, ~0.6 s
+cd ~/ccas && python -m pytest          # 148 tests, ~0.6 s
 ./install.sh                           # idempotent; re-run after any code change
 ccs list                               # accounts table
 ccs render vsed                        # force menu.xml + history.tsv rebuild
