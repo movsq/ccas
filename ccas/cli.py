@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 from . import (accounts, doctor, history, label, launch, paths, pickers,
                registry, usage, waybar)
@@ -194,6 +195,31 @@ def cmd_list() -> int:
         color = paths.PALETTE[a["color"]][0]
         print(f"{star}{bang} {i}  {a['slug']:<14} {a['email']:<28} "
               f"{color:<7} {a['display']}")
+    return 0
+
+
+def cmd_usage(slug=None) -> int:
+    """Both windows, their age and their source — the bar without a bar.
+
+    Where the label shows only pressure and the picker only what is worth
+    saying, this shows everything recorded, so that "nothing on the bar" can be
+    told apart from "nothing recorded" without opening a picker.
+    """
+    reg = registry.load()
+    accounts_ = [registry.find(reg, slug)] if slug else reg["accounts"]
+    if accounts_ == [None]:
+        return 1
+    now = time.time()
+    for account in accounts_:
+        reading = usage.read(account["slug"])
+        if reading is None:
+            print(f"{account['slug']:<14} {usage.NO_DATA}")
+            continue
+        age = history.humanise_age(max(0.0, now - reading["fetched_at"]))
+        print(f"{account['slug']:<14} "
+              f"{usage.column(reading, 'five_hour', now):<28}"
+              f"{usage.column(reading, 'seven_day', now):<28}"
+              f"{reading['source']}, {age} ago")
     return 0
 
 
@@ -494,6 +520,8 @@ def main(argv) -> int:
         for slug in targets:
             accounts.relink(slug)
         return 0
+    if command == "usage":
+        return cmd_usage(rest[0] if rest else None)
     if command == "statusline":
         return cmd_statusline(rest)
     if command == "render":

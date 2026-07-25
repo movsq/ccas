@@ -37,6 +37,8 @@ RAMP = ((95, RED), (80, PEACH), (50, YELLOW))
 SEVEN_DAY_TAKES_OVER = 90
 
 NOT_WIRED = "usage — statusline hook not wired"
+# The same fact where the command itself already says the subject is usage.
+NO_DATA = "no data — statusline hook not wired"
 
 WINDOWS = ("five_hour", "seven_day")
 
@@ -246,6 +248,18 @@ def _line(key: str, st: State, now: float) -> str:
     # ≥ because usage only climbs within a window: the recorded percentage is a
     # lower bound for as long as its reset is still ahead.
     return f"{short} ≥{st.percent:.0f}% · clears {reset_time(st.resets_at, now)}"
+
+
+def column(reading, key: str, now: float) -> str:
+    """One window, said in full — for `ccs usage`, which shows both however
+    quiet either is, and so cannot leave one out the way the picker does."""
+    st = state(reading, key, now)
+    short = "5h" if key == "five_hour" else "7d"
+    if st.kind == ABSENT:
+        return f"{short} —"
+    if st.kind == OPEN:
+        return f"{short} window open"
+    return f"{short} ≥{st.percent:.0f}% clears {reset_time(st.resets_at, now)}"
 
 
 def lines(reading, now=None):

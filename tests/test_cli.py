@@ -1060,3 +1060,53 @@ def test_an_account_with_no_reading_is_told_the_hook_is_not_wired(monkeypatch):
                         lambda prompt, options, gui, note=None: seen.update(note=note))
     cli.cmd_mode_menu("work", gui=False)
     assert seen["note"] == cli.usage.NOT_WIRED
+
+
+# ── ccs usage ─────────────────────────────────────────────────────────────────
+
+def _record(monkeypatch, slug, five=None, seven=None):
+    limits = {}
+    if five:
+        limits["five_hour"] = {"used_percentage": five[0], "resets_at": five[1]}
+    if seven:
+        limits["seven_day"] = {"used_percentage": seven[0], "resets_at": seven[1]}
+    _feed(monkeypatch, json.dumps({"rate_limits": limits}), paths.account_dir(slug))
+    cli.main(["statusline"])
+
+
+def test_usage_shows_both_windows_with_the_readings_age(monkeypatch, capsys):
+    """The one place that always shows both windows, however quiet the 7-day
+    one is, plus where the number came from and how old it is."""
+    make_account("a")
+    _record(monkeypatch, "a", five=(94.0, time.time() + 3600),
+            seven=(19.0, time.time() + 86400))
+    capsys.readouterr()
+    assert cli.main(["usage"]) == 0
+    out = capsys.readouterr().out
+    assert "5h ≥94% clears " in out and "7d ≥19% clears " in out
+    assert "statusline, 0m ago" in out
+
+
+def test_usage_names_the_state_of_an_account_with_nothing_recorded(capsys):
+    make_account("a")
+    capsys.readouterr()
+    assert cli.main(["usage"]) == 0
+    assert cli.usage.NO_DATA in capsys.readouterr().out
+
+
+def test_usage_can_be_asked_about_one_account(monkeypatch, capsys):
+    make_account("a")
+    make_account("b")
+    capsys.readouterr()
+    assert cli.main(["usage", "b"]) == 0
+    lines = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
+    assert len(lines) == 1 and lines[0].startswith("b")
+    assert cli.main(["usage", "ghost"]) == 1
+
+
+def test_usage_says_a_rolled_over_window_is_open(monkeypatch, capsys):
+    make_account("a")
+    _record(monkeypatch, "a", five=(94.0, time.time() - 60))
+    capsys.readouterr()
+    cli.main(["usage"])
+    assert "5h window open" in capsys.readouterr().out
