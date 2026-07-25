@@ -69,21 +69,6 @@ def test_render_prints_the_label_and_never_reloads(monkeypatch):
     assert reloads == [], "a new session is not a reason to rebuild the bar"
 
 
-def test_config_rebuilds_every_menu_even_when_the_session_set_is_unchanged():
-    """render only writes when it is also going to reload, so after a code change
-    that alters the XML nothing would refresh it. `ccs config` — what install.sh
-    runs — is the unconditional rebuild."""
-    make_account()
-    make_account("other")
-    cli.main(["render", "work"])
-    for slug in ("work", "other"):
-        (paths.account_dir(slug) / "menu.xml").write_text("stale", encoding="utf-8")
-
-    assert cli.main(["config"]) == 0
-    for slug in ("work", "other"):
-        assert "GtkMenu" in (paths.account_dir(slug) / "menu.xml").read_text()
-
-
 def test_display_persists_and_refreshes_the_bar(monkeypatch):
     make_account()
     fired = []
@@ -122,10 +107,6 @@ def test_color_persists():
     make_account()
     assert cli.main(["color", "work", "5"]) == 0
     assert registry.find(registry.load(), "work")["color"] == 5
-
-
-def _menu_xml():
-    return (paths.account_dir("work") / "menu.xml").read_text(encoding="utf-8")
 
 
 def test_a_setting_change_signals_the_label_and_does_not_reload(monkeypatch):
@@ -684,16 +665,17 @@ def test_add_trashes_the_directory_when_login_fails(monkeypatch):
     assert list(paths.trash_dir().iterdir()), "moved to trash, never deleted"
 
 
-def test_add_writes_the_menu_before_waybar_points_at_it(monkeypatch):
-    """Found by `ccs doctor` on a sandbox add: the new module's menu-file did
-    not exist yet. The 30 s render tick heals it (session_set_changed returns
-    True when no snapshot exists), but until then a click on the new icon opens
-    a menu Waybar cannot read."""
+def test_add_registers_the_module_without_generating_any_files(monkeypatch):
+    """`cmd_add` used to have to write menu.xml before waybar.apply pointed at
+    it, because menu-file is read on the reload that follows. There is no
+    menu-file, so there is no ordering rule left — the account directory holds
+    symlinks and nothing generated."""
     _stub_login(monkeypatch, "someone@x.com")
     assert cli.main(["add"]) == 0
     directory = paths.account_dir("someone")
-    assert (directory / "menu.xml").exists()
-    assert (directory / "history.tsv").exists()
+    assert directory.exists()
+    assert not (directory / "menu.xml").exists()
+    assert not (directory / "history.tsv").exists()
 
 
 def test_account_picker_offers_add_even_with_one_account(monkeypatch):

@@ -74,11 +74,6 @@ def _account_checks(account: dict) -> list:
     checks = [Check(not detail, f"{name}: symlinks resolve",
                     f"{directory}: {detail}; run `ccs relink`" if detail else "")]
 
-    for filename in ("menu.xml", "history.tsv"):
-        present = (directory / filename).exists()
-        checks.append(Check(present, f"{name}: {filename}",
-                            "" if present else
-                            f"{directory / filename} is missing; run `ccs config`"))
     return checks
 
 

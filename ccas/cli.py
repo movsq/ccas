@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 
-from . import (accounts, doctor, history, label, launch, menu, paths, pickers,
+from . import (accounts, doctor, history, label, launch, paths, pickers,
                registry, waybar)
 
 
@@ -218,10 +218,6 @@ def cmd_add(gui: bool) -> int:
 
     registry.add(reg, slug, email or slug, nickname)
     registry.save(reg)
-    # Before waybar.apply, which is what makes menu-file point here. The render
-    # tick would write it within 30 s, but until then the new icon opens a menu
-    # Waybar cannot read.
-    menu.write(registry.find(reg, slug), history.scan())
     waybar.apply(reg)
     waybar.reload()
     return 0
@@ -460,13 +456,10 @@ def main(argv) -> int:
     if command == "render":
         return cmd_render(rest[0]) if rest else 1
     if command == "config":
-        # The unconditional rebuild. cmd_render only writes when it is also
-        # going to reload, so a code change that alters the XML would otherwise
-        # never reach the menus already on disk — this is what install.sh runs.
+        # Rewrite the managed block and take the old bashrc function out. This
+        # is what install.sh runs; it no longer rebuilds anything per account,
+        # because nothing per account is generated any more.
         reg = registry.load()
-        sessions = history.scan()
-        for account in reg["accounts"]:
-            menu.write(account, sessions)
         waybar.apply(reg)
         waybar.strip_bashrc()
         waybar.reload()

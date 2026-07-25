@@ -13,7 +13,6 @@ import ccas.paths as paths
 import ccas.registry as registry
 import ccas.accounts as accounts
 import ccas.waybar as waybar
-import ccas.menu as menu
 import ccas.doctor as doctor
 import ccas.cli as cli
 
@@ -42,7 +41,7 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_CLAUDE_BIN", str(binary))
     monkeypatch.setenv("CCAS_CCS_BIN", str(ccs))
     monkeypatch.setenv("CCAS_NO_RELOAD", "1")
-    for module in (paths, registry, accounts, waybar, menu, doctor, cli):
+    for module in (paths, registry, accounts, waybar, doctor, cli):
         importlib.reload(module)
     return tmp_path
 
@@ -54,7 +53,6 @@ def healthy():
     registry.save(reg)
     accounts.create("work")
     accounts.relink("work")
-    menu.write(registry.find(registry.load(), "work"), [])
     waybar.apply(registry.load())
     return registry.load()
 
@@ -70,8 +68,7 @@ def test_a_healthy_install_reports_no_failures():
 def test_doctor_never_writes_anything(_isolate):
     reg = healthy()
     watched = [paths.claude_home() / "settings.json", paths.waybar_config(),
-               paths.bashrc(), paths.registry_file(),
-               paths.account_dir("work") / "menu.xml"]
+               paths.bashrc(), paths.registry_file()]
     before = [p.stat().st_mtime_ns for p in watched]
     doctor.run(reg)
     assert [p.stat().st_mtime_ns for p in watched] == before
@@ -95,12 +92,6 @@ def test_a_dangling_account_symlink_is_reported():
     assert any("work" in c.label and "link" in c.label for c in bad), bad
 
 
-def test_a_missing_menu_file_is_reported():
-    reg = healthy()
-    (paths.account_dir("work") / "menu.xml").unlink()
-    assert any("menu" in c.label for c in failures(reg))
-
-
 def test_a_waybar_config_out_of_step_with_the_registry_is_reported():
     """The symptom is an account with no icon, or a module Waybar cannot
     resolve — which is a config error for the whole bar, not just for us."""
@@ -109,7 +100,6 @@ def test_a_waybar_config_out_of_step_with_the_registry_is_reported():
     registry.save(reg)
     accounts.create("other")
     accounts.relink("other")
-    menu.write(registry.find(registry.load(), "other"), [])
     bad = failures(registry.load())
     assert any("waybar" in c.label.lower() for c in bad), bad
     assert any("ccs config" in c.detail for c in bad), "say how to fix it"
@@ -134,7 +124,6 @@ def test_two_headless_accounts_are_reported():
     registry.save(reg)
     accounts.create("other")
     accounts.relink("other")
-    menu.write(registry.find(registry.load(), "other"), [])
     waybar.apply(registry.load())
     assert any("headless" in c.label for c in failures(registry.load()))
 
@@ -161,10 +150,10 @@ def test_a_legacy_shell_function_is_reported():
 def test_the_command_exits_nonzero_only_when_something_failed(capsys):
     healthy()
     assert cli.main(["doctor"]) == 0
-    (paths.account_dir("work") / "menu.xml").unlink()
+    (paths.account_dir("work") / "settings.json").unlink()
     assert cli.main(["doctor"]) == 1
     out = capsys.readouterr().out
-    assert "menu" in out
+    assert "symlinks" in out
 
 
 def test_doctor_is_ours_and_the_escape_still_reaches_claudes(monkeypatch):

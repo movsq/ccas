@@ -199,7 +199,8 @@ def strip_bashrc() -> None:
 
 
 def reload() -> None:
-    """Full bar reload. The only thing that makes Waybar re-parse menu.xml."""
+    """Full bar reload — the only thing that makes Waybar re-read config.jsonc,
+    so the set of modules changing is the one thing that still needs it."""
     if os.environ.get("CCAS_NO_RELOAD"):
         return
     subprocess.run(["killall", "-SIGUSR2", "waybar"], check=False,
@@ -207,7 +208,7 @@ def reload() -> None:
 
 
 def signal(n: int) -> None:
-    """Flicker-free refresh of one module's label. Does not touch its menu."""
+    """Flicker-free refresh of one module's label: re-runs `exec`, nothing more."""
     if os.environ.get("CCAS_NO_RELOAD"):
         return
     subprocess.run(["pkill", f"-RTMIN+{n}", "waybar"], check=False,
