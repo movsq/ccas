@@ -562,3 +562,95 @@ def test_passthrough_does_not_force_gui_mode(monkeypatch):
                         lambda prompt, options, gui: seen.append(gui) or options[0])
     assert cli.main(["-p", "hi"]) == 0
     assert seen == [False]
+
+
+def _stub_login(monkeypatch, email, ok=True):
+    """Stand in for `claude auth login`, which writes into the account dir."""
+    written = {}
+
+    class Done:
+        returncode = 0
+
+    def fake_run(argv, env=None, **kw):
+        directory = paths.Path(env["CLAUDE_CONFIG_DIR"]) if env else None
+        if directory is not None:
+            (directory / ".credentials.json").write_text("token", encoding="utf-8")
+            written["dir"] = directory
+        return Done()
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(cli.accounts, "auth_status",
+                        lambda slug: {"loggedIn": ok, "email": email})
+    monkeypatch.setattr(cli.pickers, "prompt", lambda *a, **k: "")
+    return written
+
+
+def test_add_names_the_directory_after_the_email(monkeypatch):
+    """The nickname is optional, so it cannot be what the directory is called.
+    It only got the job because the directory has to exist *before* login and
+    the email is not known until after — so rename once the email arrives."""
+    _stub_login(monkeypatch, "vsedlacek1337@gmail.com")
+    assert cli.main(["add"]) == 0
+    reg = registry.load()
+    assert [a["slug"] for a in reg["accounts"]] == ["vsedlacek1337"]
+    assert paths.account_dir("vsedlacek1337").is_dir()
+    assert not paths.account_dir("account").exists(), "the temp name must not linger"
+
+
+def test_add_moves_the_directory_rather_than_recreating_it(monkeypatch):
+    """Login has already written credentials in there. A fresh mkdir would
+    strand them under the old name and the account would not be logged in."""
+    _stub_login(monkeypatch, "someone@x.com")
+    assert cli.main(["add"]) == 0
+    assert (paths.account_dir("someone") / ".credentials.json").read_text() == "token"
+
+
+def test_add_keeps_the_nickname_the_user_typed(monkeypatch):
+    _stub_login(monkeypatch, "someone@x.com")
+    monkeypatch.setattr(cli.pickers, "prompt", lambda *a, **k: "day job")
+    assert cli.main(["add"]) == 0
+    account = registry.load()["accounts"][0]
+    assert account["nickname"] == "day job"
+    assert account["slug"] == "someone", "the slug is the email's, not the nickname's"
+
+
+def test_add_does_not_collide_with_an_existing_account(monkeypatch):
+    """Two logins to addresses that slugify the same must not share a directory
+    — that would put two accounts in one CLAUDE_CONFIG_DIR."""
+    _stub_login(monkeypatch, "someone@x.com")
+    assert cli.main(["add"]) == 0
+    _stub_login(monkeypatch, "someone@y.com")
+    assert cli.main(["add"]) == 0
+    slugs = [a["slug"] for a in registry.load()["accounts"]]
+    assert slugs == ["someone", "someone-2"]
+    assert (paths.account_dir("someone") / ".credentials.json").exists()
+    assert (paths.account_dir("someone-2") / ".credentials.json").exists()
+
+
+def test_add_falls_back_when_the_email_is_missing(monkeypatch):
+    """`auth status` reporting loggedIn with no address should not name a
+    directory after an empty string."""
+    _stub_login(monkeypatch, "")
+    assert cli.main(["add"]) == 0
+    slug = registry.load()["accounts"][0]["slug"]
+    assert slug and paths.account_dir(slug).is_dir()
+
+
+def test_add_trashes_the_directory_when_login_fails(monkeypatch):
+    _stub_login(monkeypatch, "someone@x.com", ok=False)
+    assert cli.main(["add"]) == 1
+    assert registry.load()["accounts"] == []
+    assert not paths.account_dir("account").exists()
+    assert list(paths.trash_dir().iterdir()), "moved to trash, never deleted"
+
+
+def test_add_writes_the_menu_before_waybar_points_at_it(monkeypatch):
+    """Found by `ccs doctor` on a sandbox add: the new module's menu-file did
+    not exist yet. The 30 s render tick heals it (session_set_changed returns
+    True when no snapshot exists), but until then a click on the new icon opens
+    a menu Waybar cannot read."""
+    _stub_login(monkeypatch, "someone@x.com")
+    assert cli.main(["add"]) == 0
+    directory = paths.account_dir("someone")
+    assert (directory / "menu.xml").exists()
+    assert (directory / "history.tsv").exists()

@@ -45,6 +45,21 @@ def relink(slug: str) -> None:
             entry.unlink()
 
 
+def rename(old: str, new: str) -> Path:
+    """Move an account directory. Only safe before anything references it.
+
+    `cmd_add` uses this in the one window where it cannot hurt: login has
+    exited, the registry does not mention the account yet, and no Waybar module
+    or menu names it. The symlinks inside point at absolute paths under
+    ~/.claude, so moving the directory does not disturb them.
+    """
+    source, target = paths.account_dir(old), paths.account_dir(new)
+    if target.exists():
+        raise FileExistsError(target)
+    source.rename(target)
+    return target
+
+
 def seed_config(slug: str) -> None:
     """Copy ~/.claude.json minus oauthAccount so trust and MCP carry over."""
     source = paths.claude_config_json()

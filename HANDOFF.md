@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 199 tests green.
+**State:** built, installed, and working on the real system. 206 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -39,7 +39,7 @@ under the *default* account (no `CLAUDE_CONFIG_DIR`) refreshes that token
 itself. Compare the mtime before and after your own command instead; see
 `CLAUDE.md` for the snippet.
 
-Run the suite with `cd ~/ccas && python -m pytest` (199 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (206 passing, ~0.7 s).
 
 ---
 
@@ -102,6 +102,7 @@ These are all deliberate and committed. Do not "fix" them back.
 | 13 | `claude -p` resolves an account instead of silently using the default | User request. See "The headless runner" below. |
 | 14 | CCAS no longer installs a `claude()` shell function; `ccs -p …` is the terminal entry point | User's call: keep the real `claude` theirs. See "The passthrough" below. |
 | 15 | `ccs doctor` audits the install and never repairs it | A repair would mask the fault. See "The doctor" below. |
+| 16 | An account directory is named after the **email**, not the nickname | The nickname is optional and the directory is not. See "Why the nickname named the directory" below. |
 | 12 | `Hide icon` is marked `●`/`○`, not `☑`/`☐` | FontAwesome sits first in the bar's font stack and covers U+2611 but not U+2610. See "The Hide icon box never looked checked". |
 
 ---
@@ -300,6 +301,39 @@ Verified live 2026-07-25: all 14 checks green on the real install, and a negativ
 control run (`CCAS_CLAUDE_BIN=/nonexistent CCAS_BASHRC=<a fake with the old
 block> ccs doctor`) flagged exactly those two and exited 1.
 
+### Why the nickname named the directory
+
+User's question, and a fair one: *"how comes a nickname was THE DIRECTORY, if
+nicknames arent mandatory?"* Ordering. The account directory **is**
+`CLAUDE_CONFIG_DIR`, so it must exist before `claude auth login` runs — and the
+email, the obviously right name for it, is only known once that login returns.
+The nickname was the sole string available at that moment, so `cmd_add` fell
+back to `slugify(nickname or "account")`; adding without a nickname produced a
+directory literally called `account`, then `account-2`.
+
+Fixed 2026-07-25: `cmd_add` now creates the directory under that placeholder,
+and once `auth_status` reports the email, `accounts.rename()` moves it to
+`slugify(email)`. That window is the one time a rename is free — login has
+exited, the registry does not mention the account yet, no Waybar module or menu
+names it, and the symlinks inside are absolute paths under `~/.claude` so a move
+does not disturb them. A `rename`, never a fresh `mkdir`: the login has already
+written `.credentials.json` in there.
+
+`_free_slug()` checks the registry **and** the disk. A directory with no registry
+entry is possible (a half-finished add, a restore from trash) and reusing one
+would put two accounts in a single `CLAUDE_CONFIG_DIR`.
+
+Existing slugs are untouched — `vsed` and `vo-se-15th` keep their names, since
+the slug is the directory name and the Waybar module id. Renaming those would
+mean moving a directory a live session may hold open.
+
+**Found while verifying this:** a sandbox `ccs add`, audited with `ccs doctor`,
+reported the new account's `menu.xml` and `history.tsv` missing. `cmd_add` never
+wrote them — the render tick heals it within 30 s (`session_set_changed()`
+returns True when no snapshot exists), but until then the new icon opened a menu
+Waybar could not read. `cmd_add` now writes the menu before `waybar.apply()`
+points at it. First bug the doctor caught on its own.
+
 ### The Hide icon box never looked checked
 
 Reported live: "the togglebox for hidden icon doesn't fill when enabled." The
@@ -366,7 +400,7 @@ when empty, keeping uninstall byte-for-byte either way.
 ## Useful commands
 
 ```bash
-cd ~/ccas && python -m pytest          # 199 tests, ~0.6 s
+cd ~/ccas && python -m pytest          # 206 tests, ~0.7 s
 ./install.sh                           # idempotent; re-run after any code change
 ccs list                               # accounts table
 ccs doctor                             # audit the install; rc 1 if anything failed

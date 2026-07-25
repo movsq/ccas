@@ -51,6 +51,12 @@ is the canary. `CCAS_NO_RELOAD=1` suppresses signalling the live bar.
 repair inside it would mask the fault it is looking for — including a `relink`,
 tempting as that is. It reports and says which command fixes it.
 
+**A slug is permanent; a nickname is not.** The slug is the account directory
+name and the Waybar module id. `cmd_add` names the directory after the email —
+but only *after* login returns it, via `accounts.rename()` in the one window
+where nothing references the account yet. Renaming a slug at any later point
+means moving a directory a live session may hold open as `CLAUDE_CONFIG_DIR`.
+
 ## Read the live state before you write it
 
 This repo's tools mutate the user's real configuration. Read the registry, the
@@ -160,7 +166,7 @@ once already, back when the bashrc function was the terminal path.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~199 tests, under a second
+cd ~/ccas && python -m pytest    # ~206 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs list                         # accounts
 ccs doctor                       # audit the four places that drift; rc 1 if any failed

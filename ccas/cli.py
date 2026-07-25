@@ -153,13 +153,27 @@ def cmd_doctor() -> int:
     return 1 if any(not c.ok for c in checks) else 0
 
 
+def _free_slug(reg, base: str, taken=None) -> str:
+    """`base`, or base-2, base-3… — free in the registry *and* on disk.
+
+    A directory with no registry entry is not impossible (a half-finished add,
+    a restore from trash) and reusing it would put two accounts in one
+    CLAUDE_CONFIG_DIR.
+    """
+    slug, n = base, 2
+    while (registry.find(reg, slug) or paths.account_dir(slug).exists()) \
+            and slug != taken:
+        slug, n = f"{base}-{n}", n + 1
+    return slug
+
+
 def cmd_add(gui: bool) -> int:
     nickname = pickers.prompt("nickname (optional):", gui)
     reg = registry.load()
-    base = registry.slugify(nickname or "account")
-    slug, n = base, 2
-    while registry.find(reg, slug):
-        slug, n = f"{base}-{n}", n + 1
+    # A placeholder. The account directory *is* CLAUDE_CONFIG_DIR, so it has to
+    # exist before `auth login` runs — and the email that should name it is not
+    # known until that login returns. Renamed below, once it is.
+    slug = _free_slug(reg, registry.slugify(nickname or "account"))
 
     accounts.create(slug)
     accounts.relink(slug)
@@ -180,8 +194,22 @@ def cmd_add(gui: bool) -> int:
         notify("Login did not complete — account discarded.")
         return 1
 
-    registry.add(reg, slug, status.get("email", slug), nickname)
+    # The window where a rename is free: login has exited, nothing references
+    # the account yet, and the slug becomes permanent the moment it is written
+    # to the registry, the Waybar block and every generated command.
+    email = status.get("email", "")
+    if email:
+        final = _free_slug(reg, registry.slugify(email), taken=slug)
+        if final != slug:
+            accounts.rename(slug, final)
+            slug = final
+
+    registry.add(reg, slug, email or slug, nickname)
     registry.save(reg)
+    # Before waybar.apply, which is what makes menu-file point here. The render
+    # tick would write it within 30 s, but until then the new icon opens a menu
+    # Waybar cannot read.
+    menu.write(registry.find(reg, slug), history.scan())
     waybar.apply(reg)
     waybar.reload()
     return 0
