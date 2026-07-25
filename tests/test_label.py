@@ -17,6 +17,19 @@ def test_display_name_prefers_nickname_then_email():
     assert label.display_name(account(nickname="")) == "w@example.com"
 
 
+def test_cleared_nickname_shows_nothing_on_the_bar():
+    """Falling back to the email put a long address in the bar. A cleared
+    nickname means "show no text", not "show something else"."""
+    assert label.render(account(nickname=None), 1) == "<span color='#f38ba8'>✻</span>"
+    assert label.render(account(nickname=""), 1) == "<span color='#f38ba8'>✻</span>"
+
+
+def test_the_email_fallback_survives_where_identity_matters():
+    """display_name still names the account for the menu title row and the
+    account chooser, where two blank rows would be unpickable."""
+    assert label.display_name(account(nickname=None)) == "w@example.com"
+
+
 def test_render_each_display_mode():
     assert label.render(account(), 1) == "<span color='#f38ba8'>✻</span> work"
     assert label.render(account(display="index"), 3) == "<span color='#f38ba8'>✻</span> 3"

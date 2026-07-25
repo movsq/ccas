@@ -81,13 +81,13 @@ def test_render_reloads_waybar_only_when_the_session_set_changed(monkeypatch):
     assert reloads == [1, 1], "a new session must reload"
 
 
-def test_display_persists_and_signals(monkeypatch):
+def test_display_persists_and_refreshes_the_bar(monkeypatch):
     make_account()
     fired = []
-    monkeypatch.setattr(cli.waybar, "signal", lambda n: fired.append(n))
+    monkeypatch.setattr(cli.waybar, "reload", lambda: fired.append(1))
     assert cli.main(["display", "work", "icon only"]) == 0
     assert registry.find(registry.load(), "work")["display"] == "icon only"
-    assert fired == [1]
+    assert fired == [1], "a per-module signal repaints the label but not the menu"
 
 
 def test_display_rejects_an_invalid_mode():
@@ -119,6 +119,62 @@ def test_color_persists():
     make_account()
     assert cli.main(["color", "work", "5"]) == 0
     assert registry.find(registry.load(), "work")["color"] == 5
+
+
+def _menu_xml():
+    return (paths.account_dir("work") / "menu.xml").read_text(encoding="utf-8")
+
+
+def test_changing_a_setting_moves_the_radio_dot_in_the_menu(monkeypatch):
+    """The ●/○ marks are baked into menu.xml, and Waybar caches that file — so
+    a setting change has to rewrite it and force a full reload, or the dot stays
+    on whatever was selected when the bar last started."""
+    make_account()
+    reloads = []
+    monkeypatch.setattr(cli.waybar, "reload", lambda: reloads.append(1))
+
+    cli.main(["color", "work", "5"])
+    assert f"● {paths.PALETTE[5][0]}" in _menu_xml()
+    assert f"○ {paths.PALETTE[0][0]}" in _menu_xml()
+    assert reloads, "a stale cached menu is the whole bug"
+
+    cli.main(["display", "work", "index"])
+    assert "● index" in _menu_xml()
+    assert "○ nickname" in _menu_xml()
+
+    cli.main(["hide", "work", "toggle"])
+    assert "☑ Hide icon" in _menu_xml()
+
+
+def test_renaming_updates_the_menu_title_row(monkeypatch):
+    make_account()
+    monkeypatch.setattr(cli.waybar, "reload", lambda: None)
+    cli.main(["nick", "work", "personal"])
+    assert ">personal<" in _menu_xml()
+
+
+def test_rename_cancelled_keeps_the_existing_nickname(monkeypatch):
+    """Esc used to be indistinguishable from clearing, so backing out of the
+    rename dialog wiped the nickname."""
+    make_account()
+    monkeypatch.setattr(cli.pickers, "prompt_or_clear",
+                        lambda *a, **k: cli.pickers.CANCEL)
+    assert cli.main(["manage", "rename", "work"]) == 0
+    assert registry.find(registry.load(), "work")["nickname"] == "work"
+
+
+def test_rename_clear_row_empties_the_nickname(monkeypatch):
+    make_account()
+    monkeypatch.setattr(cli.pickers, "prompt_or_clear", lambda *a, **k: None)
+    assert cli.main(["manage", "rename", "work"]) == 0
+    assert registry.find(registry.load(), "work")["nickname"] is None
+
+
+def test_rename_typed_text_is_stored(monkeypatch):
+    make_account()
+    monkeypatch.setattr(cli.pickers, "prompt_or_clear", lambda *a, **k: "typed")
+    cli.main(["manage", "rename", "work"])
+    assert registry.find(registry.load(), "work")["nickname"] == "typed"
 
 
 def test_nick_sets_and_clears():

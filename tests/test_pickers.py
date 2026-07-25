@@ -87,6 +87,47 @@ def test_prompt_returns_none_when_cancelled(monkeypatch):
     assert pickers.prompt("nickname:", gui=True) is None
 
 
+def test_prompt_or_clear_separates_cancel_from_clear(monkeypatch):
+    """Three outcomes a plain prompt() cannot express: text, clear, cancel."""
+    seen = {}
+
+    class Result:
+        returncode = 0
+        stdout = "new name\n"
+
+    def fake_run(cmd, **kwargs):
+        seen["input"] = kwargs.get("input")
+        return Result()
+
+    monkeypatch.setattr(pickers.subprocess, "run", fake_run)
+    assert pickers.prompt_or_clear("nickname:", "clear it", gui=True) == "new name"
+    assert seen["input"] == "clear it", "the clear row must be selectable"
+
+    Result.stdout = "clear it\n"
+    assert pickers.prompt_or_clear("nickname:", "clear it", gui=True) is None
+
+    Result.returncode, Result.stdout = 1, ""
+    assert pickers.prompt_or_clear("nickname:", "clear it", gui=True) is pickers.CANCEL
+
+
+def test_prompt_or_clear_treats_empty_output_as_cancel(monkeypatch):
+    class Result:
+        returncode = 0
+        stdout = "\n"
+
+    monkeypatch.setattr(pickers.subprocess, "run", lambda *a, **k: Result())
+    assert pickers.prompt_or_clear("nickname:", "clear it", gui=True) is pickers.CANCEL
+
+
+def test_prompt_or_clear_on_the_terminal(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _p: "  bob ")
+    assert pickers.prompt_or_clear("nickname:", "clear it", gui=False) == "bob"
+    monkeypatch.setattr("builtins.input", lambda _p: "-")
+    assert pickers.prompt_or_clear("nickname:", "clear it", gui=False) is None
+    monkeypatch.setattr("builtins.input", lambda _p: "")
+    assert pickers.prompt_or_clear("nickname:", "clear it", gui=False) is pickers.CANCEL
+
+
 def _confirm_run(monkeypatch, returncode, stdout):
     seen = {}
 

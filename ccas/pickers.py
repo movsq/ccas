@@ -45,6 +45,37 @@ def choose(prompt: str, rows, gui: bool):
     return choice or None
 
 
+# Distinct from None, which means "clear the value". Returning None for both
+# made Esc wipe the nickname it was trying to back out of.
+CANCEL = object()
+
+
+def prompt_or_clear(message: str, clear_label: str, gui: bool):
+    """Free text, an explicit clear (None), or CANCEL.
+
+    fuzzel needs at least one row to stay open at all, so the row it needs is
+    put to work as the clear button: type and press Enter for a new value,
+    select the row to clear, Esc to leave everything alone.
+    """
+    if gui:
+        cmd = ["fuzzel", "--dmenu", "--prompt", f"{message} ", "--lines", "1",
+               "--width", str(max(len(clear_label), len(message)) + 12)]
+        proc = subprocess.run(cmd, input=clear_label, capture_output=True, text=True)
+        if proc.returncode != 0:
+            return CANCEL
+        text = proc.stdout.strip()
+        if not text:
+            return CANCEL
+        return None if text == clear_label else text
+    try:
+        text = input(f"{message} (blank cancels, '-' clears) ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return CANCEL
+    if not text:
+        return CANCEL
+    return None if text == "-" else text
+
+
 def confirm_create(display_path: str, gui: bool) -> bool:
     """Ask before launching into a project directory that does not exist yet.
 

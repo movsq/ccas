@@ -12,11 +12,19 @@ def notify(text: str) -> None:
 
 
 def _refresh(reg, account) -> None:
-    """Persist, fire the warning if newly invisible, and refresh the module."""
+    """Persist, warn if newly invisible, and refresh both label and menu.
+
+    The ●/○ marks and the ☐/☑ checkbox are baked into menu.xml, which Waybar
+    caches — a signal only repaints the label, so without rewriting the file
+    and forcing a full reload the dot stays wherever it was when the bar last
+    started. That is a user-initiated click, so the reload flicker is fine;
+    the 30 s render tick still guards itself with session_set_changed().
+    """
     if label.check_invisible_warning(account):
         notify(label.WARNING_TEXT)
     registry.save(reg)
-    waybar.signal(account["signal"])
+    menu.write(account, history.scan())
+    waybar.reload()  # subsumes the per-module signal, which only repaints labels
 
 
 def _mutate(slug: str, field: str, value) -> int:
@@ -113,7 +121,9 @@ def cmd_manage(action: str, slug, gui: bool) -> int:
     if action == "add":
         return cmd_add(gui)
     if action == "rename":
-        name = pickers.prompt("new nickname (blank clears):", gui)
+        name = pickers.prompt_or_clear("new nickname:", "⌫  clear nickname", gui)
+        if name is pickers.CANCEL:
+            return 0
         reg = registry.load()
         if registry.find(reg, slug) is None:
             return 1

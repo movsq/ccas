@@ -29,8 +29,12 @@ def render(account: dict, index: int) -> str:
     elif mode == "claude code":
         text = "claude code"
     else:
-        text = display_name(account)
-    return f"{icon} {pango_escape(text)}"
+        # Deliberately not display_name(): a cleared nickname means "show no
+        # text", so the bar falls back to the bare glyph rather than to a long
+        # email address. display_name keeps its fallback for the menu title and
+        # the account chooser, where a blank row would be unpickable.
+        text = account.get("nickname") or ""
+    return f"{icon} {pango_escape(text)}" if text else icon
 
 
 def check_invisible_warning(account: dict) -> bool:
