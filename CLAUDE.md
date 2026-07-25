@@ -24,10 +24,19 @@ which includes the session you are probably in — refreshes that file's OAuth
 token on its own; it moved to `1784983478` the moment the user's limits reset.
 Prove the write was not ours before calling it a bug.
 
-**Never invoke `claude` by bare name from inside the code.** The install adds a
-`claude()` shell function to `~/.bashrc`; a bare call re-enters it and loops
-forever. Always `paths.claude_bin()`. `CCAS_INNER=1` is exported into launched
-sessions as a second guard.
+**Never invoke `claude` by bare name from inside the code.** Always
+`paths.claude_bin()`. CCAS no longer installs the `claude()` shell function that
+made this fatal — `ccs -p …` replaced it, and `waybar.strip_bashrc()` takes the
+old block out — but a shell opened before that install still has the function
+loaded, and there a bare call re-enters it and loops forever. `CCAS_INNER=1` is
+exported into launched sessions as a second guard.
+
+**`claude` is the user's.** We shadowed it once; owning a binary the user did not
+offer bought nothing that the passthrough does not. Any first argument beginning
+with `-` (`ccs -p …`, `-c`, `-r`) goes to the real `claude` under the resolved
+runner account, and `ccs -- mcp list` is the escape for claude's own subcommands,
+which would otherwise read as `ccs` commands. Whatever is added to `main()`'s dispatch, those two branches must
+stay ahead of the account-slug lookup and behind the `--gui` strip.
 
 **Never delete.** Everything moves to `~/.claude_trash/` (global CLAUDE.md rule).
 `install.sh` and `uninstall.sh` both obey this — do not "simplify" them to `rm`.
@@ -92,8 +101,8 @@ snapshot exists at all, or an account with no history never gets a menu file.
 
 ## The headless runner
 
-`claude <args>` resolves an account through `cli._runner_slug()`; read it before
-touching that path. Two rules there are load-bearing:
+`ccs <claude args>` resolves an account through `cli._runner_slug()`; read it
+before touching that path. Two rules there are load-bearing:
 
 - **Never prompt when `sys.stdin.isatty()` is false.** Pipes, scripts and cron
   reach this code, and a prompt there blocks forever — the `is_gui` bug again.
@@ -114,9 +123,11 @@ path then blocks on `input()` against a console nobody can see.
 
 Every Waybar-generated command carries `--gui`, appended by `waybar._ccs()`.
 Anything new that generates a command for Waybar must go through it.
-`bashrc_block()` deliberately does **not** — that path is a real terminal and
-must use fzf. `test_bashrc_function_does_not_force_gui_mode` pins it, because
-this exact mistake was made once already.
+The `ccs -p` passthrough deliberately does **not** — that path is a real terminal
+and must use fzf. Two tests pin the pair
+(`test_generated_commands_all_force_gui_mode`,
+`test_passthrough_does_not_force_gui_mode`), because this exact mistake was made
+once already, back when the bashrc function was the terminal path.
 
 ## fuzzel
 
@@ -138,16 +149,19 @@ this exact mistake was made once already.
 - Verify on the real system rather than reasoning about it: `./install.sh`,
   `ccs render <slug>`, read the generated file. `grim` plus PIL cropping gives
   you a screenshot; Waybar is on `HDMI-A-1` (x 2560–4480), `DP-1` is x 0–2560.
-- `~/.bashrc` changes only reach **new** shells.
+- `~/.bashrc` changes only reach **new** shells — which is why the terminal
+  entry point is `ccs`, not a shell function.
 - Update `HANDOFF.md` when behaviour changes — it is what the next session reads.
 
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~180 tests, under a second
+cd ~/ccas && python -m pytest    # ~186 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs list                         # accounts
 ccs config                       # force a rebuild of every menu.xml (render does not)
-ccs headless [<slug>]            # show / toggle which account runs `claude -p`
+ccs headless [<slug>]            # show / toggle which account runs `ccs -p`
+ccs -p "…" / ccs -c / ccs -r     # real claude under the runner account
+ccs -- mcp list                  # claude's own subcommands need the --
 ./uninstall.sh [--purge]         # strip managed blocks; --purge also trashes ~/.cc-accounts
 ```

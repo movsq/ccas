@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 180 tests green.
+**State:** built, installed, and working on the real system. 186 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -39,7 +39,7 @@ under the *default* account (no `CLAUDE_CONFIG_DIR`) refreshes that token
 itself. Compare the mtime before and after your own command instead; see
 `CLAUDE.md` for the snippet.
 
-Run the suite with `cd ~/ccas && python -m pytest` (180 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (186 passing, ~0.6 s).
 
 ---
 
@@ -61,18 +61,22 @@ Run the suite with `cd ~/ccas && python -m pytest` (180 passing, ~0.6 s).
 
 ## Terminal front-end — verified
 
-Confirmed in a new shell on 2026-07-25: bare `claude` shows the account picker
-then the mode menu via fzf and every option in it works; `claude -p "say hi"`
-runs headless with no menu; `ccs vo-se-15th claude auth status` reports
+Confirmed in a new shell on 2026-07-25: bare `ccs` shows the account picker then
+the mode menu via fzf and every option in it works; `ccs -p "say hi"` runs
+headless with no menu; `ccs vo-se-15th claude auth status` reports
 vo.sedlacek@gmail.com rather than the default account.
 
-The headless runner was verified the same day: the first `claude -p "say hi"`
-asked which account, the second ran straight through, `echo hi | claude -p`
-answered without prompting, and the `●` sits on the chosen account's menu row.
+The headless runner was verified the same day: the first `-p` run asked which
+account, the second ran straight through, a piped `-p` answered without
+prompting, and the `●` sits on the chosen account's menu row.
 
 The terminal `Select as headless runner` row was verified too: it sets the
 runner, reads `● Headless runner — pick to clear` on the next pass, clears on a
-second pick, and a `claude -p` after clearing asks again as designed.
+second pick, and a `-p` run after clearing asks again as designed.
+
+After the passthrough replaced the shell function, `ccs --version` and
+`ccs -- mcp list` were both run live and reached the real `claude`, and
+`~/.bashrc` came out with no `claude()` in it and the user's own lines intact.
 
 Every area of the tool has now been exercised on the real system.
 
@@ -96,6 +100,7 @@ These are all deliberate and committed. Do not "fix" them back.
 | 10 | The menu is headed by the email, with the nickname on a second row | The plan's single nickname-or-email title hid the address the account is actually identified by. |
 | 11 | The render tick writes `menu.xml`/`history.tsv` **only** when it is also going to reload | Reordering is not a change (see "The bar resetting itself"), and writing without reloading desynchronises the cached rows from the tsv the actions index. `ccs config` is the unconditional rebuild. |
 | 13 | `claude -p` resolves an account instead of silently using the default | User request. See "The headless runner" below. |
+| 14 | CCAS no longer installs a `claude()` shell function; `ccs -p …` is the terminal entry point | User's call: keep the real `claude` theirs. See "The passthrough" below. |
 | 12 | `Hide icon` is marked `●`/`○`, not `☑`/`☐` | FontAwesome sits first in the bar's font stack and covers U+2611 but not U+2610. See "The Hide icon box never looked checked". |
 
 ---
@@ -114,10 +119,12 @@ Fix: every Waybar-generated command now starts with `--gui`, consumed in
 `cli.main()`. `is_gui()` remains only as a fallback.
 
 **Watch for this:** anything new that generates a command for Waybar must go
-through `waybar._ccs()`, which appends the flag. `bashrc_block()` deliberately
-does **not** — it is the terminal path and must use fzf. There is a test
-(`test_bashrc_function_does_not_force_gui_mode`) pinning that, because this
-exact mistake was made and caught during the session.
+through `waybar._ccs()`, which appends the flag. The `ccs -p` passthrough
+deliberately does **not** — it is the terminal path and must use fzf. Two tests
+pin the pair (`test_generated_commands_all_force_gui_mode`,
+`test_passthrough_does_not_force_gui_mode`), because this exact mistake was made
+and caught during the session, back when a bashrc function was the terminal
+path.
 
 ### fuzzel and empty stdin
 
@@ -210,7 +217,7 @@ clears it, which is how the one-time prompt comes back.
 
 Three ways in, all the same toggle (`cli._toggle_headless`): the
 `○ Headless runner` row in the Waybar menu, a row at the bottom of the terminal
-mode menu (`ccs <slug>` or bare `claude`, after the account pick), and
+mode menu (`ccs <slug>` or bare `ccs`, after the account pick), and
 `ccs headless [<slug>]` directly. The terminal row is worded
 `○ Select as headless runner` / `● Headless runner — pick to clear` rather than
 reusing the bar's label: among four verbs in a flat fzf list the mark alone read
@@ -239,6 +246,29 @@ for registries written before it existed, and `remove()` clears it with the
 account so a deleted slug cannot be resolved later. Setting it rewrites **every**
 account's menu (`cli._refresh_all`), because turning it on for one turns it off
 for the rest.
+
+### The passthrough
+
+Until 2026-07-25 the installer wrote a `claude()` function into `~/.bashrc` so a
+bare `claude` resolved an account. The user asked to drop it — *"keep the original
+claude and `ccs -p` would be our thing instead of replacing global original"* —
+and they were right: shadowing bought nothing the passthrough does not, only
+reached new shells, and was the sole reason a bare `claude` call from inside the
+code loops forever.
+
+`cli.main()` now routes any first argument beginning with `-` (`ccs -p …`, `-c`,
+`-r`) straight to `cmd_tty`, which resolves the runner account and execs the real
+binary. `--` is the escape for claude's own *subcommands* (`ccs -- mcp list`),
+which would otherwise collide with `ccs list`/`add`/`render`. Both branches sit
+after the `--gui` strip — `--gui` is ours, never forwarded — and before the
+account-slug lookup.
+
+`waybar.apply_bashrc()`/`bashrc_block()` are gone, replaced by
+`waybar.strip_bashrc()`: an install now *removes* the old block. It only rewrites
+when the block is actually present, so an unmanaged `~/.bashrc` keeps its mtime
+and never grows a `.ccas-orig` for a file we never touched. Existing shells keep
+the stale function until they are restarted, which is why `paths.claude_bin()`
+remains mandatory.
 
 ### The Hide icon box never looked checked
 
@@ -287,9 +317,10 @@ when empty, keeping uninstall byte-for-byte either way.
 
 ## Things that will bite you
 
-- **Never invoke `claude` by bare name from inside the code.** The `claude()`
-  shell function would re-enter `ccs` forever. Always `paths.claude_bin()`.
-  `CCAS_INNER=1` is exported into launched sessions as a second guard.
+- **Never invoke `claude` by bare name from inside the code.** Always
+  `paths.claude_bin()`. The `claude()` shell function is no longer installed, but
+  shells opened before that install still have it and would re-enter `ccs`
+  forever. `CCAS_INNER=1` is a second guard.
 - **Never write to `~/.claude`.** Tests use `tmp_path` and the `CCAS_*` env
   overrides in `ccas/paths.py`. `test_relink_never_touches_mtimes_in_claude_home`
   is the sandbox canary.
@@ -299,15 +330,18 @@ when empty, keeping uninstall byte-for-byte either way.
   wait for the tick.
 - Waybar caches `menu-file`; only `killall -SIGUSR2 waybar` re-reads it. A
   per-module `SIGRTMIN+n` refreshes the **label only** — this was measured.
-- `~/.bashrc` changes only affect **new** shells.
+- `~/.bashrc` changes only affect **new** shells — which is why the terminal
+  entry point is `ccs`, not a shell function.
 
 ## Useful commands
 
 ```bash
-cd ~/ccas && python -m pytest          # 160 tests, ~0.6 s
+cd ~/ccas && python -m pytest          # 186 tests, ~0.6 s
 ./install.sh                           # idempotent; re-run after any code change
 ccs list                               # accounts table
 ccs render vsed                        # force menu.xml + history.tsv rebuild
+ccs -p "say hi"                        # real claude under the runner account
+ccs -- mcp list                        # claude's own subcommands need the --
 ./uninstall.sh                         # strip managed blocks, keep account data
 ./uninstall.sh --purge                 # also move ~/.cc-accounts to trash
 ```
