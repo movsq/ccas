@@ -66,6 +66,10 @@ then the mode menu via fzf and every option in it works; `claude -p "say hi"`
 runs headless with no menu; `ccs vo-se-15th claude auth status` reports
 vo.sedlacek@gmail.com rather than the default account.
 
+The headless runner was verified the same day: the first `claude -p "say hi"`
+asked which account, the second ran straight through, `echo hi | claude -p`
+answered without prompting, and the `●` sits on the chosen account's menu row.
+
 Every area of the tool has now been exercised on the real system.
 
 ---
