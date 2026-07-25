@@ -300,7 +300,7 @@ def test_headless_prompts_once_then_remembers_the_choice(monkeypatch):
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
     asked = []
 
-    def fake_choose(prompt, options, gui):
+    def fake_choose(prompt, options, gui, note=None):
         asked.append(options)
         return "other"
 
@@ -322,7 +322,7 @@ def test_headless_prompts_even_for_a_single_account(monkeypatch):
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
     asked = []
     monkeypatch.setattr(cli.pickers, "choose",
-                        lambda p, o, g: asked.append(o) or "work")
+                        lambda p, o, g, note=None: asked.append(o) or "work")
     cli.main(["tty", "-p", "hi"])
     assert asked, "the point is knowing which account answered"
 
@@ -331,7 +331,7 @@ def test_declining_the_headless_prompt_runs_nothing(monkeypatch):
     make_account("work")
     runs = _stub_claude(monkeypatch)
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: None)
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, note=None: None)
     assert cli.main(["tty", "-p", "hi"]) == 1
     assert runs == [], "Esc must not fall back to some arbitrary account"
 
@@ -420,7 +420,7 @@ def test_mode_menu_offers_the_headless_runner_and_shows_its_state(monkeypatch):
     monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
     seen = []
 
-    def fake_choose(prompt, options, gui):
+    def fake_choose(prompt, options, gui, note=None):
         seen.append(options)
         return next(o for o in options if "headless runner" in o.lower())
 
@@ -446,7 +446,7 @@ def test_mode_menu_still_launches_the_other_four_rows(monkeypatch):
     monkeypatch.setattr(cli.launch, "run",
                         lambda *a, **k: calls.append(a) or 0)
     for i in range(4):
-        monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, i=i: o[i])
+        monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, i=i, note=None: o[i])
         assert cli.cmd_mode_menu("work", False) == 0
     assert [c[1] for c in calls] == ["new", "last", "search", "new"]
     assert len(calls) == 4
@@ -459,7 +459,7 @@ def test_mode_menu_offers_display_colour_and_hide(monkeypatch):
     monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
     seen = []
 
-    def fake_choose(prompt, options, gui):
+    def fake_choose(prompt, options, gui, note=None):
         seen.append((prompt, options))
         return None
 
@@ -478,7 +478,7 @@ def test_display_submenu_marks_the_current_mode_and_sets_the_new_one(monkeypatch
     make_account("work")
     seen = []
 
-    def fake_choose(prompt, options, gui):
+    def fake_choose(prompt, options, gui, note=None):
         seen.append(options)
         return "Display as…" if len(seen) == 1 else \
             next(o for o in options if o.endswith("index"))
@@ -495,7 +495,7 @@ def test_colour_submenu_marks_the_current_colour_and_sets_the_new_one(monkeypatc
     target = paths.PALETTE[5][0]
     seen = []
 
-    def fake_choose(prompt, options, gui):
+    def fake_choose(prompt, options, gui, note=None):
         seen.append(options)
         return "Color…" if len(seen) == 1 else \
             next(o for o in options if o.endswith(target))
@@ -511,7 +511,7 @@ def test_hide_icon_toggles_in_place_and_shows_its_state(monkeypatch):
     make_account("work")
     seen = []
 
-    def fake_choose(prompt, options, gui):
+    def fake_choose(prompt, options, gui, note=None):
         seen.append(options)
         return next(o for o in options if "Hide icon" in o)
 
@@ -529,7 +529,7 @@ def test_a_cancelled_submenu_changes_nothing(monkeypatch):
     monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
     calls = []
 
-    def fake_choose(prompt, options, gui):
+    def fake_choose(prompt, options, gui, note=None):
         calls.append(options)
         return "Color…" if len(calls) == 1 else None
 
@@ -583,7 +583,7 @@ def test_passthrough_does_not_force_gui_mode(monkeypatch):
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
     seen = []
     monkeypatch.setattr(cli.pickers, "choose",
-                        lambda prompt, options, gui: seen.append(gui) or options[0])
+                        lambda prompt, options, gui, note=None: seen.append(gui) or options[0])
     assert cli.main(["-p", "hi"]) == 0
     assert seen == [False]
 
@@ -689,7 +689,7 @@ def test_account_picker_offers_add_even_with_one_account(monkeypatch):
     make_account("work")
     seen = []
     monkeypatch.setattr(cli.pickers, "choose",
-                        lambda p, o, g: seen.append(o) or o[0])
+                        lambda p, o, g, note=None: seen.append(o) or o[0])
     monkeypatch.setattr(cli, "cmd_mode_menu", lambda slug, gui: 0)
 
     assert cli.cmd_tty([], gui=False) == 0
@@ -701,7 +701,7 @@ def test_choosing_the_add_row_adds_an_account(monkeypatch):
     """Not a slug, so the account lookup would raise StopIteration on it."""
     make_account("work")
     calls = []
-    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: cli.ADD_ROW)
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, note=None: cli.ADD_ROW)
     monkeypatch.setattr(cli, "cmd_add", lambda gui: calls.append(gui) or 0)
     monkeypatch.setattr(cli, "cmd_mode_menu",
                         lambda *a: pytest.fail("add is not a launch"))
@@ -716,7 +716,7 @@ def test_choosing_an_account_still_reaches_the_mode_menu(monkeypatch):
     make_account("work")
     make_account("other")
     seen = []
-    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: o[1])
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, note=None: o[1])
     monkeypatch.setattr(cli, "cmd_mode_menu",
                         lambda slug, gui: seen.append(slug) or 0)
     monkeypatch.setattr(cli, "cmd_add", lambda gui: pytest.fail("no login"))
@@ -730,7 +730,7 @@ def test_no_accounts_still_goes_straight_to_add(monkeypatch):
     would be a dead end in GUI mode. With nothing to choose between, don't ask."""
     calls = []
     monkeypatch.setattr(cli.pickers, "choose",
-                        lambda p, o, g: pytest.fail("nothing to pick between"))
+                        lambda p, o, g, note=None: pytest.fail("nothing to pick between"))
     monkeypatch.setattr(cli, "cmd_add", lambda gui: calls.append(gui) or 0)
 
     assert cli.cmd_tty([], gui=False) == 0
@@ -739,7 +739,7 @@ def test_no_accounts_still_goes_straight_to_add(monkeypatch):
 
 def test_cancelling_the_account_picker_adds_nothing(monkeypatch):
     make_account("work")
-    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: None)
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, note=None: None)
     monkeypatch.setattr(cli, "cmd_add", lambda gui: pytest.fail("no login"))
     monkeypatch.setattr(cli, "cmd_mode_menu",
                         lambda *a: pytest.fail("no session"))
@@ -754,7 +754,7 @@ def test_mode_menu_offers_manage(monkeypatch):
     monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
     seen = []
 
-    def fake_choose(prompt, options, gui):
+    def fake_choose(prompt, options, gui, note=None):
         seen.append(options)
         return "Manage…" if len(seen) == 1 else None
 
@@ -772,7 +772,7 @@ def test_manage_menu_dispatches_with_the_slug(monkeypatch, row, action):
     rather than its effect."""
     make_account("work")
     calls = []
-    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: row)
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, note=None: row)
     monkeypatch.setattr(cli, "cmd_manage",
                         lambda a, s, g: calls.append((a, s, g)) or 0)
 
@@ -789,7 +789,7 @@ def test_manage_menu_names_the_account_the_way_the_user_sees_it(monkeypatch):
     registry.save(reg)
     seen = []
     monkeypatch.setattr(cli.pickers, "choose",
-                        lambda p, o, g: seen.append(o) or None)
+                        lambda p, o, g, note=None: seen.append(o) or None)
 
     assert cli.cmd_manage_menu("me@x.com", False) == 1
     assert seen[0] == ["Rename work laptop…", "Remove me@x.com…"]
@@ -797,7 +797,7 @@ def test_manage_menu_names_the_account_the_way_the_user_sees_it(monkeypatch):
 
 def test_cancelling_the_manage_menu_manages_nothing(monkeypatch):
     make_account("work")
-    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: None)
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, note=None: None)
     monkeypatch.setattr(cli, "cmd_manage",
                         lambda *a: pytest.fail("cancel is not a command"))
 
@@ -902,7 +902,7 @@ def test_the_mode_menu_offers_the_dangerous_row(monkeypatch):
     make_account("a")
     seen = []
     monkeypatch.setattr(cli.pickers, "choose",
-                        lambda prompt, options, gui: seen.append(options) or None)
+                        lambda prompt, options, gui, note=None: seen.append(options) or None)
     cli.cmd_mode_menu("a", gui=False)
     assert any("Skip permissions (dangerous)" in o for o in seen[0])
 
@@ -911,7 +911,7 @@ def test_picking_the_dangerous_row_toggles_it(monkeypatch):
     make_account("a")
     monkeypatch.setattr(
         cli.pickers, "choose",
-        lambda prompt, options, gui: next(o for o in options if "permissions" in o))
+        lambda prompt, options, gui, note=None: next(o for o in options if "permissions" in o))
     assert cli.cmd_mode_menu("a", gui=False) == 0
     assert registry.find(registry.load(), "a")["dangerous"] is True
 
@@ -1035,3 +1035,28 @@ def test_render_puts_the_recorded_reading_on_the_bar(monkeypatch):
     monkeypatch.setattr(cli.sys, "stdout", out)
     assert cli.main(["render", "work"]) == 0
     assert time.strftime("%H:%M", time.localtime(time.time() + 3600)) in out.getvalue()
+
+
+def test_the_mode_picker_says_where_the_account_stands(monkeypatch):
+    """The row the retired GtkMenu would have carried. It says in words what
+    the label cannot: an open window is the good state, not missing data."""
+    make_account()
+    payload = json.dumps({"rate_limits": {"five_hour": {
+        "used_percentage": 94.0, "resets_at": time.time() + 3600}}})
+    _feed(monkeypatch, payload, paths.account_dir("work"))
+    cli.main(["statusline"])
+
+    seen = {}
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda prompt, options, gui, note=None: seen.update(note=note))
+    cli.cmd_mode_menu("work", gui=False)
+    assert seen["note"].startswith("5h ≥94% · clears ")
+
+
+def test_an_account_with_no_reading_is_told_the_hook_is_not_wired(monkeypatch):
+    make_account()
+    seen = {}
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda prompt, options, gui, note=None: seen.update(note=note))
+    cli.cmd_mode_menu("work", gui=False)
+    assert seen["note"] == cli.usage.NOT_WIRED

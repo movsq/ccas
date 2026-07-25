@@ -194,3 +194,39 @@ def test_confirm_create_asks_on_the_terminal(monkeypatch):
     assert pickers.confirm_create("~/code/new", gui=False) is True
     monkeypatch.setattr("builtins.input", lambda _prompt: "")
     assert pickers.confirm_create("~/code/new", gui=False) is False
+
+
+def _capture(monkeypatch, stdout="first\n"):
+    class Result:
+        returncode = 0
+    Result.stdout = stdout
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return Result()
+
+    monkeypatch.setattr(pickers.subprocess, "run", fake_run)
+    return seen
+
+
+def test_a_note_is_shown_above_the_rows_and_cannot_be_picked(monkeypatch):
+    """What the retired GtkMenu did with an insensitive title row. Both
+    front-ends have a place for text that is not a choice — and both honour a
+    newline in it, so a second line costs nothing."""
+    seen = _capture(monkeypatch)
+    pickers.choose("pick", ["first"], gui=True, note="5h ≥94%\n7d ≥91%")
+    assert seen["cmd"][seen["cmd"].index("--mesg") + 1] == "5h ≥94%\n7d ≥91%"
+
+    seen = _capture(monkeypatch)
+    pickers.choose("pick", ["first"], gui=False, note="5h ≥94%")
+    assert seen["cmd"][seen["cmd"].index("--header") + 1] == "5h ≥94%"
+
+
+def test_no_note_leaves_the_command_as_it_was(monkeypatch):
+    seen = _capture(monkeypatch)
+    pickers.choose("pick", ["first"], gui=True)
+    assert "--mesg" not in seen["cmd"]
+    seen = _capture(monkeypatch)
+    pickers.choose("pick", ["first"], gui=False)
+    assert "--header" not in seen["cmd"]

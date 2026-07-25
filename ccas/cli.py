@@ -365,8 +365,11 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
                "Display as…", hide_row, "Color…",
                headless_row, danger_row, "Manage…"]
     # The account's identity, which used to be the menu's title row — a picker
-    # prompted "mode" does not say which account it belongs to.
-    choice = pickers.choose(label.display_name(account), options, gui)
+    # prompted "mode" does not say which account it belongs to. Under it, where
+    # the label has no room to be anything but a warning, usage in words: an
+    # open window is the good state and must not read as missing data.
+    choice = pickers.choose(label.display_name(account), options, gui,
+                            note="\n".join(usage.lines(usage.read(slug))))
     if choice is None:
         return 1
     # Before the launch rows: the last of those is this dispatch's catch-all.

@@ -150,7 +150,7 @@ def test_no_mode_carries_the_danger_flag_by_default(tmp_path, monkeypatch):
     """Opt-in, always: an account that never asked for it must launch clean."""
     seed(tmp_path, monkeypatch)
     monkeypatch.setattr(launch.pickers, "choose",
-                        lambda prompt, options, gui: options[0])
+                        lambda prompt, options, gui, note=None: options[0])
     for mode, arg in (("new", str(tmp_path / "proj")), ("last", None),
                       ("search", None)):
         _workdir, argv = launch.resolve("work", mode, arg, True, None)
@@ -162,7 +162,7 @@ def test_every_mode_carries_the_danger_flag_when_set(tmp_path, monkeypatch):
     resuming a session skips permissions exactly like starting one."""
     seed(tmp_path, monkeypatch)
     monkeypatch.setattr(launch.pickers, "choose",
-                        lambda prompt, options, gui: options[0])
+                        lambda prompt, options, gui, note=None: options[0])
     for mode, arg in (("new", str(tmp_path / "proj")), ("last", None),
                       ("search", None)):
         _workdir, argv = launch.resolve("work", mode, arg, True, None,

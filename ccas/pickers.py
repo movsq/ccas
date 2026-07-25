@@ -29,15 +29,26 @@ def is_gui() -> bool:
         return True
 
 
-def choose(prompt: str, rows, gui: bool):
+def choose(prompt: str, rows, gui: bool, note=None):
+    """Pick one row, or None.
+
+    `note` is text above the rows that is not one of them — fuzzel's --mesg and
+    fzf's --header, both of which honour newlines. It is what the retired
+    GtkMenu did with an insensitive title row, and the reason a status line can
+    be shown here without becoming something the user can accidentally select.
+    """
     rows = list(rows)
     if not rows:
         return None
     if gui:
         cmd = ["fuzzel", "--dmenu", "--prompt", f"{prompt} ", "--width", "80",
                "--lines", "20"]
+        if note:
+            cmd += ["--mesg", note]
     else:
         cmd = ["fzf", "--prompt", f"{prompt} ", "--height", "40%", "--reverse"]
+        if note:
+            cmd += ["--header", note]
     proc = subprocess.run(cmd, input="\n".join(rows), capture_output=True, text=True)
     if proc.returncode != 0:
         return None
