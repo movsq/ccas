@@ -152,16 +152,22 @@ def read_tsv(slug: str):
 
 
 def session_set_changed(slug: str, sessions) -> bool:
-    """True when the menu on disk no longer matches the live session set.
+    """True when the menu on disk no longer holds the live set of sessions.
 
-    Cheap by design: a row count plus the newest uuid. Waybar only re-parses
-    menu.xml on a full SIGUSR2 reload, so this gates a visible bar flicker and
-    must not fire on every 30 s render tick.
+    Deliberately set-based, not order-based. Waybar only re-parses menu.xml on
+    a full SIGUSR2 reload, so this gates a visible bar flicker and must not fire
+    on every 30 s render tick — and with two live Claude sessions the newest one
+    changes identity every time the user switches between them, which under an
+    order-based comparison reloaded the bar every few minutes for nothing.
+
+    Reordering does change the rows the user would see, but only their order and
+    their age column. A genuinely new session is what is worth a reload.
     """
+    directory = paths.account_dir(slug)
+    if not (directory / "menu.xml").exists() or not (directory / "history.tsv").exists():
+        return True  # nothing cached yet; an empty tsv and a missing one differ
     existing = read_tsv(slug)
     capped = sessions[: paths.HIST_SLOTS]
     if len(existing) != len(capped):
         return True
-    if not existing:
-        return False
-    return existing[0][1] != capped[0].uuid
+    return {row[1] for row in existing} != {s.uuid for s in capped}

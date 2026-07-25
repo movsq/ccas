@@ -46,6 +46,11 @@ def cmd_render(slug: str) -> int:
     per-module RTMIN signal makes it re-read (see docs/superpowers/
     spike-waybar-menu.md). Only a full SIGUSR2 reload does, so reload when the
     session set actually changed — unconditionally would flicker every tick.
+
+    The write is bound to the same condition. Waybar is still showing the menu
+    it cached at the last reload, and hist-i resolves against line i of
+    history.tsv; rewriting the pair without reloading would leave the visible
+    row and the session it launches pointing at different things.
     """
     reg = registry.load()
     account = registry.find(reg, slug)
@@ -53,7 +58,8 @@ def cmd_render(slug: str) -> int:
         return 1
     sessions = history.scan()
     changed = menu.session_set_changed(slug, sessions)
-    menu.write(account, sessions)
+    if changed:
+        menu.write(account, sessions)
     print(label.render(account, registry.index_of(reg, slug)))
     if changed:
         waybar.reload()

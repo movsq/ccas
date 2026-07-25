@@ -81,6 +81,27 @@ def test_render_reloads_waybar_only_when_the_session_set_changed(monkeypatch):
     assert reloads == [1, 1], "a new session must reload"
 
 
+def test_render_does_not_rewrite_the_menu_it_is_not_going_to_reload(monkeypatch):
+    """hist-i actions index line i of history.tsv, and Waybar is still showing
+    the menu it cached at the last reload. Rewriting the pair without reloading
+    desynchronises them: the row says one session, the click resumes another."""
+    make_account()
+    from ccas.history import Session
+    import time
+    sessions = [Session(uuid=f"u{i}", cwd="/tmp", title=f"s{i}",
+                        mtime=time.time() - i, path=None) for i in range(2)]
+    monkeypatch.setattr(cli.history, "scan", lambda: list(sessions))
+    cli.main(["render", "work"])
+
+    xml = paths.account_dir("work") / "menu.xml"
+    tsv = paths.account_dir("work") / "history.tsv"
+    before = (xml.read_text(), tsv.read_text())
+
+    sessions.append(sessions.pop(0))  # same set, new newest
+    cli.main(["render", "work"])
+    assert (xml.read_text(), tsv.read_text()) == before
+
+
 def test_display_persists_and_refreshes_the_bar(monkeypatch):
     make_account()
     fired = []

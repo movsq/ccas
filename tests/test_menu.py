@@ -177,5 +177,23 @@ def test_session_set_changed_detects_a_new_newest_session():
     assert menu.session_set_changed("work", fresh) is True
 
 
+def test_reordering_the_same_sessions_is_not_a_change():
+    """Two live Claude sessions take turns being the newest, and comparing only
+    the newest uuid made every hand-over a full SIGUSR2 reload — the bar visibly
+    resetting itself every few minutes with nothing new to show."""
+    menu.write(account(), sessions(3))
+    shuffled = sessions(3)
+    shuffled.append(shuffled.pop(0))
+    assert menu.session_set_changed("work", shuffled) is False
+
+
 def test_session_set_changed_is_true_when_no_snapshot_exists():
     assert menu.session_set_changed("work", sessions(2)) is True
+
+
+def test_no_snapshot_and_no_sessions_still_counts_as_changed():
+    """An account with no history at all must still get a menu.xml written —
+    'no rows on disk' and 'no file on disk' are not the same state."""
+    assert menu.session_set_changed("work", []) is True
+    menu.write(account(), [])
+    assert menu.session_set_changed("work", []) is False
