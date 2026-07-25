@@ -314,6 +314,26 @@ def cmd_tty(args, gui=None) -> int:
     return cmd_mode_menu(slug, gui)
 
 
+def _display_menu(reg, slug: str, gui: bool) -> int:
+    account = registry.find(reg, slug)
+    rows = [f"{label.MARK_ON if account['display'] == m else label.MARK_OFF} {m}"
+            for m in paths.DISPLAY_MODES]
+    choice = pickers.choose("display as", rows, gui)
+    if choice is None:
+        return 0
+    return _mutate(slug, "display", choice.split(" ", 1)[1])
+
+
+def _color_menu(reg, slug: str, gui: bool) -> int:
+    account = registry.find(reg, slug)
+    rows = [f"{label.MARK_ON if account['color'] == i else label.MARK_OFF} {name}"
+            for i, (name, _hex) in enumerate(paths.PALETTE)]
+    choice = pickers.choose("color", rows, gui)
+    if choice is None:
+        return 0
+    return _mutate(slug, "color", rows.index(choice))
+
+
 def cmd_mode_menu(slug: str, gui: bool) -> int:
     cwd = os.getcwd()
     short = history.abbreviate(cwd)
@@ -328,13 +348,25 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     danger_row = (f"{label.MARK_ON} Skipping permissions — pick to clear"
                   if account and account.get("dangerous")
                   else f"{label.MARK_OFF} Skip permissions (dangerous)")
+    hide_row = (f"{label.MARK_ON if account and account['hide_icon'] else label.MARK_OFF}"
+                " Hide icon")
+    # The Waybar menu's grouping: launch verbs, appearance, runner toggles, manage.
     options = [f"New here  ({short})", f"Resume last in  {short}",
-               f"History in  {short}…", "All projects…", headless_row,
-               danger_row, "Manage…"]
-    choice = pickers.choose("mode", options, gui)
+               f"History in  {short}…", "All projects…",
+               "Display as…", hide_row, "Color…",
+               headless_row, danger_row, "Manage…"]
+    # The account's identity, which used to be the menu's title row — a picker
+    # prompted "mode" does not say which account it belongs to.
+    choice = pickers.choose(label.display_name(account), options, gui)
     if choice is None:
         return 1
     # Before the launch rows: the last of those is this dispatch's catch-all.
+    if choice == "Display as…":
+        return _display_menu(reg, slug, gui)
+    if choice == "Color…":
+        return _color_menu(reg, slug, gui)
+    if choice == hide_row:
+        return _mutate(slug, "hide_icon", not account["hide_icon"])
     if choice == headless_row:
         _toggle_headless(reg, slug)
         return 0

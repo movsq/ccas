@@ -514,6 +514,92 @@ def test_mode_menu_still_launches_the_other_four_rows(monkeypatch):
     assert len(calls) == 4
 
 
+def test_mode_menu_offers_display_colour_and_hide(monkeypatch):
+    """The three settings that only the Waybar menu could reach. Once the bar's
+    click opens this picker instead of a GtkMenu, this is the only way in."""
+    make_account("work")
+    monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
+    seen = []
+
+    def fake_choose(prompt, options, gui):
+        seen.append((prompt, options))
+        return None
+
+    monkeypatch.setattr(cli.pickers, "choose", fake_choose)
+    cli.cmd_mode_menu("work", False)
+    prompt, options = seen[0]
+    assert "Display as…" in options
+    assert "Color…" in options
+    assert f"{cli.label.MARK_OFF} Hide icon" in options
+    # The identity that used to head the menu. Once the bar's click opens this,
+    # a picker prompted "mode" does not say which account it belongs to.
+    assert prompt == "work"
+
+
+def test_display_submenu_marks_the_current_mode_and_sets_the_new_one(monkeypatch):
+    make_account("work")
+    seen = []
+
+    def fake_choose(prompt, options, gui):
+        seen.append(options)
+        return "Display as…" if len(seen) == 1 else \
+            next(o for o in options if o.endswith("index"))
+
+    monkeypatch.setattr(cli.pickers, "choose", fake_choose)
+    assert cli.cmd_mode_menu("work", False) == 0
+    assert f"{cli.label.MARK_ON} nickname" in seen[1], seen[1]
+    assert f"{cli.label.MARK_OFF} index" in seen[1], seen[1]
+    assert registry.find(registry.load(), "work")["display"] == "index"
+
+
+def test_colour_submenu_marks_the_current_colour_and_sets_the_new_one(monkeypatch):
+    make_account("work")
+    target = paths.PALETTE[5][0]
+    seen = []
+
+    def fake_choose(prompt, options, gui):
+        seen.append(options)
+        return "Color…" if len(seen) == 1 else \
+            next(o for o in options if o.endswith(target))
+
+    monkeypatch.setattr(cli.pickers, "choose", fake_choose)
+    assert cli.cmd_mode_menu("work", False) == 0
+    assert f"{cli.label.MARK_ON} {paths.PALETTE[0][0]}" in seen[1], seen[1]
+    assert registry.find(registry.load(), "work")["color"] == 5
+
+
+def test_hide_icon_toggles_in_place_and_shows_its_state(monkeypatch):
+    """A mark row like headless, not a submenu — there are only two states."""
+    make_account("work")
+    seen = []
+
+    def fake_choose(prompt, options, gui):
+        seen.append(options)
+        return next(o for o in options if "Hide icon" in o)
+
+    monkeypatch.setattr(cli.pickers, "choose", fake_choose)
+    assert cli.cmd_mode_menu("work", False) == 0
+    assert registry.find(registry.load(), "work")["hide_icon"] is True
+    assert cli.cmd_mode_menu("work", False) == 0
+    assert f"{cli.label.MARK_ON} Hide icon" in seen[1]
+    assert registry.find(registry.load(), "work")["hide_icon"] is False
+
+
+def test_a_cancelled_submenu_changes_nothing(monkeypatch):
+    """Esc out of the second prompt must not fall through to a launch."""
+    make_account("work")
+    monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
+    calls = []
+
+    def fake_choose(prompt, options, gui):
+        calls.append(options)
+        return "Color…" if len(calls) == 1 else None
+
+    monkeypatch.setattr(cli.pickers, "choose", fake_choose)
+    assert cli.cmd_mode_menu("work", False) == 0
+    assert registry.find(registry.load(), "work")["color"] == 0
+
+
 def test_a_leading_flag_is_passed_through_to_claude(monkeypatch):
     """`ccs -p "hi"` replaces the `claude()` shell function. Owning the user's
     `claude` bought nothing that this does not, and cost the recursion hazard."""
@@ -731,7 +817,7 @@ def test_mode_menu_offers_manage(monkeypatch):
 
     def fake_choose(prompt, options, gui):
         seen.append(options)
-        return "Manage…" if prompt == "mode" else None
+        return "Manage…" if len(seen) == 1 else None
 
     monkeypatch.setattr(cli.pickers, "choose", fake_choose)
 
