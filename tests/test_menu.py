@@ -118,9 +118,17 @@ def test_display_mode_state_is_rendered_into_labels():
     assert "○ nickname" in xml
 
 
-def test_hide_icon_checkbox_state():
-    assert "☐ Hide icon" in menu.build_xml(account(hide_icon=False), [])
-    assert "☑ Hide icon" in menu.build_xml(account(hide_icon=True), [])
+def test_hide_icon_state_uses_the_same_marks_as_every_other_row():
+    """☑ was invisible on the real bar. Waybar's font stack starts with
+    FontAwesome, which covers U+2611 but not U+2610 — so the checked box was
+    drawn by FontAwesome and the unchecked one by DejaVu, at different sizes,
+    and the 'on' state read as an empty box. Only use marks that survive that
+    stack: ●/○ were verified against it with pango-view."""
+    assert f"{menu.MARK_OFF} Hide icon" in menu.build_xml(account(hide_icon=False), [])
+    assert f"{menu.MARK_ON} Hide icon" in menu.build_xml(account(hide_icon=True), [])
+    for xml in (menu.build_xml(account(hide_icon=True), []),
+                menu.build_xml(account(hide_icon=False), [])):
+        assert "☑" not in xml and "☐" not in xml
 
 
 def test_labels_are_xml_escaped():

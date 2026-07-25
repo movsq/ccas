@@ -102,6 +102,21 @@ def test_render_does_not_rewrite_the_menu_it_is_not_going_to_reload(monkeypatch)
     assert (xml.read_text(), tsv.read_text()) == before
 
 
+def test_config_rebuilds_every_menu_even_when_the_session_set_is_unchanged():
+    """render only writes when it is also going to reload, so after a code change
+    that alters the XML nothing would refresh it. `ccs config` — what install.sh
+    runs — is the unconditional rebuild."""
+    make_account()
+    make_account("other")
+    cli.main(["render", "work"])
+    for slug in ("work", "other"):
+        (paths.account_dir(slug) / "menu.xml").write_text("stale", encoding="utf-8")
+
+    assert cli.main(["config"]) == 0
+    for slug in ("work", "other"):
+        assert "GtkMenu" in (paths.account_dir(slug) / "menu.xml").read_text()
+
+
 def test_display_persists_and_refreshes_the_bar(monkeypatch):
     make_account()
     fired = []
@@ -164,7 +179,7 @@ def test_changing_a_setting_moves_the_radio_dot_in_the_menu(monkeypatch):
     assert "○ nickname" in _menu_xml()
 
     cli.main(["hide", "work", "toggle"])
-    assert "☑ Hide icon" in _menu_xml()
+    assert f"{cli.menu.MARK_ON} Hide icon" in _menu_xml()
 
 
 def test_renaming_updates_the_menu_title_row(monkeypatch):

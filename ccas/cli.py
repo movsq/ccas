@@ -237,7 +237,13 @@ def main(argv) -> int:
     if command == "render":
         return cmd_render(rest[0]) if rest else 1
     if command == "config":
+        # The unconditional rebuild. cmd_render only writes when it is also
+        # going to reload, so a code change that alters the XML would otherwise
+        # never reach the menus already on disk — this is what install.sh runs.
         reg = registry.load()
+        sessions = history.scan()
+        for account in reg["accounts"]:
+            menu.write(account, sessions)
         waybar.apply(reg)
         waybar.apply_bashrc()
         waybar.reload()

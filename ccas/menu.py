@@ -13,6 +13,15 @@ from xml.sax.saxutils import escape
 from . import paths
 from .history import format_row
 
+# Every stateful row in the menu marks itself with this pair, radio or toggle.
+# Not ☑/☐: Waybar's font stack here starts with FontAwesome, which covers U+2611
+# but not U+2610, so the checked box came from FontAwesome and the unchecked one
+# from DejaVu — different sizes, different weights, and the "on" state looked
+# like an empty box on the bar. U+25CF/U+25CB were checked against that exact
+# stack with pango-view and render consistently.
+MARK_ON = "●"
+MARK_OFF = "○"
+
 
 def _item(item_id: str, text: str) -> str:
     return (
@@ -76,12 +85,12 @@ def build_xml(account: dict, sessions) -> str:
            "claude code": "disp-cc", "icon only": "disp-icon"}
     display = ""
     for mode in paths.DISPLAY_MODES:
-        mark = "●" if account["display"] == mode else "○"
+        mark = MARK_ON if account["display"] == mode else MARK_OFF
         display += _item(ids[mode], f"{mark} {mode}")
 
     colors = ""
     for i, (name, _hex) in enumerate(paths.PALETTE):
-        mark = "●" if account["color"] == i else "○"
+        mark = MARK_ON if account["color"] == i else MARK_OFF
         colors += _item(f"color-{i}", f"{mark} {name}")
 
     manage = (
@@ -104,7 +113,8 @@ def build_xml(account: dict, sessions) -> str:
         + _submenu("history", "Resume from history", history)
         + _separator()
         + _submenu("display", "Display as", display)
-        + _item("hide", ("☑" if account["hide_icon"] else "☐") + " Hide icon")
+        + _item("hide", (MARK_ON if account["hide_icon"] else MARK_OFF)
+                + " Hide icon")
         + _submenu("color", "Color", colors)
         + _separator()
         + _submenu("manage", "Manage", manage)
