@@ -4,6 +4,9 @@ from xml.sax.saxutils import escape
 from . import paths
 
 ICON_SIZE = "x-large"
+# The glyph sits high in the font, so at x-large it reads as floating above the
+# text beside it. rise is pango's baseline shift, in 1024ths of a point.
+ICON_RISE = "-1500"
 
 WARNING_TEXT = "it's still there — invisible."
 
@@ -19,9 +22,9 @@ def display_name(account: dict) -> str:
 def render(account: dict, index: int) -> str:
     color = paths.PALETTE[account["color"]][1]
     if account["hide_icon"]:
-        icon = f"<span size='{ICON_SIZE}' alpha='1'>{paths.GLYPH}</span>"
+        icon = f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' alpha='1'>{paths.GLYPH}</span>"
     else:
-        icon = f"<span size='{ICON_SIZE}' color='{color}'>{paths.GLYPH}</span>"
+        icon = f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' color='{color}'>{paths.GLYPH}</span>"
 
     mode = account["display"]
     if mode == "icon only":
