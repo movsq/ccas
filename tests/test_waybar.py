@@ -235,3 +235,11 @@ def test_generated_commands_all_force_gui_mode():
     for command in waybar.module_config(account)["menu-actions"].values():
         assert "--gui" in command, command
     assert "--gui" in waybar.placeholder_config()["on-click"]
+
+
+def test_the_dangerous_action_is_generated_with_gui():
+    account = {"slug": "work", "signal": 1, "display": "index",
+               "color": 0, "hide_icon": False, "dangerous": False}
+    action = waybar.module_config(account)["menu-actions"]["dangerous"]
+    assert action.endswith("dangerous work")
+    assert "--gui" in action

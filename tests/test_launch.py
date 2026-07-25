@@ -153,3 +153,39 @@ def test_never_invokes_claude_by_bare_name(tmp_path):
     _, argv = launch.resolve("work", "new", str(tmp_path / "proj"), True, None)
     assert argv[0] != "claude"
     assert argv[0].startswith("/")
+
+
+DANGER = "--dangerously-skip-permissions"
+
+
+def test_no_mode_carries_the_danger_flag_by_default(tmp_path, monkeypatch):
+    """Opt-in, always: an account that never asked for it must launch clean."""
+    seed(tmp_path)
+    monkeypatch.setattr(launch.pickers, "choose",
+                        lambda prompt, options, gui: options[0])
+    for mode, arg in (("new", str(tmp_path / "proj")), ("last", None),
+                      ("hist", "0"), ("search", None)):
+        _workdir, argv = launch.resolve("work", mode, arg, True, None)
+        assert DANGER not in argv, mode
+
+
+def test_every_mode_carries_the_danger_flag_when_set(tmp_path, monkeypatch):
+    """All four launch modes build their own argv, so all four must honour it —
+    resuming a session skips permissions exactly like starting one."""
+    seed(tmp_path)
+    monkeypatch.setattr(launch.pickers, "choose",
+                        lambda prompt, options, gui: options[0])
+    for mode, arg in (("new", str(tmp_path / "proj")), ("last", None),
+                      ("hist", "0"), ("search", None)):
+        _workdir, argv = launch.resolve("work", mode, arg, True, None,
+                                        dangerous=True)
+        assert argv[1] == DANGER, mode
+        assert argv[0].startswith("/"), "absolute claude path stays first"
+
+
+def test_the_danger_flag_precedes_resume(tmp_path):
+    """--resume takes a value; the flag must not land between it and its uuid."""
+    seed(tmp_path)
+    _workdir, argv = launch.resolve("work", "last", None, True, None,
+                                    dangerous=True)
+    assert argv[1:] == [DANGER, "--resume", "uuid-0"]

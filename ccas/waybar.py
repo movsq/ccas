@@ -38,6 +38,7 @@ def module_config(account: dict) -> dict:
         "search-more": f"{ccs} launch {slug} search",
         "hide": f"{ccs} hide {slug} toggle",
         "headless": f"{ccs} headless {slug}",
+        "dangerous": f"{ccs} dangerous {slug}",
         "mng-add": f"{ccs} manage add",
         "mng-rename": f"{ccs} manage rename {slug}",
         "mng-remove": f"{ccs} manage remove {slug}",

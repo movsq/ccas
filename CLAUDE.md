@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~217 tests, under a second). They are the specification —
+1. `python -m pytest` (~237 tests, under a second). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -252,13 +252,14 @@ is how the missing-`menu.xml` bug in `cmd_add` was found.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~217 tests, under a second
+cd ~/ccas && python -m pytest    # ~237 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs                              # pick account → mode; Add is on the picker, Rename/Remove under Manage…
 ccs list                         # accounts
 ccs doctor                       # audit the four places that drift; rc 1 if any failed
 ccs config                       # force a rebuild of every menu.xml (render does not)
 ccs headless [<slug>]            # show / toggle which account runs `ccs -p`
+ccs dangerous [<slug>]           # show / toggle --dangerously-skip-permissions per account
 ccs -p "…" / ccs -c / ccs -r     # real claude under the runner account
 ccs -- mcp list                  # claude's own subcommands need the --
 ./uninstall.sh [--purge]         # strip managed blocks; --purge also trashes ~/.cc-accounts

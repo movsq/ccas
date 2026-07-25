@@ -27,6 +27,7 @@ def load() -> dict:
     for account in reg["accounts"]:
         # Added after the first release; every read path assumes it is present.
         account.setdefault("headless", False)
+        account.setdefault("dangerous", False)
     return reg
 
 
@@ -77,6 +78,7 @@ def add(reg: dict, slug: str, email: str, nickname):
         "display": "nickname",
         "hide_icon": False,
         "headless": False,
+        "dangerous": False,
         "warned_invisible": False,
         "signal": len(reg["accounts"]) + 1,
     }

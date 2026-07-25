@@ -777,3 +777,115 @@ def test_cancelling_the_manage_menu_manages_nothing(monkeypatch):
                         lambda *a: pytest.fail("cancel is not a command"))
 
     assert cli.cmd_manage_menu("work", False) == 1
+
+
+DANGER = "--dangerously-skip-permissions"
+
+
+def _danger_account(slug="a"):
+    make_account(slug)
+    reg = registry.load()
+    registry.set_field(reg, slug, "dangerous", True)
+    registry.save(reg)
+    return reg
+
+
+def test_passthrough_stays_clean_for_an_ordinary_account(monkeypatch):
+    make_account("a")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    assert cli.main(["-p", "hi"]) == 0
+    assert DANGER not in runs[0][0]
+
+
+def test_passthrough_injects_the_flag_for_a_dangerous_account(monkeypatch):
+    """`claude -p` cannot prompt — it refuses the tool and exits 2 — so the
+    passthrough is the path that most needs the flag, not the least."""
+    _danger_account("a")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    assert cli.main(["-p", "hi"]) == 0
+    assert runs[0][0][1:] == [DANGER, "-p", "hi"]
+
+
+def test_the_flag_is_not_injected_twice_when_typed(monkeypatch):
+    """Typing it yourself must not double it."""
+    _danger_account("a")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    assert cli.main([DANGER, "-p", "hi"]) == 0
+    assert runs[0][0].count(DANGER) == 1
+
+
+def test_an_explicit_permission_mode_wins_over_the_account_setting(monkeypatch):
+    """A flag typed now beats a row clicked days ago; injecting alongside it
+    would silently override what the user just asked for."""
+    _danger_account("a")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    assert cli.main(["--permission-mode", "plan", "-p", "hi"]) == 0
+    assert DANGER not in runs[0][0]
+
+
+def test_installation_subcommands_never_get_the_flag(monkeypatch):
+    """NO_ACCOUNT_ARGS inspect the install and never run a session."""
+    _danger_account("a")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    assert cli.main(["--version"]) == 0
+    assert DANGER not in runs[0][0]
+
+
+def test_dangerous_command_toggles_and_is_not_exclusive(monkeypatch):
+    make_account("a")
+    make_account("b")
+    assert cli.main(["dangerous", "a"]) == 0
+    assert registry.find(registry.load(), "a")["dangerous"] is True
+    assert cli.main(["dangerous", "b"]) == 0
+    assert [x["dangerous"] for x in registry.load()["accounts"]] == [True, True]
+    assert cli.main(["dangerous", "a"]) == 0
+    assert registry.find(registry.load(), "a")["dangerous"] is False
+
+
+def test_dangerous_with_no_argument_lists_the_dangerous_accounts(capsys):
+    make_account("a")
+    make_account("b")
+    cli.main(["dangerous", "b"])
+    capsys.readouterr()
+    assert cli.main(["dangerous"]) == 0
+    assert capsys.readouterr().out.split() == ["b"]
+
+
+def test_dangerous_rejects_an_unknown_slug():
+    assert cli.main(["dangerous", "nope"]) == 1
+
+
+def test_list_marks_a_dangerous_account(capsys):
+    """The setting must be visible without opening a menu."""
+    make_account("a")
+    make_account("b")
+    cli.main(["dangerous", "b"])
+    capsys.readouterr()
+    cli.main(["list"])
+    lines = capsys.readouterr().out.splitlines()
+    assert "!" not in lines[0] and "!" in lines[1]
+
+
+def test_the_mode_menu_offers_the_dangerous_row(monkeypatch):
+    """Worded as an action, like the headless row: sat among verbs, a bare
+    status line reads as something you cannot click."""
+    make_account("a")
+    seen = []
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda prompt, options, gui: seen.append(options) or None)
+    cli.cmd_mode_menu("a", gui=False)
+    assert any("Skip permissions (dangerous)" in o for o in seen[0])
+
+
+def test_picking_the_dangerous_row_toggles_it(monkeypatch):
+    make_account("a")
+    monkeypatch.setattr(
+        cli.pickers, "choose",
+        lambda prompt, options, gui: next(o for o in options if "permissions" in o))
+    assert cli.cmd_mode_menu("a", gui=False) == 0
+    assert registry.find(registry.load(), "a")["dangerous"] is True

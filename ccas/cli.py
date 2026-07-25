@@ -104,6 +104,35 @@ def _runner_slug(reg, args, gui):
     return slug
 
 
+def _danger_flag(reg, slug: str, args):
+    """`[--dangerously-skip-permissions]` when this account opted in, else `[]`.
+
+    Two things the account setting must lose to, both because they were typed
+    now and it was clicked days ago: the flag already being present (injecting
+    would double it) and an explicit --permission-mode (injecting alongside it
+    would override the mode the user just asked for). NO_ACCOUNT_ARGS is the
+    third exemption — those inspect the installation and never run a session.
+    """
+    account = registry.find(reg, slug)
+    if not (account and account.get("dangerous")):
+        return []
+    if args and args[0] in NO_ACCOUNT_ARGS:
+        return []
+    if launch.DANGEROUS in args or "--permission-mode" in args:
+        return []
+    return [launch.DANGEROUS]
+
+
+def _toggle_dangerous(reg, slug: str) -> int:
+    """Flip one account's permission bypass. Not exclusive, unlike headless."""
+    account = registry.find(reg, slug)
+    if account is None:
+        return 1
+    registry.set_field(reg, slug, "dangerous", not account.get("dangerous"))
+    _refresh(reg, registry.find(reg, slug))
+    return 0
+
+
 def _mutate(slug: str, field: str, value) -> int:
     reg = registry.load()
     if registry.find(reg, slug) is None:
@@ -147,8 +176,11 @@ def cmd_list() -> int:
     reg = registry.load()
     for i, a in enumerate(reg["accounts"], start=1):
         star = "*" if reg["default"] == a["slug"] else " "
+        # Permission bypass is worth seeing without opening a menu.
+        bang = "!" if a.get("dangerous") else " "
         color = paths.PALETTE[a["color"]][0]
-        print(f"{star} {i}  {a['slug']:<14} {a['email']:<28} {color:<7} {a['display']}")
+        print(f"{star}{bang} {i}  {a['slug']:<14} {a['email']:<28} "
+              f"{color:<7} {a['display']}")
     return 0
 
 
@@ -264,8 +296,9 @@ def cmd_tty(args, gui=None) -> int:
         slug = _runner_slug(reg, args, gui)
         if slug is None:
             return 1
-        return subprocess.run([str(paths.claude_bin()), *args],
-                              env=accounts.env_for(slug), check=False).returncode
+        argv = [str(paths.claude_bin()), *_danger_flag(reg, slug, args), *args]
+        return subprocess.run(argv, env=accounts.env_for(slug),
+                              check=False).returncode
     if not reg["accounts"]:
         return cmd_add(gui)  # nothing to pick between, and fuzzel dies on an empty list
     # No shortcut for a single account any more: the list is no longer a
@@ -292,8 +325,12 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     headless_row = (f"{menu.MARK_ON} Headless runner — pick to clear"
                     if account and account.get("headless")
                     else f"{menu.MARK_OFF} Select as headless runner")
+    danger_row = (f"{menu.MARK_ON} Skipping permissions — pick to clear"
+                  if account and account.get("dangerous")
+                  else f"{menu.MARK_OFF} Skip permissions (dangerous)")
     options = [f"New here  ({short})", f"Resume last in  {short}",
-               f"History in  {short}…", "All projects…", headless_row, "Manage…"]
+               f"History in  {short}…", "All projects…", headless_row,
+               danger_row, "Manage…"]
     choice = pickers.choose("mode", options, gui)
     if choice is None:
         return 1
@@ -301,6 +338,8 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     if choice == headless_row:
         _toggle_headless(reg, slug)
         return 0
+    if choice == danger_row:
+        return _toggle_dangerous(reg, slug)
     if choice == "Manage…":
         return cmd_manage_menu(slug, gui)
     if choice.startswith("New here"):
@@ -387,6 +426,14 @@ def main(argv) -> int:
             return 1
         _toggle_headless(reg, rest[0])
         return 0
+    if command == "dangerous":
+        reg = registry.load()
+        if not rest:
+            for account in reg["accounts"]:
+                if account.get("dangerous"):
+                    print(account["slug"])
+            return 0
+        return _toggle_dangerous(reg, rest[0])
     if command == "default":
         reg = registry.load()
         if not rest:

@@ -213,3 +213,13 @@ def test_headless_runner_row_marks_the_chosen_account():
     xml = menu.build_xml(account(headless=True), [])
     assert f"{menu.MARK_ON} Headless runner" in xml
     assert 'id="headless"' in xml
+
+
+def test_the_dangerous_row_renders_its_mark():
+    """Same ●/○ pair as every other stateful row — the vetted glyphs."""
+    assert f"{menu.MARK_OFF} Skip permissions (dangerous)" in menu.build_xml(account(dangerous=False), [])
+    assert f"{menu.MARK_ON} Skip permissions (dangerous)" in menu.build_xml(account(dangerous=True), [])
+
+
+def test_the_dangerous_row_has_its_own_id():
+    assert 'id="dangerous"' in menu.build_xml(account(dangerous=False), [])

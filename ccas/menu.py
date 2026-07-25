@@ -121,6 +121,10 @@ def build_xml(account: dict, sessions) -> str:
         # a headless `claude -p` runs under, so it gets its own group.
         + _item("headless", (MARK_ON if account.get("headless") else MARK_OFF)
                 + " Headless runner")
+        # Beside the runner row, not among the appearance ones: both answer
+        # "how does this account run", not "what does it look like".
+        + _item("dangerous", (MARK_ON if account.get("dangerous") else MARK_OFF)
+                + " Skip permissions (dangerous)")
         + _separator()
         + _submenu("manage", "Manage", manage)
     )

@@ -140,3 +140,34 @@ def test_removing_the_headless_account_leaves_none_set():
     registry.set_headless(reg, "b")
     registry.remove(reg, "b")
     assert registry.headless_slug(reg) is None
+
+
+def test_new_accounts_are_not_dangerous():
+    """--dangerously-skip-permissions is opt-in, per account, always."""
+    reg = registry.load()
+    account = registry.add(reg, "a", "a@x.com", "a")
+    assert account["dangerous"] is False
+
+
+def test_load_backfills_the_dangerous_flag_on_older_registries():
+    """Same shape as the headless backfill: every read path assumes the key is
+    there, and registries written before this feature have no such key."""
+    paths.accounts_root().mkdir(parents=True, exist_ok=True)
+    paths.registry_file().write_text(json.dumps({
+        "default": "work",
+        "accounts": [{"slug": "work", "nickname": None, "email": "w@x.com",
+                      "color": 0, "display": "nickname", "hide_icon": False,
+                      "headless": False, "warned_invisible": False, "signal": 1}],
+    }), encoding="utf-8")
+    assert registry.load()["accounts"][0]["dangerous"] is False
+
+
+def test_dangerous_is_not_exclusive():
+    """Unlike headless, which picks one runner, this is a per-account property —
+    two accounts may both bypass permissions."""
+    reg = registry.load()
+    for slug in ("a", "b"):
+        registry.add(reg, slug, f"{slug}@x.com", slug)
+    registry.set_field(reg, "a", "dangerous", True)
+    registry.set_field(reg, "b", "dangerous", True)
+    assert [a["dangerous"] for a in reg["accounts"]] == [True, True]

@@ -10,19 +10,33 @@ it and loops forever. Absolute path, always.
 import os
 import subprocess
 
-from . import accounts, history, menu, paths, pickers
+from . import accounts, history, menu, paths, pickers, registry
 
 
 def _rows(slug: str):
     return menu.read_tsv(slug)
 
 
-def _claude(*args):
-    return [str(paths.claude_bin()), *args]
+def _claude(*args, dangerous=False):
+    # Before the mode's own arguments, never after: --resume takes a value and
+    # the flag must not land between it and its uuid.
+    flag = [DANGEROUS] if dangerous else []
+    return [str(paths.claude_bin()), *flag, *args]
 
 
-def resolve(slug: str, mode: str, arg, gui: bool, cwd):
-    """Return (workdir, argv), or None when there is nothing to launch."""
+# claude's own spelling, verbatim. There is no short alias to mirror (the whole
+# short-flag set is -c -d -h -n -p -r -v -w), and --allow-dangerously-skip-
+# permissions is a different flag: it makes bypass available, not enabled.
+DANGEROUS = "--dangerously-skip-permissions"
+
+
+def resolve(slug: str, mode: str, arg, gui: bool, cwd, dangerous: bool = False):
+    """Return (workdir, argv), or None when there is nothing to launch.
+
+    `dangerous` is the account's opt-in to --dangerously-skip-permissions. It
+    arrives as a parameter rather than a registry read so that resolve() stays
+    side-effect free and testable; run() is what loads the registry.
+    """
     if mode == "new":
         target = arg
         if target is None:
@@ -40,7 +54,7 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd):
         if not os.path.isdir(target):
             if not pickers.confirm_create(history.abbreviate(target), gui):
                 return None
-        return target, _claude()
+        return target, _claude(dangerous=dangerous)
 
     rows = _rows(slug)
     if cwd is not None and not gui:
@@ -50,7 +64,7 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd):
         if not rows:
             return None
         _label, uuid, session_cwd = rows[0]
-        return session_cwd, _claude("--resume", uuid)
+        return session_cwd, _claude("--resume", uuid, dangerous=dangerous)
 
     if mode == "hist":
         try:
@@ -60,7 +74,7 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd):
         if not (0 <= index < len(rows)):
             return None
         _label, uuid, session_cwd = rows[index]
-        return session_cwd, _claude("--resume", uuid)
+        return session_cwd, _claude("--resume", uuid, dangerous=dangerous)
 
     if mode == "search":
         if not rows:
@@ -71,7 +85,7 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd):
             return None
         for label, uuid, session_cwd in rows:
             if label == choice:
-                return session_cwd, _claude("--resume", uuid)
+                return session_cwd, _claude("--resume", uuid, dangerous=dangerous)
         return None
 
     raise ValueError(f"unknown mode: {mode}")
@@ -79,7 +93,9 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd):
 
 def run(slug: str, mode: str, arg, gui: bool, cwd) -> int:
     accounts.relink(slug)
-    resolved = resolve(slug, mode, arg, gui, cwd)
+    account = registry.find(registry.load(), slug)
+    dangerous = bool(account and account.get("dangerous"))
+    resolved = resolve(slug, mode, arg, gui, cwd, dangerous)
     if resolved is None:
         return 1
     workdir, argv = resolved
