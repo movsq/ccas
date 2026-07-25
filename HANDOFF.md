@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 148 tests green.
+**State:** built, installed, and working on the real system. 158 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -30,7 +30,7 @@ Both report `loggedIn: true` under their own `CLAUDE_CONFIG_DIR`.
 `1784954438` through every install, uninstall, reinstall and account add. CCAS
 has never written to `~/.claude`.
 
-Run the suite with `cd ~/ccas && python -m pytest` (148 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (158 passing, ~0.6 s).
 
 ---
 
@@ -42,23 +42,26 @@ Run the suite with `cd ~/ccas && python -m pytest` (148 passing, ~0.6 s).
   session, Resume from history ▸, Display as ▸, ☐ Hide icon, Color ▸, Manage ▸.
 - Uninstall restores `config.jsonc` and `.bashrc` byte-for-byte (diffed).
 
+- **Launching, all three paths:** New session (existing and freshly created
+  directories), Resume last session, Resume from history, and the fuzzel search.
+- Add, rename, remove from the Manage submenu. Hide icon.
+- Display and colour switching, including the ●/○ markers moving.
+
 ## Not yet verified — start here
 
-1. **Launching.** No session has actually been started yet. From the menu:
-   `New session`, `Resume last session`, and a history row — each should open
-   kitty in the session's own directory under the right account. This is the
-   biggest untested area.
-2. **Terminal front-end.** In a *new* shell (the `claude()` function is only in
+1. **Terminal front-end.** In a *new* shell (the `claude()` function is only in
    new shells): bare `claude` should show the account picker then the mode menu
    via **fzf**; `claude -p "say hi"` should run headless with no menu under the
-   `default` account (`vo-se`); `ccs vsed claude auth status` should report the
-   vsed account.
-3. **Display controls.** Cycle all four display modes and both hide states.
-   Confirm `icon only` + `Hide icon` fires the notification exactly once, that
-   the invisible module is still clickable, and that unsetting and re-setting
-   fires it again.
-4. **`> ...` and `> N more…`** rows should open fuzzel over all 219 sessions.
-5. **Rename / remove** from the Manage submenu.
+   `default` account; `ccs <slug> claude auth status` should report that account.
+   This is now the only wholly untested area.
+2. **The rename dialog's new shape** — typing a nickname, selecting
+   `⌫  clear nickname`, and Esc — was fixed and unit-tested but not yet clicked
+   through on the real bar.
+3. **`icon only` + `Hide icon`** should fire the notification exactly once, stay
+   clickable while invisible, and re-arm after leaving the combination.
+
+Note: `vo-se` was removed during testing, so the registry now holds one account
+(`vsed`, colour renumbered to 0 peach, nickname cleared).
 
 ---
 
@@ -75,6 +78,8 @@ These are all deliberate and committed. Do not "fix" them back.
 | 5 | Modules live in `modules-center`, no divider | User preference, changed twice: `modules-right` → end of `modules-left` with an em-dash → `modules-center` bare. `HOST_LIST` in `ccas/waybar.py` is the single knob. |
 | 6 | Menu shows 15 history rows, not 300 | See "The oversized menu" below. |
 | 7 | `New session` in a missing directory asks before creating it | See "Creating a project" below. |
+| 8 | A setting change rewrites the menu and full-reloads | See "Stale ●/○ markers" below. |
+| 9 | A cleared nickname shows nothing on the bar, not the email | User preference. `display_name()` keeps the fallback where identity matters. |
 
 ---
 
@@ -136,6 +141,32 @@ without writing a custom layer-shell picker.
 `--only-match` is load-bearing: without it fuzzel echoes typed text, and any
 non-empty stdout here would read as consent to create a directory.
 
+### Stale ●/○ markers
+
+The radio dots and the ☐/☑ checkbox are baked into `menu.xml`, and Waybar
+caches that file. `_refresh()` only fired the per-module `SIGRTMIN+n`, which
+repaints the **label** and nothing else — so the colour really changed while
+the dot stayed on whatever was selected when the bar last started.
+
+`cli._refresh()` now rewrites the menu and calls `waybar.reload()`. That is
+always a user-initiated click, so the reload flicker is acceptable; the 30 s
+render tick still gates itself on `session_set_changed()` and does not flicker
+on its own. The per-module signal call was dropped as redundant — `reload()`
+subsumes it.
+
+### Rename cancel was destructive
+
+`pickers.prompt()` returns None for both "cancelled" and "typed nothing", so
+Esc out of the rename dialog cleared the nickname it was backing out of.
+`prompt_or_clear()` separates the three outcomes: text, None for an explicit
+clear, and the `CANCEL` sentinel. fuzzel needs at least one row to stay open at
+all, so that row is now the clear button rather than a throwaway hint.
+
+A cleared nickname also shows **no text** on the bar now, not the email.
+`label.render()` deliberately does not call `display_name()`; `display_name()`
+keeps its email fallback for the menu title row and the account chooser, where
+a blank row would be unpickable.
+
 ### Missing `modules-center`
 
 Moving to the centre group exposed that the patcher only rewrites keys that
@@ -164,7 +195,7 @@ when empty, keeping uninstall byte-for-byte either way.
 ## Useful commands
 
 ```bash
-cd ~/ccas && python -m pytest          # 148 tests, ~0.6 s
+cd ~/ccas && python -m pytest          # 158 tests, ~0.6 s
 ./install.sh                           # idempotent; re-run after any code change
 ccs list                               # accounts table
 ccs render vsed                        # force menu.xml + history.tsv rebuild
