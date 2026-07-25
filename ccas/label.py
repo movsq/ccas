@@ -1,0 +1,45 @@
+"""Rendering the Waybar label for one account."""
+from xml.sax.saxutils import escape
+
+from . import paths
+
+WARNING_TEXT = "it's still there — invisible."
+
+
+def pango_escape(text: str) -> str:
+    return escape(str(text))
+
+
+def display_name(account: dict) -> str:
+    return account.get("nickname") or account["email"]
+
+
+def render(account: dict, index: int) -> str:
+    color = paths.PALETTE[account["color"]][1]
+    if account["hide_icon"]:
+        icon = f"<span alpha='1'>{paths.GLYPH}</span>"
+    else:
+        icon = f"<span color='{color}'>{paths.GLYPH}</span>"
+
+    mode = account["display"]
+    if mode == "icon only":
+        return icon
+    if mode == "index":
+        text = str(index)
+    elif mode == "claude code":
+        text = "claude code"
+    else:
+        text = display_name(account)
+    return f"{icon} {pango_escape(text)}"
+
+
+def check_invisible_warning(account: dict) -> bool:
+    """True when the caller should notify. Latches, and re-arms on exit."""
+    invisible = account["hide_icon"] and account["display"] == "icon only"
+    if not invisible:
+        account["warned_invisible"] = False
+        return False
+    if account["warned_invisible"]:
+        return False
+    account["warned_invisible"] = True
+    return True
