@@ -6,6 +6,16 @@ import sys
 from . import accounts, history, label, launch, menu, paths, pickers, registry, waybar
 
 
+# `claude <args>` normally resolves an account, because almost everything it can
+# do belongs to one: -p, -c, -r, mcp, plugin, auth. These are the exceptions —
+# they inspect or repair the installation itself, so asking would be noise. A
+# deny-list rather than an allow-list on purpose: an unrecognised argument is far
+# more likely to start a session than not, and guessing wrong the other way runs
+# it under an account the user did not choose.
+NO_ACCOUNT_ARGS = {"--version", "-v", "--help", "-h",
+                   "doctor", "install", "update", "upgrade", "gateway"}
+
+
 def notify(text: str) -> None:
     subprocess.run(["notify-send", "Claude accounts", text], check=False,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -25,6 +35,56 @@ def _refresh(reg, account) -> None:
     registry.save(reg)
     menu.write(account, history.scan())
     waybar.reload()  # subsumes the per-module signal, which only repaints labels
+
+
+def _refresh_all(reg) -> None:
+    """Rewrite every account's menu and reload once.
+
+    The headless mark is exclusive, so setting it on one account clears it on
+    the others — every menu.xml is stale, not just the one that was clicked.
+    """
+    registry.save(reg)
+    sessions = history.scan()
+    for account in reg["accounts"]:
+        menu.write(account, sessions)
+    waybar.reload()
+
+
+def _runner_slug(reg, args, gui):
+    """Which account a `claude <args>` run belongs to, or None to abort.
+
+    Asks once, on the first interactive run that needs an answer, and remembers
+    it — so the common case stays silent and scripts never see a prompt at all.
+    """
+    override = os.environ.get("CCAS_ACCOUNT")
+    if override:
+        if registry.find(reg, override) is None:
+            print(f"ccs: CCAS_ACCOUNT={override} is not an account", file=sys.stderr)
+            return None
+        return override  # a one-off; deliberately not remembered
+
+    if args and args[0] in NO_ACCOUNT_ARGS:
+        return reg["default"]
+
+    chosen = registry.headless_slug(reg)
+    if chosen:
+        return chosen
+
+    # A pipe, a script, cron: prompting would block on a stdin nobody can type
+    # into — the same shape of bug as the original is_gui one.
+    if not sys.stdin.isatty():
+        return reg["default"]
+
+    names = [label.display_name(a) for a in reg["accounts"]]
+    # Asked even when there is only one account: the point is that the user knows
+    # which one is answering `claude -p`, and it is a single question, once.
+    choice = pickers.choose("account for headless runs", names, gui)
+    if choice is None:
+        return None
+    slug = next(a["slug"] for a in reg["accounts"] if label.display_name(a) == choice)
+    registry.set_headless(reg, slug)
+    _refresh_all(reg)
+    return slug
 
 
 def _mutate(slug: str, field: str, value) -> int:
@@ -147,9 +207,11 @@ def cmd_tty(args, gui=None) -> int:
     if gui is None:
         gui = pickers.is_gui()
     if args:
-        slug = reg["default"]
-        if slug is None:
+        if reg["default"] is None:
             print("ccs: no accounts configured; run 'ccs add'", file=sys.stderr)
+            return 1
+        slug = _runner_slug(reg, args, gui)
+        if slug is None:
             return 1
         return subprocess.run([str(paths.claude_bin()), *args],
                               env=accounts.env_for(slug), check=False).returncode
@@ -218,6 +280,19 @@ def main(argv) -> int:
             return 1
         value = not account["hide_icon"] if rest[1] == "toggle" else rest[1] == "on"
         return _mutate(rest[0], "hide_icon", value)
+    if command == "headless":
+        reg = registry.load()
+        if not rest:
+            print(registry.headless_slug(reg) or "")
+            return 0
+        if registry.find(reg, rest[0]) is None:
+            return 1
+        # Clicking the account that is already the runner clears it, which is
+        # how the user gets the one-time prompt back.
+        current = registry.headless_slug(reg)
+        registry.set_headless(reg, None if current == rest[0] else rest[0])
+        _refresh_all(reg)
+        return 0
     if command == "default":
         reg = registry.load()
         if not rest:

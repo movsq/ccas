@@ -117,6 +117,11 @@ def build_xml(account: dict, sessions) -> str:
                 + " Hide icon")
         + _submenu("color", "Color", colors)
         + _separator()
+        # Not appearance like the three above it: this one decides which account
+        # a headless `claude -p` runs under, so it gets its own group.
+        + _item("headless", (MARK_ON if account.get("headless") else MARK_OFF)
+                + " Headless runner")
+        + _separator()
         + _submenu("manage", "Manage", manage)
     )
 

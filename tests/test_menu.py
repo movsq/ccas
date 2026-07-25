@@ -205,3 +205,11 @@ def test_no_snapshot_and_no_sessions_still_counts_as_changed():
     assert menu.session_set_changed("work", []) is True
     menu.write(account(), [])
     assert menu.session_set_changed("work", []) is False
+
+
+def test_headless_runner_row_marks_the_chosen_account():
+    """Which account `claude -p` uses is visible and settable from the menu."""
+    assert f"{menu.MARK_OFF} Headless runner" in menu.build_xml(account(), [])
+    xml = menu.build_xml(account(headless=True), [])
+    assert f"{menu.MARK_ON} Headless runner" in xml
+    assert 'id="headless"' in xml

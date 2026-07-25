@@ -96,3 +96,47 @@ def test_colour_assignment_wraps_past_palette_end():
     for i in range(10):
         registry.add(reg, f"a{i}", f"a{i}@example.com", None)
     assert all(0 <= a["color"] < 8 for a in reg["accounts"])
+
+
+def test_load_backfills_the_headless_flag_on_older_registries():
+    """accounts.json files written before the headless runner existed have no
+    such key, and every read path assumes it is there."""
+    paths.accounts_root().mkdir(parents=True, exist_ok=True)
+    paths.registry_file().write_text(json.dumps({
+        "default": "work",
+        "accounts": [{"slug": "work", "nickname": None, "email": "w@x.com",
+                      "color": 0, "display": "nickname", "hide_icon": False,
+                      "warned_invisible": False, "signal": 1}],
+    }), encoding="utf-8")
+    assert registry.load()["accounts"][0]["headless"] is False
+
+
+def test_set_headless_is_exclusive():
+    """Exactly one account runs `claude -p`, so setting it must clear the rest."""
+    reg = registry.load()
+    for slug in ("a", "b", "c"):
+        registry.add(reg, slug, f"{slug}@x.com", slug)
+
+    registry.set_headless(reg, "b")
+    assert [a["headless"] for a in reg["accounts"]] == [False, True, False]
+    registry.set_headless(reg, "c")
+    assert [a["headless"] for a in reg["accounts"]] == [False, False, True]
+    assert registry.headless_slug(reg) == "c"
+
+
+def test_set_headless_to_none_clears_it():
+    reg = registry.load()
+    registry.add(reg, "a", "a@x.com", "a")
+    registry.set_headless(reg, "a")
+    registry.set_headless(reg, None)
+    assert registry.headless_slug(reg) is None
+
+
+def test_removing_the_headless_account_leaves_none_set():
+    """Otherwise the next `claude -p` would resolve to a deleted account."""
+    reg = registry.load()
+    registry.add(reg, "a", "a@x.com", "a")
+    registry.add(reg, "b", "b@x.com", "b")
+    registry.set_headless(reg, "b")
+    registry.remove(reg, "b")
+    assert registry.headless_slug(reg) is None

@@ -332,3 +332,143 @@ def test_without_the_flag_gui_is_still_sniffed(monkeypatch):
 def test_gui_flag_does_not_swallow_the_command():
     make_account()
     assert cli.main(["--gui", "render", "work"]) == 0
+
+
+def _stub_claude(monkeypatch):
+    """Capture the env a claude invocation would get, without running it."""
+    runs = []
+
+    class Done:
+        returncode = 0
+
+    def fake_run(argv, env=None, check=False, **kw):
+        runs.append((argv, (env or {}).get("CLAUDE_CONFIG_DIR", "")))
+        return Done()
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    return runs
+
+
+def test_headless_prompts_once_then_remembers_the_choice(monkeypatch):
+    """`claude -p "hi"` used to run under the default account silently. It now
+    asks on the first interactive run — even with a single account, so the user
+    knows which one is answering — and never asks again."""
+    make_account("work")
+    make_account("other")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    asked = []
+
+    def fake_choose(prompt, options, gui):
+        asked.append(options)
+        return "other"
+
+    monkeypatch.setattr(cli.pickers, "choose", fake_choose)
+
+    assert cli.main(["tty", "-p", "say hi"]) == 0
+    assert len(asked) == 1
+    assert runs[0][1].endswith("/other")
+    assert registry.headless_slug(registry.load()) == "other"
+
+    assert cli.main(["tty", "-p", "again"]) == 0
+    assert len(asked) == 1, "the choice is remembered, not re-asked"
+    assert runs[1][1].endswith("/other")
+
+
+def test_headless_prompts_even_for_a_single_account(monkeypatch):
+    make_account("work")
+    _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    asked = []
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda p, o, g: asked.append(o) or "work")
+    cli.main(["tty", "-p", "hi"])
+    assert asked, "the point is knowing which account answered"
+
+
+def test_declining_the_headless_prompt_runs_nothing(monkeypatch):
+    make_account("work")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: None)
+    assert cli.main(["tty", "-p", "hi"]) == 1
+    assert runs == [], "Esc must not fall back to some arbitrary account"
+
+
+def test_piped_stdin_never_prompts(monkeypatch):
+    """`echo hi | claude -p` and anything in a script or cron: prompting there
+    hangs forever against a stdin that is not a terminal."""
+    make_account("work")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda *a, **k: pytest.fail("must not prompt"))
+    assert cli.main(["tty", "-p", "hi"]) == 0
+    assert runs[0][1].endswith("/work"), "falls back to the default account"
+
+
+def test_maintenance_commands_skip_the_prompt(monkeypatch):
+    """--version and friends do not start a session, so which account is
+    irrelevant and being asked would just be noise."""
+    make_account("work")
+    make_account("other")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda *a, **k: pytest.fail("must not prompt"))
+    for args in (["--version"], ["doctor"], ["update"], ["--help"]):
+        assert cli.main(["tty", *args]) == 0
+    assert len(runs) == 4
+    assert registry.headless_slug(registry.load()) is None
+
+
+def test_ccas_account_env_var_wins_and_is_not_remembered(monkeypatch):
+    make_account("work")
+    make_account("other")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda *a, **k: pytest.fail("must not prompt"))
+    monkeypatch.setenv("CCAS_ACCOUNT", "other")
+    assert cli.main(["tty", "-p", "hi"]) == 0
+    assert runs[0][1].endswith("/other")
+    assert registry.headless_slug(registry.load()) is None, "a one-off override"
+
+
+def test_unknown_ccas_account_is_an_error_not_a_silent_fallback(monkeypatch):
+    make_account("work")
+    runs = _stub_claude(monkeypatch)
+    monkeypatch.setenv("CCAS_ACCOUNT", "ghost")
+    assert cli.main(["tty", "-p", "hi"]) == 1
+    assert runs == []
+
+
+def test_headless_command_reports_and_toggles(monkeypatch, capsys):
+    make_account("work")
+    make_account("other")
+    assert cli.main(["headless"]) == 0
+    assert capsys.readouterr().out.strip() == ""
+
+    assert cli.main(["headless", "other"]) == 0
+    assert registry.headless_slug(registry.load()) == "other"
+    cli.main(["headless"])
+    assert capsys.readouterr().out.strip() == "other"
+
+    assert cli.main(["headless", "other"]) == 0
+    assert registry.headless_slug(registry.load()) is None, "clicking it again clears"
+    assert cli.main(["headless", "ghost"]) == 1
+
+
+def test_setting_the_headless_runner_rewrites_every_menu(monkeypatch):
+    """The mark lives in each account's menu.xml, and turning it on for one
+    account turns it off for the others — so all of them need rewriting."""
+    make_account("work")
+    make_account("other")
+    reloads = []
+    monkeypatch.setattr(cli.waybar, "reload", lambda: reloads.append(1))
+    cli.main(["headless", "work"])
+    assert f"{cli.menu.MARK_ON} Headless runner" in (
+        paths.account_dir("work") / "menu.xml").read_text()
+    assert f"{cli.menu.MARK_OFF} Headless runner" in (
+        paths.account_dir("other") / "menu.xml").read_text()
+    assert reloads, "the marks are baked into the cached menu"

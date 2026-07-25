@@ -24,6 +24,9 @@ def load() -> dict:
         reg = json.load(fh)
     reg.setdefault("default", None)
     reg.setdefault("accounts", [])
+    for account in reg["accounts"]:
+        # Added after the first release; every read path assumes it is present.
+        account.setdefault("headless", False)
     return reg
 
 
@@ -73,6 +76,7 @@ def add(reg: dict, slug: str, email: str, nickname):
         "color": color,
         "display": "nickname",
         "hide_icon": False,
+        "headless": False,
         "warned_invisible": False,
         "signal": len(reg["accounts"]) + 1,
     }
@@ -81,6 +85,24 @@ def add(reg: dict, slug: str, email: str, nickname):
     if reg["default"] is None:
         reg["default"] = slug
     return account
+
+
+def headless_slug(reg: dict):
+    """The account `claude -p` runs under, or None if the user has not picked."""
+    return next((a["slug"] for a in reg["accounts"] if a.get("headless")), None)
+
+
+def set_headless(reg: dict, slug) -> None:
+    """Point the headless runner at one account, or nowhere when slug is None.
+
+    Exclusive by construction rather than by a top-level key, so that the menu
+    row stays a pure function of the account dict it renders — the same shape as
+    hide_icon. Passing a slug that is already set is how the menu clears it.
+    """
+    if slug is not None and find(reg, slug) is None:
+        raise KeyError(slug)
+    for account in reg["accounts"]:
+        account["headless"] = account["slug"] == slug
 
 
 def remove(reg: dict, slug: str) -> None:
