@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~206 tests, under a second). They are the specification —
+1. `python -m pytest` (~217 tests, under a second). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -252,7 +252,7 @@ is how the missing-`menu.xml` bug in `cmd_add` was found.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~206 tests, under a second
+cd ~/ccas && python -m pytest    # ~217 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs                              # pick account → mode; Add is on the picker, Rename/Remove under Manage…
 ccs list                         # accounts
