@@ -20,8 +20,8 @@ def test_display_name_prefers_nickname_then_email():
 def test_cleared_nickname_shows_nothing_on_the_bar():
     """Falling back to the email put a long address in the bar. A cleared
     nickname means "show no text", not "show something else"."""
-    assert label.render(account(nickname=None), 1) == "<span color='#f38ba8'>✻</span>"
-    assert label.render(account(nickname=""), 1) == "<span color='#f38ba8'>✻</span>"
+    assert label.render(account(nickname=None), 1) == "<span size='x-large' color='#f38ba8'>✻</span>"
+    assert label.render(account(nickname=""), 1) == "<span size='x-large' color='#f38ba8'>✻</span>"
 
 
 def test_the_email_fallback_survives_where_identity_matters():
@@ -31,10 +31,10 @@ def test_the_email_fallback_survives_where_identity_matters():
 
 
 def test_render_each_display_mode():
-    assert label.render(account(), 1) == "<span color='#f38ba8'>✻</span> work"
-    assert label.render(account(display="index"), 3) == "<span color='#f38ba8'>✻</span> 3"
-    assert label.render(account(display="claude code"), 1) == "<span color='#f38ba8'>✻</span> claude code"
-    assert label.render(account(display="icon only"), 1) == "<span color='#f38ba8'>✻</span>"
+    assert label.render(account(), 1) == "<span size='x-large' color='#f38ba8'>✻</span> work"
+    assert label.render(account(display="index"), 3) == "<span size='x-large' color='#f38ba8'>✻</span> 3"
+    assert label.render(account(display="claude code"), 1) == "<span size='x-large' color='#f38ba8'>✻</span> claude code"
+    assert label.render(account(display="icon only"), 1) == "<span size='x-large' color='#f38ba8'>✻</span>"
 
 
 def test_hide_icon_uses_alpha_not_removal():
@@ -46,7 +46,7 @@ def test_hide_icon_uses_alpha_not_removal():
 
 def test_fully_invisible_combination_still_emits_a_glyph():
     out = label.render(account(hide_icon=True, display="icon only"), 1)
-    assert out == "<span alpha='1'>✻</span>"
+    assert out == "<span size='x-large' alpha='1'>✻</span>"
     assert out.strip() != "", "an empty label would collapse the module and break clicking"
 
 
@@ -81,3 +81,11 @@ def test_warning_rearms_after_leaving_the_combination():
 def test_warning_never_fires_outside_the_combination():
     assert label.check_invisible_warning(account(hide_icon=True)) is False
     assert label.check_invisible_warning(account(display="icon only")) is False
+
+
+def test_icon_is_larger_than_the_bar_text():
+    """The glyph is the thing you aim at; the nickname beside it stays at the
+    bar's font size."""
+    out = label.render(account(), 1)
+    assert out.startswith(f"<span size='{label.ICON_SIZE}'")
+    assert "work" in out.split("</span>")[1]

@@ -3,6 +3,8 @@ from xml.sax.saxutils import escape
 
 from . import paths
 
+ICON_SIZE = "x-large"
+
 WARNING_TEXT = "it's still there — invisible."
 
 
@@ -17,9 +19,9 @@ def display_name(account: dict) -> str:
 def render(account: dict, index: int) -> str:
     color = paths.PALETTE[account["color"]][1]
     if account["hide_icon"]:
-        icon = f"<span alpha='1'>{paths.GLYPH}</span>"
+        icon = f"<span size='{ICON_SIZE}' alpha='1'>{paths.GLYPH}</span>"
     else:
-        icon = f"<span color='{color}'>{paths.GLYPH}</span>"
+        icon = f"<span size='{ICON_SIZE}' color='{color}'>{paths.GLYPH}</span>"
 
     mode = account["display"]
     if mode == "icon only":
