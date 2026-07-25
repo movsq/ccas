@@ -4,7 +4,6 @@ import pytest
 
 import ccas.paths as paths
 import ccas.launch as launch
-import ccas.menu as menu
 from ccas.history import Session
 
 
@@ -13,28 +12,23 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_ACCOUNTS_ROOT", str(tmp_path / "accts"))
     monkeypatch.setenv("CCAS_CLAUDE_BIN", "/usr/bin/true")
     importlib.reload(paths)
-    importlib.reload(menu)
     importlib.reload(launch)
     (tmp_path / "accts" / "work").mkdir(parents=True)
     (tmp_path / "proj").mkdir()
+    # History is scanned live now, so an unseeded test would read the real
+    # ~/.claude/projects. Empty by default; seed() replaces it.
+    monkeypatch.setattr(launch.history, "scan", lambda: [])
     return tmp_path
 
 
-ACCOUNT = {
-    "slug": "work", "nickname": "work", "email": "w@example.com",
-    "color": 1, "display": "nickname", "hide_icon": False,
-    "warned_invisible": False, "signal": 1,
-}
-
-
-def seed(tmp_path, n=2):
+def seed(tmp_path, monkeypatch, n=2):
     now = time.time()
     sess = [
         Session(uuid=f"uuid-{i}", cwd=str(tmp_path / "proj"), title=f"T{i}",
                 mtime=now - i, path=None)
         for i in range(n)
     ]
-    menu.write(ACCOUNT, sess)
+    monkeypatch.setattr(launch.history, "scan", lambda: sess)
     return sess
 
 
@@ -44,36 +38,30 @@ def test_new_with_explicit_dir(tmp_path):
     assert argv == ["/usr/bin/true"]
 
 
-def test_hist_resolves_slot_to_uuid_and_its_own_cwd(tmp_path):
-    seed(tmp_path)
-    workdir, argv = launch.resolve("work", "hist", "1", True, None)
-    assert workdir == str(tmp_path / "proj")
-    assert argv == ["/usr/bin/true", "--resume", "uuid-1"]
-
-
-def test_hist_out_of_range_returns_none(tmp_path):
-    seed(tmp_path)
-    assert launch.resolve("work", "hist", "99", True, None) is None
-
-
-def test_hist_with_a_nonnumeric_slot_returns_none(tmp_path):
-    seed(tmp_path)
-    assert launch.resolve("work", "hist", "banana", True, None) is None
-    assert launch.resolve("work", "hist", None, True, None) is None
-
-
-def test_last_uses_the_newest_snapshot_row(tmp_path):
-    seed(tmp_path)
-    workdir, argv = launch.resolve("work", "last", None, True, None)
+def test_last_uses_the_newest_live_session(tmp_path, monkeypatch):
+    """No snapshot any more: the session you started a minute ago is the one
+    this resumes, which under the cached menu it was not until the bar next
+    reloaded."""
+    seed(tmp_path, monkeypatch)
+    _workdir, argv = launch.resolve("work", "last", None, True, None)
     assert argv == ["/usr/bin/true", "--resume", "uuid-0"]
 
 
-def test_last_with_no_history_returns_none(tmp_path):
+def test_hist_mode_is_gone(tmp_path, monkeypatch):
+    """It existed to resolve a GtkMenu item id (`hist-3`) against line 3 of a
+    snapshot written at the same moment. With rows generated per click there is
+    no id, no index and no snapshot."""
+    seed(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        launch.resolve("work", "hist", "1", True, None)
+
+
+def test_last_with_no_history_returns_none(tmp_path, monkeypatch):
     assert launch.resolve("work", "last", None, True, None) is None
 
 
-def test_tty_mode_scopes_last_to_the_current_directory(tmp_path):
-    seed(tmp_path)
+def test_tty_mode_scopes_last_to_the_current_directory(tmp_path, monkeypatch):
+    seed(tmp_path, monkeypatch)
     other = tmp_path / "elsewhere"
     other.mkdir()
     assert launch.resolve("work", "last", None, False, str(other)) is None
@@ -81,9 +69,9 @@ def test_tty_mode_scopes_last_to_the_current_directory(tmp_path):
     assert argv == ["/usr/bin/true", "--resume", "uuid-0"]
 
 
-def test_gui_mode_ignores_cwd_scoping(tmp_path):
+def test_gui_mode_ignores_cwd_scoping(tmp_path, monkeypatch):
     """A Waybar click is global; only the terminal front-end is cwd-scoped."""
-    seed(tmp_path)
+    seed(tmp_path, monkeypatch)
     other = tmp_path / "elsewhere"
     other.mkdir()
     _workdir, argv = launch.resolve("work", "last", None, True, str(other))
@@ -91,8 +79,8 @@ def test_gui_mode_ignores_cwd_scoping(tmp_path):
 
 
 def test_search_resolves_the_chosen_label(tmp_path, monkeypatch):
-    seed(tmp_path)
-    rows = menu.read_tsv("work")
+    seed(tmp_path, monkeypatch)
+    rows = launch._rows()
     monkeypatch.setattr(launch.pickers, "choose", lambda *a, **k: rows[1][0])
     workdir, argv = launch.resolve("work", "search", None, True, None)
     assert argv == ["/usr/bin/true", "--resume", "uuid-1"]
@@ -100,7 +88,7 @@ def test_search_resolves_the_chosen_label(tmp_path, monkeypatch):
 
 
 def test_search_cancelled_returns_none(tmp_path, monkeypatch):
-    seed(tmp_path)
+    seed(tmp_path, monkeypatch)
     monkeypatch.setattr(launch.pickers, "choose", lambda *a, **k: None)
     assert launch.resolve("work", "search", None, True, None) is None
 
@@ -160,32 +148,32 @@ DANGER = "--dangerously-skip-permissions"
 
 def test_no_mode_carries_the_danger_flag_by_default(tmp_path, monkeypatch):
     """Opt-in, always: an account that never asked for it must launch clean."""
-    seed(tmp_path)
+    seed(tmp_path, monkeypatch)
     monkeypatch.setattr(launch.pickers, "choose",
                         lambda prompt, options, gui: options[0])
     for mode, arg in (("new", str(tmp_path / "proj")), ("last", None),
-                      ("hist", "0"), ("search", None)):
+                      ("search", None)):
         _workdir, argv = launch.resolve("work", mode, arg, True, None)
         assert DANGER not in argv, mode
 
 
 def test_every_mode_carries_the_danger_flag_when_set(tmp_path, monkeypatch):
-    """All four launch modes build their own argv, so all four must honour it —
+    """Every launch mode builds its own argv, so all of them must honour it —
     resuming a session skips permissions exactly like starting one."""
-    seed(tmp_path)
+    seed(tmp_path, monkeypatch)
     monkeypatch.setattr(launch.pickers, "choose",
                         lambda prompt, options, gui: options[0])
     for mode, arg in (("new", str(tmp_path / "proj")), ("last", None),
-                      ("hist", "0"), ("search", None)):
+                      ("search", None)):
         _workdir, argv = launch.resolve("work", mode, arg, True, None,
                                         dangerous=True)
         assert argv[1] == DANGER, mode
         assert argv[0].startswith("/"), "absolute claude path stays first"
 
 
-def test_the_danger_flag_precedes_resume(tmp_path):
+def test_the_danger_flag_precedes_resume(tmp_path, monkeypatch):
     """--resume takes a value; the flag must not land between it and its uuid."""
-    seed(tmp_path)
+    seed(tmp_path, monkeypatch)
     _workdir, argv = launch.resolve("work", "last", None, True, None,
                                     dangerous=True)
     assert argv[1:] == [DANGER, "--resume", "uuid-0"]

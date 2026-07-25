@@ -9,12 +9,22 @@ it and loops forever. Absolute path, always.
 """
 import os
 import subprocess
+import time
 
-from . import accounts, history, menu, paths, pickers, registry
+from . import accounts, history, paths, pickers, registry
 
 
-def _rows(slug: str):
-    return menu.read_tsv(slug)
+def _rows():
+    """(label, uuid, cwd) for the recent sessions, scanned live.
+
+    ~/.claude/projects is shared across accounts, so this takes no slug. It was
+    a per-account snapshot only because a GtkMenu item can carry a fixed action
+    id and nothing else — `hist-3` had to mean line 3 of a file written at the
+    same instant as the menu the user was looking at.
+    """
+    now = time.time()
+    return [(history.format_row(s, now), s.uuid, s.cwd)
+            for s in history.scan()[: paths.HIST_SLOTS]]
 
 
 def _claude(*args, dangerous=False):
@@ -56,7 +66,7 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd, dangerous: bool = False):
                 return None
         return target, _claude(dangerous=dangerous)
 
-    rows = _rows(slug)
+    rows = _rows()
     if cwd is not None and not gui:
         rows = [r for r in rows if r[2] == cwd]
 
@@ -64,16 +74,6 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd, dangerous: bool = False):
         if not rows:
             return None
         _label, uuid, session_cwd = rows[0]
-        return session_cwd, _claude("--resume", uuid, dangerous=dangerous)
-
-    if mode == "hist":
-        try:
-            index = int(arg)
-        except (TypeError, ValueError):
-            return None
-        if not (0 <= index < len(rows)):
-            return None
-        _label, uuid, session_cwd = rows[index]
         return session_cwd, _claude("--resume", uuid, dangerous=dangerous)
 
     if mode == "search":
