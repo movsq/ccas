@@ -70,9 +70,11 @@ The headless runner was verified the same day: the first `claude -p "say hi"`
 asked which account, the second ran straight through, `echo hi | claude -p`
 answered without prompting, and the `●` sits on the chosen account's menu row.
 
-Every area of the tool has now been exercised on the real system, with one
-exception added afterwards: the `Headless runner` row at the bottom of the
-terminal mode menu is covered by tests but has not been clicked yet.
+The terminal `Select as headless runner` row was verified too: it sets the
+runner, reads `● Headless runner — pick to clear` on the next pass, clears on a
+second pick, and a `claude -p` after clearing asks again as designed.
+
+Every area of the tool has now been exercised on the real system.
 
 ---
 
