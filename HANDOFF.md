@@ -1,7 +1,7 @@
 # CCAS — session handoff
 
 **Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 158 tests green.
+**State:** built, installed, and working on the real system. 160 tests green.
 
 Paste this file's path into a new session and say "read HANDOFF.md and continue".
 
@@ -26,7 +26,7 @@ submenu, so the live registry currently holds `vsed` alone.
 `1784954438` through every install, uninstall, reinstall and account add. CCAS
 has never written to `~/.claude`.
 
-Run the suite with `cd ~/ccas && python -m pytest` (158 passing, ~0.6 s).
+Run the suite with `cd ~/ccas && python -m pytest` (160 passing, ~0.6 s).
 
 ---
 
@@ -76,6 +76,7 @@ These are all deliberate and committed. Do not "fix" them back.
 | 7 | `New session` in a missing directory asks before creating it | See "Creating a project" below. |
 | 8 | A setting change rewrites the menu and full-reloads | See "Stale ●/○ markers" below. |
 | 9 | A cleared nickname shows nothing on the bar, not the email | User preference. `display_name()` keeps the fallback where identity matters. |
+| 10 | The menu is headed by the email, with the nickname on a second row | The plan's single nickname-or-email title hid the address the account is actually identified by. |
 
 ---
 
@@ -191,7 +192,7 @@ when empty, keeping uninstall byte-for-byte either way.
 ## Useful commands
 
 ```bash
-cd ~/ccas && python -m pytest          # 158 tests, ~0.6 s
+cd ~/ccas && python -m pytest          # 160 tests, ~0.6 s
 ./install.sh                           # idempotent; re-run after any code change
 ccs list                               # accounts table
 ccs render vsed                        # force menu.xml + history.tsv rebuild
