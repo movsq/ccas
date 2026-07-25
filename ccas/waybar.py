@@ -35,6 +35,7 @@ def module_config(account: dict) -> dict:
         "new": f"{ccs} launch {slug} new",
         "last": f"{ccs} launch {slug} last",
         "search": f"{ccs} launch {slug} search",
+        "search-more": f"{ccs} launch {slug} search",
         "hide": f"{ccs} hide {slug} toggle",
         "mng-add": f"{ccs} manage add",
         "mng-rename": f"{ccs} manage rename {slug}",
@@ -201,7 +202,7 @@ def bashrc_block() -> str:
         '  if [ -n "$CCAS_INNER" ]; then\n'
         '    command claude "$@"\n'
         "  else\n"
-        f'    {_ccs()} tty "$@"\n'
+        f'    {paths.ccs_bin()} tty "$@"\n'  # no --gui: this path is a terminal
         "  fi\n"
         "}\n"
         f"# {END}\n"

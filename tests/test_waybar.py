@@ -208,3 +208,10 @@ def test_stale_entries_from_an_earlier_layout_are_cleared(_isolate):
     assert data["modules-left"] == ["custom/launcher"]
     assert data["modules-right"] == ["clock"]
     assert data["modules-center"] == ["custom/cc-work"]
+
+
+def test_bashrc_function_does_not_force_gui_mode():
+    """The shell function is the terminal entry point: it must use fzf, not
+    fuzzel. --gui belongs only on waybar-generated commands."""
+    assert "--gui" not in waybar.bashrc_block()
+    assert "ccs tty" in waybar.bashrc_block()

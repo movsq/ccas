@@ -55,10 +55,38 @@ def test_history_items_are_numbered_from_zero():
     assert 'id="hist-3"' not in xml
 
 
-def test_history_is_capped_at_the_slot_limit():
+def test_menu_shows_only_a_short_recent_slice():
+    """A GtkMenu does not scroll usefully: 219 items filled a 1440px screen."""
     xml = menu.build_xml(account(), sessions(paths.HIST_SLOTS + 50))
-    assert f'id="hist-{paths.HIST_SLOTS - 1}"' in xml
-    assert f'id="hist-{paths.HIST_SLOTS}"' not in xml
+    assert f'id="hist-{paths.MENU_HIST_ITEMS - 1}"' in xml
+    assert f'id="hist-{paths.MENU_HIST_ITEMS}"' not in xml
+    assert paths.MENU_HIST_ITEMS < paths.HIST_SLOTS
+
+
+def test_overflow_row_offers_the_full_set_and_counts_the_remainder():
+    xml = menu.build_xml(account(), sessions(paths.MENU_HIST_ITEMS + 7))
+    assert 'id="search-more"' in xml
+    assert "7 more" in xml
+
+
+def test_no_overflow_row_when_everything_fits():
+    assert 'id="search-more"' not in menu.build_xml(account(), sessions(3))
+
+
+def test_tsv_still_holds_the_full_slot_count():
+    """The menu is short, but hist-N actions and search index the whole file."""
+    rows = menu.build_tsv(sessions(paths.HIST_SLOTS + 50)).strip().split("\n")
+    assert len(rows) == paths.HIST_SLOTS
+
+
+def test_shown_rows_map_to_the_matching_tsv_index():
+    sess = sessions(paths.MENU_HIST_ITEMS + 20)
+    menu.write(account(), sess)
+    xml = (paths.account_dir("work") / "menu.xml").read_text()
+    rows = menu.read_tsv("work")
+    last = paths.MENU_HIST_ITEMS - 1
+    assert rows[last][1] == f"uuid-{last}"
+    assert f'id="hist-{last}"' in xml
 
 
 def test_title_row_uses_nickname_then_email():

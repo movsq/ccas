@@ -65,9 +65,13 @@ def build_tsv(sessions) -> str:
 def build_xml(account: dict, sessions) -> str:
     now = time.time()
 
+    shown = sessions[: paths.MENU_HIST_ITEMS]
     history = _item("search", "> ...") + _separator()
-    for i, s in enumerate(sessions[: paths.HIST_SLOTS]):
+    for i, s in enumerate(shown):
         history += _item(f"hist-{i}", format_row(s, now))
+    if len(sessions) > len(shown):
+        history += _separator() + _item(
+            "search-more", f"> {len(sessions) - len(shown)} more…")
 
     ids = {"nickname": "disp-nickname", "index": "disp-index",
            "claude code": "disp-cc", "icon only": "disp-icon"}
