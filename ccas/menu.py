@@ -13,14 +13,7 @@ from xml.sax.saxutils import escape
 from . import paths
 from .history import format_row
 
-# Every stateful row in the menu marks itself with this pair, radio or toggle.
-# Not ☑/☐: Waybar's font stack here starts with FontAwesome, which covers U+2611
-# but not U+2610, so the checked box came from FontAwesome and the unchecked one
-# from DejaVu — different sizes, different weights, and the "on" state looked
-# like an empty box on the bar. U+25CF/U+25CB were checked against that exact
-# stack with pango-view and render consistently.
-MARK_ON = "●"
-MARK_OFF = "○"
+from .label import MARK_ON, MARK_OFF  # noqa: F401 — re-exported until menu.py goes
 
 
 def _item(item_id: str, text: str) -> str:

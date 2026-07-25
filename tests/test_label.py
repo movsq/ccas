@@ -89,3 +89,12 @@ def test_icon_is_larger_than_the_bar_text():
     out = label.render(account(), 1)
     assert out.startswith(f"<span size='{label.ICON_SIZE}'")
     assert "work" in out.split("</span>")[1]
+
+
+def test_the_state_marks_are_the_vetted_codepoints():
+    """U+25CF/U+25CB, not ☑/☐. The bar's font stack starts with FontAwesome,
+    which covers U+2611 but not U+2610, so a checkbox pair came from two fonts
+    at two sizes and the checked state read as empty. Changing these means
+    re-checking the new glyph against that exact stack with pango-view."""
+    assert label.MARK_ON == "●"
+    assert label.MARK_OFF == "○"

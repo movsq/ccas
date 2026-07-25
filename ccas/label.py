@@ -13,6 +13,15 @@ TEXT_SIZE = "110%"
 
 WARNING_TEXT = "it's still there — invisible."
 
+# Every stateful row marks itself with this pair, radio or toggle. Not ☑/☐: the
+# bar's font stack here starts with FontAwesome, which covers U+2611 but not
+# U+2610, so the checked box came from FontAwesome and the unchecked one from
+# DejaVu — different sizes, different weights, and the "on" state looked like an
+# empty box on the bar. U+25CF/U+25CB were checked against that exact stack with
+# pango-view and render consistently.
+MARK_ON = "●"
+MARK_OFF = "○"
+
 
 def pango_escape(text: str) -> str:
     return escape(str(text))

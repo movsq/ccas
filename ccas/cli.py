@@ -322,12 +322,12 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     # Same marks as the Waybar menu, but the wording says what picking it does.
     # Sat among four verbs in a flat fzf list, a bare "○ Headless runner" reads
     # as a status line rather than something you can act on.
-    headless_row = (f"{menu.MARK_ON} Headless runner — pick to clear"
+    headless_row = (f"{label.MARK_ON} Headless runner — pick to clear"
                     if account and account.get("headless")
-                    else f"{menu.MARK_OFF} Select as headless runner")
-    danger_row = (f"{menu.MARK_ON} Skipping permissions — pick to clear"
+                    else f"{label.MARK_OFF} Select as headless runner")
+    danger_row = (f"{label.MARK_ON} Skipping permissions — pick to clear"
                   if account and account.get("dangerous")
-                  else f"{menu.MARK_OFF} Skip permissions (dangerous)")
+                  else f"{label.MARK_OFF} Skip permissions (dangerous)")
     options = [f"New here  ({short})", f"Resume last in  {short}",
                f"History in  {short}…", "All projects…", headless_row,
                danger_row, "Manage…"]
