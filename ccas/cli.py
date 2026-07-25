@@ -293,7 +293,7 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
                     if account and account.get("headless")
                     else f"{menu.MARK_OFF} Select as headless runner")
     options = [f"New here  ({short})", f"Resume last in  {short}",
-               f"History in  {short}…", "All projects…", headless_row]
+               f"History in  {short}…", "All projects…", headless_row, "Manage…"]
     choice = pickers.choose("mode", options, gui)
     if choice is None:
         return 1
@@ -301,6 +301,8 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     if choice == headless_row:
         _toggle_headless(reg, slug)
         return 0
+    if choice == "Manage…":
+        return cmd_manage_menu(slug, gui)
     if choice.startswith("New here"):
         return launch.run(slug, "new", cwd, gui, cwd)
     if choice.startswith("Resume last"):
@@ -308,6 +310,24 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     if choice.startswith("History in"):
         return launch.run(slug, "search", None, gui, cwd)
     return launch.run(slug, "new", None, gui, None)
+
+
+def cmd_manage_menu(slug: str, gui: bool) -> int:
+    """The terminal half of the Waybar menu's Manage submenu.
+
+    Add is not here — it belongs to the account picker, which is the screen
+    where the set of accounts is the subject. Rename is named after the
+    nickname, which is what the user sees on the bar and what is about to
+    change; Remove is named after the slug, because it trashes the account
+    directory and the slug is what that directory is called.
+    """
+    account = registry.find(registry.load(), slug)
+    rename = f"Rename {label.display_name(account) if account else slug}…"
+    remove = f"Remove {slug}…"
+    choice = pickers.choose("manage", [rename, remove], gui)
+    if choice is None:
+        return 1
+    return cmd_manage("rename" if choice == rename else "remove", slug, gui)
 
 
 def main(argv) -> int:

@@ -720,3 +720,60 @@ def test_cancelling_the_account_picker_adds_nothing(monkeypatch):
                         lambda *a: pytest.fail("no session"))
 
     assert cli.cmd_tty([], gui=False) == 1
+
+
+def test_mode_menu_offers_manage(monkeypatch):
+    """The three management actions existed as `ccs manage …` from the day they
+    were written, but only a Waybar click ever called them."""
+    make_account("work")
+    monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
+    seen = []
+
+    def fake_choose(prompt, options, gui):
+        seen.append(options)
+        return "Manage…" if prompt == "mode" else None
+
+    monkeypatch.setattr(cli.pickers, "choose", fake_choose)
+
+    assert cli.cmd_mode_menu("work", False) == 1  # cancelled at the manage picker
+    assert seen[0][-1] == "Manage…", "last, as it is in the Waybar menu"
+    assert seen[1] == ["Rename work…", "Remove work…"], "no Add here"
+
+
+@pytest.mark.parametrize("row, action", [("Rename work…", "rename"),
+                                         ("Remove work…", "remove")])
+def test_manage_menu_dispatches_with_the_slug(monkeypatch, row, action):
+    """cmd_manage runs the real login/prompt/trash paths, so this pins the call
+    rather than its effect."""
+    make_account("work")
+    calls = []
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: row)
+    monkeypatch.setattr(cli, "cmd_manage",
+                        lambda a, s, g: calls.append((a, s, g)) or 0)
+
+    assert cli.cmd_manage_menu("work", False) == 0
+    assert calls == [(action, "work", False)]
+
+
+def test_manage_menu_names_the_account_the_way_the_user_sees_it(monkeypatch):
+    """Rename shows the nickname — that is what is on the bar and what is about
+    to change. Remove shows the slug, because removal trashes the account
+    directory and the slug is what that directory is called."""
+    reg = registry.load()
+    registry.add(reg, "me@x.com", "me@x.com", "work laptop")
+    registry.save(reg)
+    seen = []
+    monkeypatch.setattr(cli.pickers, "choose",
+                        lambda p, o, g: seen.append(o) or None)
+
+    assert cli.cmd_manage_menu("me@x.com", False) == 1
+    assert seen[0] == ["Rename work laptop…", "Remove me@x.com…"]
+
+
+def test_cancelling_the_manage_menu_manages_nothing(monkeypatch):
+    make_account("work")
+    monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g: None)
+    monkeypatch.setattr(cli, "cmd_manage",
+                        lambda *a: pytest.fail("cancel is not a command"))
+
+    assert cli.cmd_manage_menu("work", False) == 1
