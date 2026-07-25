@@ -1,16 +1,16 @@
 # CCAS — working notes for agents
 
 Claude Code Account Switcher: one Waybar module per account, each account a
-`CLAUDE_CONFIG_DIR` of its own. `HANDOFF.md` has the narrative history and every
-bug found on the real system; this file is the rules that must not be broken.
+`CLAUDE_CONFIG_DIR` of its own. This file is the rules that must not be broken;
+`docs/why.md` is the story behind them — every bug found on the real system.
 
 ## Start here
 
 1. `python -m pytest` (~206 tests, under a second). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
-3. `HANDOFF.md` for why the code looks the way it does. This file is what must
-   not be broken; that one is the story.
+3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
+   it, with the symptom and the cause.
 
 Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 `bin/ccs` (`python -m ccas` does not work — there is no `__main__`), and
@@ -205,7 +205,10 @@ once already, back when the bashrc function was the terminal path.
   asks; the user set it up so work is not only on this disk.
 - `~/.bashrc` changes only reach **new** shells — which is why the terminal
   entry point is `ccs`, not a shell function.
-- Update `HANDOFF.md` when behaviour changes — it is what the next session reads.
+- Add a section to `docs/why.md` when you fix a bug found on the real system, or
+  deviate from what a plan said. Not for routine changes, and never for status —
+  it holds no test counts and no "as of today", which is exactly why it survives
+  without maintenance.
 
 ### Exercising a flow that would touch real state
 

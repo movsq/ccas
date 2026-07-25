@@ -1,84 +1,18 @@
-# CCAS — session handoff
+# CCAS — why the code looks like this
 
-**Written:** 2026-07-25, after the initial build session
-**State:** built, installed, and working on the real system. 206 tests green.
+The story behind the rules in `CLAUDE.md`. Each section is a bug that was found
+on the real system, or a decision that came out differently from the plan, with
+the symptom and the cause — because several of those rules look arbitrary
+without it, and a rule you do not understand is a rule you will "simplify".
 
-Paste this file's path into a new session and say "read HANDOFF.md and continue".
+Nothing here is status. It is history, and it does not go stale: add a section
+when a new bug is found, and leave the rest alone.
 
----
-
-## Where things stand
-
-All 12 planned tasks (0–11) are implemented and committed. The plan and spec are
-still accurate except where §"Deviations" below says otherwise.
-
-- Spec: `docs/superpowers/specs/2026-07-25-ccas-design.md`
-- Plan: `docs/superpowers/plans/2026-07-25-ccas.md`
-- Spike findings: `docs/superpowers/spike-waybar-menu.md`
-- Live results: `docs/superpowers/task-11-live-integration.md`
-
-Both real accounts report `loggedIn: true` under their own `CLAUDE_CONFIG_DIR`.
-The live registry as of 2026-07-25 15:20:
-
-| slug | email | nickname | colour | signal |
-|---|---|---|---|---|
-| `vsed` | vsedlacek1337@gmail.com | `vsed` | 4 | 1 |
-| `vo-se-15th` | vo.sedlacek@gmail.com | `vo.se` | 0 | 2 |
-
-`vsed` is the default. `vo-se` was removed and re-added while testing Manage,
-hence the `-15th` suffix from the slug de-duplicator. Read the registry rather
-than trusting this table — the user edits it by clicking.
-
-**The central guarantee holds:** CCAS has never written to `~/.claude`. There
-are no symlinks in it and `accounts.relink()` only ever links inward.
-
-Do not verify that against a fixed mtime, though. `.credentials.json` read
-`1784954438` for the whole build session, but it moved to `1784983478` on
-2026-07-25 at 14:44 when the user's usage limits reset — Claude Code running
-under the *default* account (no `CLAUDE_CONFIG_DIR`) refreshes that token
-itself. Compare the mtime before and after your own command instead; see
-`CLAUDE.md` for the snippet.
-
-Run the suite with `cd ~/ccas && python -m pytest` (206 passing, ~0.7 s).
-
----
-
-## Verified live
-
-- Placeholder module, add flow, OAuth login, both accounts isolated.
-- Waybar modules render in `modules-center`, one per account, in palette colour.
-- The menu opens with nested submenus: title row, New session, Resume last
-  session, Resume from history ▸, Display as ▸, ○ Hide icon, Color ▸, Manage ▸.
-- Uninstall restores `config.jsonc` and `.bashrc` byte-for-byte (diffed).
-
-- **Launching, all three paths:** New session (existing and freshly created
-  directories), Resume last session, Resume from history, and the fuzzel search.
-- Add, rename, remove from the Manage submenu. Hide icon.
-- Display and colour switching, including the ●/○ markers moving.
-- `Hide icon` shows ● when on and ○ when off (confirmed after the font fix).
-- The bar stays put with a second Claude session running alongside — no more
-  spontaneous reloads.
-
-## Terminal front-end — verified
-
-Confirmed in a new shell on 2026-07-25: bare `ccs` shows the account picker then
-the mode menu via fzf and every option in it works; `ccs -p "say hi"` runs
-headless with no menu; `ccs vo-se-15th claude auth status` reports
-vo.sedlacek@gmail.com rather than the default account.
-
-The headless runner was verified the same day: the first `-p` run asked which
-account, the second ran straight through, a piped `-p` answered without
-prompting, and the `●` sits on the chosen account's menu row.
-
-The terminal `Select as headless runner` row was verified too: it sets the
-runner, reads `● Headless runner — pick to clear` on the next pass, clears on a
-second pick, and a `-p` run after clearing asks again as designed.
-
-After the passthrough replaced the shell function, `ccs --version` and
-`ccs -- mcp list` were both run live and reached the real `claude`, and
-`~/.bashrc` came out with no `claude()` in it and the user's own lines intact.
-
-Every area of the tool has now been exercised on the real system.
+Background from the build session: the spec is
+`docs/superpowers/specs/2026-07-25-ccas-design.md`, the plan
+`docs/superpowers/plans/2026-07-25-ccas.md`, the Waybar spike
+`docs/superpowers/spike-waybar-menu.md`, and the first live integration run
+`docs/superpowers/task-11-live-integration.md`.
 
 ---
 
@@ -379,38 +313,14 @@ when empty, keeping uninstall byte-for-byte either way.
 
 ---
 
-## Things that will bite you
+---
 
-- **Never invoke `claude` by bare name from inside the code.** Always
-  `paths.claude_bin()`. The `claude()` shell function is no longer installed, but
-  shells opened before that install still have it and would re-enter `ccs`
-  forever. `CCAS_INNER=1` is a second guard.
-- **Never write to `~/.claude`.** Tests use `tmp_path` and the `CCAS_*` env
-  overrides in `ccas/paths.py`. `test_relink_never_touches_mtimes_in_claude_home`
-  is the sandbox canary.
-- **Never delete.** Everything goes to `~/.claude_trash/`.
-- `menu.xml` only regenerates on `ccs render`, which Waybar runs every 30 s.
-  After changing menu-generation code, run `ccs render <slug>` to see it, or
-  wait for the tick.
-- Waybar caches `menu-file`; only `killall -SIGUSR2 waybar` re-reads it. A
-  per-module `SIGRTMIN+n` refreshes the **label only** — this was measured.
-- `~/.bashrc` changes only affect **new** shells — which is why the terminal
-  entry point is `ccs`, not a shell function.
-
-## Useful commands
-
-```bash
-cd ~/ccas && python -m pytest          # 206 tests, ~0.7 s
-./install.sh                           # idempotent; re-run after any code change
-ccs list                               # accounts table
-ccs doctor                             # audit the install; rc 1 if anything failed
-ccs render vsed                        # force menu.xml + history.tsv rebuild
-ccs -p "say hi"                        # real claude under the runner account
-ccs -- mcp list                        # claude's own subcommands need the --
-./uninstall.sh                         # strip managed blocks, keep account data
-./uninstall.sh --purge                 # also move ~/.cc-accounts to trash
-```
+## Backups
 
 Backups of the pre-CCAS originals:
 `~/.config/waybar/config.jsonc.pre-ccas`, `~/.bashrc.pre-ccas`, plus
 `*.ccas-orig` copies written by the installer.
+
+An account slug can carry a suffix from the de-duplicator: `vo-se-15th` is what
+`vo.se` became when that account was removed and re-added while testing Manage.
+Slugs are permanent once written, so the suffix stays.
