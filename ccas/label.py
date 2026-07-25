@@ -3,7 +3,7 @@ from xml.sax.saxutils import escape
 
 from . import paths
 
-ICON_SIZE = "x-large"
+ICON_SIZE = "150%"
 # The glyph sits high in the font, so at x-large it reads as floating above the
 # text beside it. rise is pango's baseline shift, in 1024ths of a point.
 ICON_RISE = "-800"
