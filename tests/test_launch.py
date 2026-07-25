@@ -1,0 +1,116 @@
+import importlib
+import time
+import pytest
+
+import ccas.paths as paths
+import ccas.launch as launch
+import ccas.menu as menu
+from ccas.history import Session
+
+
+@pytest.fixture(autouse=True)
+def _isolate(monkeypatch, tmp_path):
+    monkeypatch.setenv("CCAS_ACCOUNTS_ROOT", str(tmp_path / "accts"))
+    monkeypatch.setenv("CCAS_CLAUDE_BIN", "/usr/bin/true")
+    importlib.reload(paths)
+    importlib.reload(menu)
+    importlib.reload(launch)
+    (tmp_path / "accts" / "work").mkdir(parents=True)
+    (tmp_path / "proj").mkdir()
+    return tmp_path
+
+
+ACCOUNT = {
+    "slug": "work", "nickname": "work", "email": "w@example.com",
+    "color": 1, "display": "nickname", "hide_icon": False,
+    "warned_invisible": False, "signal": 1,
+}
+
+
+def seed(tmp_path, n=2):
+    now = time.time()
+    sess = [
+        Session(uuid=f"uuid-{i}", cwd=str(tmp_path / "proj"), title=f"T{i}",
+                mtime=now - i, path=None)
+        for i in range(n)
+    ]
+    menu.write(ACCOUNT, sess)
+    return sess
+
+
+def test_new_with_explicit_dir(tmp_path):
+    workdir, argv = launch.resolve("work", "new", str(tmp_path / "proj"), True, None)
+    assert workdir == str(tmp_path / "proj")
+    assert argv == ["/usr/bin/true"]
+
+
+def test_hist_resolves_slot_to_uuid_and_its_own_cwd(tmp_path):
+    seed(tmp_path)
+    workdir, argv = launch.resolve("work", "hist", "1", True, None)
+    assert workdir == str(tmp_path / "proj")
+    assert argv == ["/usr/bin/true", "--resume", "uuid-1"]
+
+
+def test_hist_out_of_range_returns_none(tmp_path):
+    seed(tmp_path)
+    assert launch.resolve("work", "hist", "99", True, None) is None
+
+
+def test_hist_with_a_nonnumeric_slot_returns_none(tmp_path):
+    seed(tmp_path)
+    assert launch.resolve("work", "hist", "banana", True, None) is None
+    assert launch.resolve("work", "hist", None, True, None) is None
+
+
+def test_last_uses_the_newest_snapshot_row(tmp_path):
+    seed(tmp_path)
+    workdir, argv = launch.resolve("work", "last", None, True, None)
+    assert argv == ["/usr/bin/true", "--resume", "uuid-0"]
+
+
+def test_last_with_no_history_returns_none(tmp_path):
+    assert launch.resolve("work", "last", None, True, None) is None
+
+
+def test_tty_mode_scopes_last_to_the_current_directory(tmp_path):
+    seed(tmp_path)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    assert launch.resolve("work", "last", None, False, str(other)) is None
+    workdir, argv = launch.resolve("work", "last", None, False, str(tmp_path / "proj"))
+    assert argv == ["/usr/bin/true", "--resume", "uuid-0"]
+
+
+def test_gui_mode_ignores_cwd_scoping(tmp_path):
+    """A Waybar click is global; only the terminal front-end is cwd-scoped."""
+    seed(tmp_path)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    _workdir, argv = launch.resolve("work", "last", None, True, str(other))
+    assert argv == ["/usr/bin/true", "--resume", "uuid-0"]
+
+
+def test_search_resolves_the_chosen_label(tmp_path, monkeypatch):
+    seed(tmp_path)
+    rows = menu.read_tsv("work")
+    monkeypatch.setattr(launch.pickers, "choose", lambda *a, **k: rows[1][0])
+    workdir, argv = launch.resolve("work", "search", None, True, None)
+    assert argv == ["/usr/bin/true", "--resume", "uuid-1"]
+    assert workdir == str(tmp_path / "proj")
+
+
+def test_search_cancelled_returns_none(tmp_path, monkeypatch):
+    seed(tmp_path)
+    monkeypatch.setattr(launch.pickers, "choose", lambda *a, **k: None)
+    assert launch.resolve("work", "search", None, True, None) is None
+
+
+def test_unknown_mode_raises(tmp_path):
+    with pytest.raises(ValueError):
+        launch.resolve("work", "sideways", None, True, None)
+
+
+def test_never_invokes_claude_by_bare_name(tmp_path):
+    _, argv = launch.resolve("work", "new", str(tmp_path / "proj"), True, None)
+    assert argv[0] != "claude"
+    assert argv[0].startswith("/")
