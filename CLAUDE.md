@@ -51,7 +51,7 @@ Established by the Task 0 spike (`docs/superpowers/spike-waybar-menu.md`):
 - Waybar **caches `menu-file` at startup**. Rewriting `menu.xml` changes nothing
   on screen until `killall -SIGUSR2 waybar`.
 - A per-module `SIGRTMIN+n` repaints the **label only** — never the menu. Any
-  state baked into the XML (the ●/○ marks, the ☐/☑ box, the title rows) needs a
+  state baked into the XML (the ●/○ marks, the title rows) needs a
   full reload.
 - Nested submenus work, and `menu-actions` reaches nested items.
 - A `GtkMenu` does not scroll usefully: 219 items filled a 1440 px screen.
@@ -144,7 +144,7 @@ this exact mistake was made once already.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~160 tests, under a second
+cd ~/ccas && python -m pytest    # ~180 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
 ccs list                         # accounts
 ccs config                       # force a rebuild of every menu.xml (render does not)
