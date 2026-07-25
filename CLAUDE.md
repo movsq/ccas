@@ -51,6 +51,10 @@ is the canary. `CCAS_NO_RELOAD=1` suppresses signalling the live bar.
 repair inside it would mask the fault it is looking for — including a `relink`,
 tempting as that is. It reports and says which command fixes it.
 
+**Point Waybar at a menu only after writing it.** `cmd_add` writes `menu.xml`
+before `waybar.apply()` adds the module, because `menu-file` is read on the
+reload that follows. Anything new that creates a module must keep that order.
+
 **A slug is permanent; a nickname is not.** The slug is the account directory
 name and the Waybar module id. `cmd_add` names the directory after the email —
 but only *after* login returns it, via `accounts.rename()` in the one window
@@ -159,6 +163,37 @@ once already, back when the bashrc function was the terminal path.
 - Verify on the real system rather than reasoning about it: `./install.sh`,
   `ccs render <slug>`, read the generated file. `grim` plus PIL cropping gives
   you a screenshot; Waybar is on `HDMI-A-1` (x 2560–4480), `DP-1` is x 0–2560.
+- **`ccs` runs the installed copy, not this repo.** `install.sh` stages the
+  package into `~/.local/share/ccas`, so any test that goes through the `ccs`
+  command exercises the code as of the last install. Editing a module and then
+  running `ccs …` silently tests the *old* behaviour — which happened here, and
+  a working fix was nearly reported as broken. **Re-run `./install.sh` before
+  every live check**, and if a live result contradicts a passing test, suspect
+  a stale install before suspecting the test.
+- `git remote origin` is `github.com/movsq/ccas` (private). Push when the user
+  asks; the user set it up so work is not only on this disk.
+
+### Exercising a flow that would touch real state
+
+`ccs add` logs in, writes credentials and rewrites the bar — not something to
+try against the live install. Point every path at a scratch directory and stub
+the binary instead:
+
+```bash
+export CCAS_HOME=$SB/home CCAS_ACCOUNTS_ROOT=$SB/accts CCAS_CLAUDE_JSON=$SB/claude.json \
+       CCAS_WAYBAR_CONFIG=$SB/config.jsonc CCAS_BASHRC=$SB/bashrc CCAS_TRASH=$SB/trash \
+       CCAS_CLAUDE_BIN=$SB/fakeclaude CCAS_NO_RELOAD=1
+script -qec "ccs add" /dev/null < /dev/null      # a pty, on purpose — see below
+```
+
+The fake `claude` needs two cases: `auth login` writes
+`$CLAUDE_CONFIG_DIR/.credentials.json`, `auth status` prints
+`{"loggedIn":true,"email":"…"}`.
+
+`script` is load-bearing. `pickers.is_gui()` is `not sys.stdin.isatty()`, so a
+pipe or `</dev/null` takes the **fuzzel** path and the run dies with no prompt.
+A pty makes it the terminal path. Then audit the result with `ccs doctor` — that
+is how the missing-`menu.xml` bug in `cmd_add` was found.
 - `~/.bashrc` changes only reach **new** shells — which is why the terminal
   entry point is `ccs`, not a shell function.
 - Update `HANDOFF.md` when behaviour changes — it is what the next session reads.
