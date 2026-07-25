@@ -119,6 +119,41 @@ def _registry_checks(reg: dict) -> list:
     return checks
 
 
+def _statusline_hook() -> Check:
+    """Is `ccs statusline` wired into ~/.claude/settings.json?
+
+    Read-only, like everything here — and it has to be: settings.json is a
+    symlink from every account directory into ~/.claude, so writing it is the
+    one thing CCAS may never do. The user adds the line; this says whether they
+    have, and spells out the line to add.
+
+    It fails rather than reports. The feature ships never-wired, and a check
+    that passes on never-wired cannot say the one thing the user needs to hear.
+    """
+    label_ = "usage: statusline hook wired"
+    path = paths.claude_home() / "settings.json"
+    wanted = f"{paths.ccs_bin()} statusline"
+    if not path.exists():
+        return Check(False, label_, f"{path} is missing")
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        return Check(False, label_, f"{path} does not parse: {exc}")
+
+    command = (settings.get("statusLine") or {}).get("command") or ""
+    if str(paths.ccs_bin()) in command and "statusline" in command:
+        return Check(True, label_, "")
+    if command:
+        # Their statusline stays: it becomes the delegate, which is the whole
+        # reason `ccs statusline` chains instead of replacing.
+        fix = f'set statusLine.command to "{wanted} {command}"'
+    else:
+        fix = ('add "statusLine": {"type": "command", "command": '
+               f'"{wanted} <your statusline, if any>"}}')
+    return Check(False, label_,
+                 f"{path}: {fix} — without it no account records its usage")
+
+
 def _no_legacy_shell_function() -> Check:
     """A shell opened before the install that removed it still shadows `claude`.
 
@@ -133,7 +168,8 @@ def _no_legacy_shell_function() -> Check:
 
 def run(reg: dict) -> list:
     checks = [_claude_home_has_no_symlinks(), *_binaries(),
-              _no_legacy_shell_function(), *_registry_checks(reg),
+              _no_legacy_shell_function(), _statusline_hook(),
+              *_registry_checks(reg),
               *_waybar_matches(reg)]
     for account in reg["accounts"]:
         checks.extend(_account_checks(account))

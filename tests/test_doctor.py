@@ -5,6 +5,7 @@ Every bug this tool has hit on the real system was drift between four places —
 than a logic bug. These are the checks that were being run by hand.
 """
 import importlib
+import json
 import os
 
 import pytest
@@ -46,8 +47,17 @@ def _isolate(monkeypatch, tmp_path):
     return tmp_path
 
 
+def wire_statusline(command=None):
+    """The line the user adds by hand; CCAS cannot write this file itself."""
+    command = command or f"{paths.ccs_bin()} statusline"
+    (paths.claude_home() / "settings.json").write_text(
+        json.dumps({"statusLine": {"type": "command", "command": command}}),
+        encoding="utf-8")
+
+
 def healthy():
     """One account, installed the way `ccs config` leaves it."""
+    wire_statusline()
     reg = registry.load()
     registry.add(reg, "work", "work@x.com", "work")
     registry.save(reg)
@@ -188,3 +198,47 @@ def test_account_rows_are_labelled_by_nickname(monkeypatch):
     registry.save(reg)
     labels = [c.label for c in doctor.run(registry.load())]
     assert "work@x.com: symlinks resolve" in labels
+
+
+# ── the statusline hook ───────────────────────────────────────────────────────
+
+def test_an_unwired_statusline_hook_is_a_failure():
+    """It fails rather than reports. The state this ships in is "never wired",
+    and a check that passes on never-wired cannot tell the user the one thing
+    they need to know; afterwards it earns its keep by catching the regression."""
+    reg = healthy()
+    (paths.claude_home() / "settings.json").write_text("{}", encoding="utf-8")
+    bad = failures(reg)
+    assert any("statusline" in c.label.lower() for c in bad), bad
+    assert any("statusLine" in c.detail and f"{paths.ccs_bin()} statusline" in c.detail
+               for c in bad)
+
+
+def test_someone_elses_statusline_is_offered_the_delegate_spelling():
+    """The user already had a statusline. The fix must keep it, so the detail
+    line is their own command threaded in as the delegate, not a replacement."""
+    reg = healthy()
+    wire_statusline("/home/u/.claude/statusline.sh")
+    bad = failures(reg)
+    assert any(f"{paths.ccs_bin()} statusline /home/u/.claude/statusline.sh" in c.detail
+               for c in bad), bad
+
+
+def test_a_wired_hook_passes_however_it_was_spelled():
+    reg = healthy()
+    for command in (f"{paths.ccs_bin()} statusline",
+                    f"{paths.ccs_bin()} statusline /home/u/.claude/statusline.sh",
+                    f"bash -c '{paths.ccs_bin()} statusline'"):
+        wire_statusline(command)
+        assert not [c for c in failures(reg) if "statusline" in c.label.lower()], command
+
+
+def test_an_unreadable_settings_file_says_which_it_was():
+    reg = healthy()
+    (paths.claude_home() / "settings.json").write_text("{not json", encoding="utf-8")
+    bad = [c for c in failures(reg) if "statusline" in c.label.lower()]
+    assert bad and "settings.json" in bad[0].detail
+
+    (paths.claude_home() / "settings.json").unlink()
+    bad = [c for c in failures(reg) if "statusline" in c.label.lower()]
+    assert bad and "missing" in bad[0].detail
