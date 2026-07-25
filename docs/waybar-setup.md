@@ -88,6 +88,11 @@ pango-view -q --markup --background=white \
 Both runs should span the same top and bottom rows. This works with the bar
 covered or off-screen, which the screenshot route does not.
 
+The current values were also confirmed against the bar itself, once the usage
+clock gave the label a third run to sit beside. `grim -o HDMI-A-1`, thresholded
+above the `#313244` bar background, put the glyph and the clock on ink rows 9–28
+alike — so `150%`/`-800` holds at the bar's real DPI, not only at pango-view's.
+
 ## Spacing, hover and press
 
 Add to `~/.config/waybar/style.css`, one selector pair per account slug:

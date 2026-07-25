@@ -283,17 +283,14 @@ ccs -- mcp list                  # claude's own subcommands need the --
 Written 2026-07-25. These shipped on reasoning, not evidence. Check them before
 building on them; delete the line once you have.
 
-- **The bar styling was never seen working.** `#custom-cc-*` spacing, `:hover`
-  and `:active` went into `~/.config/waybar/style.css` with zero live
-  confirmation — a window was covering the bar on `DP-1` and `grim` came back
-  with no teal glyph in it. Nothing proves any of the three renders.
-- **`:active` is the shakiest of them.** Waybar's custom module is
+- **`:hover` and `:active` were never seen firing.** They went into
+  `~/.config/waybar/style.css` on reasoning alone, and a still screenshot cannot
+  show either. The modules themselves *do* render — `grim -o HDMI-A-1` on
+  2026-07-26 caught both, so the earlier "nothing proves anything renders" is
+  settled; what is left is the two pointer states.
+- **`:active` is the shakier of the two.** Waybar's custom module is
   EventBox-backed and GTK's active state is a button concept, so the press
   effect may simply never fire. `:hover` is documented; the press is a guess.
-- **`ICON_SIZE = "150%"` was aligned offline only.** `pango-view` says the glyph
-  and the text ink the same rows at `ICON_RISE = "-800"`, and pango-view
-  rasterises at its own DPI — proportional to the bar, not identical to it. The
-  earlier `x-large` value *was* measured on the real bar; this one was not.
 Do not verify any of this by asking the user to click things — automate it.
 `grim` plus ink-extent maths, `pango-view --markup` for glyph metrics with no
 bar involved, `swaymsg -t get_tree` to find out what is covering the bar.
