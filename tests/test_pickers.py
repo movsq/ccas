@@ -49,3 +49,39 @@ def test_choose_with_no_rows_returns_none(monkeypatch):
     monkeypatch.setattr(pickers.subprocess, "run",
                         lambda *a, **k: pytest.fail("must not spawn a picker"))
     assert pickers.choose("pick", [], gui=True) is None
+
+
+def test_prompt_gives_fuzzel_a_row_so_it_stays_open(monkeypatch):
+    """fuzzel exits instantly on empty stdin, so a free-text prompt with no
+    rows can never be typed into — that was the placeholder's silent 'blink'."""
+    seen = {}
+
+    class Result:
+        returncode = 0
+        stdout = "typed name\n"
+
+    def fake_run(cmd, **kwargs):
+        seen["input"] = kwargs.get("input")
+        return Result()
+
+    monkeypatch.setattr(pickers.subprocess, "run", fake_run)
+    assert pickers.prompt("nickname:", gui=True) == "typed name"
+    assert seen["input"], "fuzzel must be given at least one row"
+
+
+def test_prompt_treats_the_hint_row_as_no_answer(monkeypatch):
+    class Result:
+        returncode = 0
+        stdout = pickers.HINT + "\n"
+
+    monkeypatch.setattr(pickers.subprocess, "run", lambda *a, **k: Result())
+    assert pickers.prompt("nickname:", gui=True) is None
+
+
+def test_prompt_returns_none_when_cancelled(monkeypatch):
+    class Result:
+        returncode = 1
+        stdout = ""
+
+    monkeypatch.setattr(pickers.subprocess, "run", lambda *a, **k: Result())
+    assert pickers.prompt("nickname:", gui=True) is None

@@ -212,3 +212,31 @@ def test_tty_with_arguments_never_uses_a_bare_claude(monkeypatch):
 
 def test_tty_with_arguments_and_no_accounts_fails(capsys):
     assert cli.main(["tty", "-p", "hello"]) == 1
+
+
+def test_gui_flag_forces_gui_mode_even_on_a_tty(monkeypatch):
+    """Waybar inherits the compositor's stdin, which on a TTY session is a real
+    terminal. Without --gui a click took the terminal path and blocked forever
+    on input() against /dev/tty1."""
+    make_account()
+    monkeypatch.setattr(cli.pickers, "is_gui", lambda: False)
+    seen = {}
+    monkeypatch.setattr(cli, "cmd_manage",
+                        lambda action, slug, gui: seen.setdefault("gui", gui) or 0)
+    cli.main(["--gui", "manage", "add"])
+    assert seen["gui"] is True
+
+
+def test_without_the_flag_gui_is_still_sniffed(monkeypatch):
+    make_account()
+    monkeypatch.setattr(cli.pickers, "is_gui", lambda: False)
+    seen = {}
+    monkeypatch.setattr(cli, "cmd_manage",
+                        lambda action, slug, gui: seen.setdefault("gui", gui) or 0)
+    cli.main(["manage", "add"])
+    assert seen["gui"] is False
+
+
+def test_gui_flag_does_not_swallow_the_command():
+    make_account()
+    assert cli.main(["--gui", "render", "work"]) == 0

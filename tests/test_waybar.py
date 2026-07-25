@@ -69,7 +69,7 @@ def test_apply_inserts_block_and_registers_modules(_isolate):
     text = _isolate.read_text()
     assert "CCAS — managed block, start" in text
     assert '"custom/cc-personal"' in text
-    assert "custom/cc-personal" in text.split("modules-right")[1].split("]")[0]
+    assert "custom/cc-personal" in text.split(waybar.HOST_LIST)[1].split("]")[0]
     assert "// a comment the user wrote" in text, "user content must survive"
 
 
@@ -86,14 +86,14 @@ def test_apply_replaces_rather_than_appends_on_change(_isolate):
     text = _isolate.read_text()
     assert text.count("CCAS — managed block, start") == 1
     assert '"custom/cc-b"' not in text
-    assert "custom/cc-b" not in text.split("modules-right")[1].split("]")[0]
+    assert "custom/cc-b" not in text.split(waybar.HOST_LIST)[1].split("]")[0]
 
 
 def test_empty_registry_emits_the_placeholder(_isolate):
     waybar.apply(reg())
     text = _isolate.read_text()
     assert '"custom/cc-setup"' in text
-    assert "ccs manage add" in text
+    assert "ccs --gui manage add" in text
 
 
 def test_placeholder_disappears_once_an_account_exists(_isolate):
@@ -124,8 +124,10 @@ def test_generated_block_is_valid_json_once_comments_are_stripped(_isolate):
     data = json.loads(bare)
     assert data["custom/cc-personal"]["signal"] == 1
     assert data["custom/cc-work"]["signal"] == 2
-    assert data["modules-right"] == ["custom/stopwatch", "clock",
-                                     "custom/cc-personal", "custom/cc-work"]
+    assert data["modules-left"] == ["custom/launcher", waybar.SEP_NAME,
+                                    "custom/cc-personal", "custom/cc-work"]
+    assert data["modules-right"] == ["custom/stopwatch", "clock"], "must not sit at the edge"
+    assert data[waybar.SEP_NAME]["format"] == "—"
 
 
 def test_bashrc_block_defines_a_recursion_safe_function():

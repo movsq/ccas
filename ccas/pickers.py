@@ -2,9 +2,25 @@
 import subprocess
 import sys
 
+# Shown as the only row of a free-text fuzzel prompt. fuzzel exits immediately
+# when its stdin is empty, so a prompt with no rows can never be typed into;
+# and because fuzzel echoes unmatched input verbatim, one throwaway row is
+# enough to keep it open while the user types.
+HINT = "(type a name, or Esc to skip)"
+
 
 def is_gui() -> bool:
-    return not sys.stdin.isatty()
+    """Fallback only — prefer the explicit --gui flag on generated commands.
+
+    Waybar inherits stdin from the compositor, which on a TTY session is a real
+    terminal (/dev/tty1). Sniffing isatty() therefore misreports Waybar clicks
+    as terminal invocations, and the terminal path blocks on input() against a
+    console the user cannot see.
+    """
+    try:
+        return not sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return True
 
 
 def choose(prompt: str, rows, gui: bool):
@@ -25,11 +41,12 @@ def choose(prompt: str, rows, gui: bool):
 
 def prompt(message: str, gui: bool):
     if gui:
-        cmd = ["fuzzel", "--dmenu", "--prompt", f"{message} ", "--lines", "0"]
-        proc = subprocess.run(cmd, input="", capture_output=True, text=True)
+        cmd = ["fuzzel", "--dmenu", "--prompt", f"{message} ", "--lines", "1"]
+        proc = subprocess.run(cmd, input=HINT, capture_output=True, text=True)
         if proc.returncode != 0:
             return None
-        return proc.stdout.strip() or None
+        text = proc.stdout.strip()
+        return None if not text or text == HINT else text
     try:
         return input(f"{message} ").strip() or None
     except (EOFError, KeyboardInterrupt):

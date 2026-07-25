@@ -17,9 +17,17 @@ START = "═══ CCAS — managed block, start ═══"
 END = "═══ CCAS — managed block, end ═══"
 RULE = "═" * 70
 
+# The account icons live at the end of modules-left, just after the workspaces,
+# preceded by an em-dash divider. Appending them to modules-right instead put
+# them flush against the screen edge.
+SEP_NAME = "custom/cc-sep"
+HOST_LIST = "modules-left"
+
 
 def _ccs() -> str:
-    return str(paths.ccs_bin())
+    """Generated commands carry --gui: Waybar inherits the compositor's stdin,
+    which on a TTY session is a real terminal, so stdin sniffing misdetects."""
+    return f"{paths.ccs_bin()} --gui"
 
 
 def module_config(account: dict) -> dict:
@@ -62,17 +70,22 @@ def placeholder_config() -> dict:
     }
 
 
+def separator_config() -> dict:
+    return {"format": "—", "tooltip": False}
+
+
 def module_names(reg: dict):
     if not reg["accounts"]:
-        return ["custom/cc-setup"]
-    return [f"custom/cc-{a['slug']}" for a in reg["accounts"]]
+        return [SEP_NAME, "custom/cc-setup"]
+    return [SEP_NAME] + [f"custom/cc-{a['slug']}" for a in reg["accounts"]]
 
 
 def render_block(reg: dict) -> str:
+    modules = {SEP_NAME: separator_config()}
     if reg["accounts"]:
-        modules = {f"custom/cc-{a['slug']}": module_config(a) for a in reg["accounts"]}
+        modules.update({f"custom/cc-{a['slug']}": module_config(a) for a in reg["accounts"]})
     else:
-        modules = {"custom/cc-setup": placeholder_config()}
+        modules["custom/cc-setup"] = placeholder_config()
     body = ",\n".join(
         f'    {json.dumps(name)}: {json.dumps(cfg, indent=4, ensure_ascii=False)}'
         for name, cfg in modules.items()
@@ -97,13 +110,28 @@ def _strip_text(text: str, comment: str = "//") -> str:
     return pattern.sub("", text)
 
 
-def _patch_modules_right(text: str, names) -> str:
+def _patch_list(text: str, key: str, names) -> str:
+    """Replace this key's CCAS entries with `names`, preserving the user's own."""
     def repl(match):
         current = json.loads(match.group(1))
         kept = [n for n in current if not n.startswith("custom/cc-")]
-        return '"modules-right": ' + json.dumps(kept + list(names))
+        return f'"{key}": ' + json.dumps(kept + list(names))
 
-    return re.sub(r'"modules-right"\s*:\s*(\[[^\]]*\])', repl, text, count=1)
+    return re.sub(rf'"{re.escape(key)}"\s*:\s*(\[[^\]]*\])', repl, text, count=1)
+
+
+def _patch_module_lists(text: str, names) -> str:
+    """Put our modules in HOST_LIST and clear them from the other two.
+
+    Clearing the others matters on upgrade: an install that predates the move
+    left entries behind in modules-right, and a stale name Waybar cannot
+    resolve is a config error.
+    """
+    text = _patch_list(text, HOST_LIST, names)
+    for other in ("modules-left", "modules-center", "modules-right"):
+        if other != HOST_LIST:
+            text = _patch_list(text, other, [])
+    return text
 
 
 def _atomic_write(path, text: str) -> None:
@@ -128,7 +156,7 @@ def apply(reg: dict) -> None:
     path = paths.waybar_config()
     _backup_once(path)
     text = _strip_text(path.read_text(encoding="utf-8"))
-    text = _patch_modules_right(text, module_names(reg))
+    text = _patch_module_lists(text, module_names(reg))
     lines = text.splitlines(keepends=True)
     for i, line in enumerate(lines):
         if line.lstrip().startswith("{"):
@@ -140,7 +168,7 @@ def apply(reg: dict) -> None:
 def strip(path, comment: str = "//") -> None:
     text = _strip_text(path.read_text(encoding="utf-8"), comment)
     if comment == "//":
-        text = _patch_modules_right(text, [])
+        text = _patch_module_lists(text, [])
     _atomic_write(path, text)
 
 

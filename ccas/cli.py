@@ -126,9 +126,10 @@ def cmd_manage(action: str, slug, gui: bool) -> int:
     return 1
 
 
-def cmd_tty(args) -> int:
+def cmd_tty(args, gui=None) -> int:
     reg = registry.load()
-    gui = pickers.is_gui()
+    if gui is None:
+        gui = pickers.is_gui()
     if args:
         slug = reg["default"]
         if slug is None:
@@ -165,10 +166,20 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
 
 
 def main(argv) -> int:
+    # Waybar-generated commands pass --gui explicitly. Sniffing stdin is not
+    # reliable there: Waybar inherits the compositor's stdin, which on a TTY
+    # session is a real terminal, so a click would take the terminal path and
+    # block on input() against a console the user cannot see.
+    forced_gui = False
+    argv = list(argv)
+    if argv and argv[0] == "--gui":
+        forced_gui = True
+        argv = argv[1:]
+
     if not argv:
-        return cmd_tty([])
+        return cmd_tty([], True if forced_gui else None)
     command, rest = argv[0], argv[1:]
-    gui = pickers.is_gui()
+    gui = True if forced_gui else pickers.is_gui()
 
     if command == "list":
         return cmd_list()
@@ -225,7 +236,7 @@ def main(argv) -> int:
             return 1
         return cmd_manage(rest[0], rest[1] if len(rest) > 1 else None, gui)
     if command == "tty":
-        return cmd_tty(rest)
+        return cmd_tty(rest, gui)
 
     reg = registry.load()
     if registry.find(reg, command):
