@@ -6,7 +6,10 @@ from . import paths
 ICON_SIZE = "x-large"
 # The glyph sits high in the font, so at x-large it reads as floating above the
 # text beside it. rise is pango's baseline shift, in 1024ths of a point.
-ICON_RISE = "-1500"
+ICON_RISE = "-800"
+# The bar's 11px text renders a cap one pixel shorter than the enlarged glyph,
+# which reads as the glyph floating beside it rather than sitting with it.
+TEXT_SIZE = "110%"
 
 WARNING_TEXT = "it's still there — invisible."
 
@@ -39,7 +42,7 @@ def render(account: dict, index: int) -> str:
         # email address. display_name keeps its fallback for the menu title and
         # the account chooser, where a blank row would be unpickable.
         text = account.get("nickname") or ""
-    return f"{icon} {pango_escape(text)}" if text else icon
+    return f"{icon} <span size='{TEXT_SIZE}'>{pango_escape(text)}</span>" if text else icon
 
 
 def check_invisible_warning(account: dict) -> bool:

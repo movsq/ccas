@@ -311,6 +311,22 @@ already exist, so a config without a centre group would silently swallow the
 modules. `apply` now creates the group when absent and `strip` removes it again
 when empty, keeping uninstall byte-for-byte either way.
 
+### The glyph floated above its own label
+
+Enlarging the bar glyph (`ICON_SIZE = x-large`) made it sit visibly higher than
+the text beside it: pango aligns the two runs on a shared baseline, and ✻ has
+more of its ink above that baseline than a digit does. `ICON_RISE` drops the
+glyph back down — it is a baseline shift in 1024ths of a point, and `-800` is
+what measured flush on the real bar.
+
+That left the glyph a pixel taller than the 11px text, which read as the text
+floating rather than the icon. `TEXT_SIZE = 110%` raises the text to match, so
+both runs now ink rows 8–17 of the bar. Measured, not eyeballed: crop the bar
+out of `grim -o DP-1` and take the min/max ink row per column group — the four
+runs must report the same pair.
+
+---
+
 ---
 
 ---
