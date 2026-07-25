@@ -46,60 +46,27 @@ def test_render_prints_a_pango_label(capsys):
     assert "✻" in capsys.readouterr().out
 
 
-def test_render_regenerates_the_menu_file():
-    make_account()
-    cli.main(["render", "work"])
-    assert (paths.account_dir("work") / "menu.xml").exists()
-
-
 def test_render_for_unknown_account_fails_quietly(capsys):
     assert cli.main(["render", "ghost"]) == 1
     assert capsys.readouterr().out == ""
 
 
-def test_render_reloads_waybar_only_when_the_session_set_changed(monkeypatch):
-    """Waybar caches menu-file, so a changed menu needs a full reload — but an
-    unconditional one would flicker the bar every 30 seconds."""
+def test_render_prints_the_label_and_never_reloads(monkeypatch):
+    """The bug this whole change exists for: the first prompt of a new session
+    created a jsonl, the next 30 s tick saw a uuid it had not cached, and the
+    bar rebuilt itself while the user was typing."""
     make_account()
     reloads = []
     monkeypatch.setattr(cli.waybar, "reload", lambda: reloads.append(1))
+    monkeypatch.setattr(cli.history, "scan", lambda: [])
+    assert cli.main(["render", "work"]) == 0
 
     from ccas.history import Session
-    import time
-    sessions = [Session(uuid="u1", cwd="/tmp", title="one", mtime=time.time(), path=None)]
-    monkeypatch.setattr(cli.history, "scan", lambda: list(sessions))
-
-    cli.main(["render", "work"])
-    assert reloads == [1], "first render writes a new menu, so it must reload"
-
-    cli.main(["render", "work"])
-    assert reloads == [1], "unchanged session set must not reload"
-
-    sessions.insert(0, Session(uuid="u2", cwd="/tmp", title="two",
-                               mtime=time.time(), path=None))
-    cli.main(["render", "work"])
-    assert reloads == [1, 1], "a new session must reload"
-
-
-def test_render_does_not_rewrite_the_menu_it_is_not_going_to_reload(monkeypatch):
-    """hist-i actions index line i of history.tsv, and Waybar is still showing
-    the menu it cached at the last reload. Rewriting the pair without reloading
-    desynchronises them: the row says one session, the click resumes another."""
-    make_account()
-    from ccas.history import Session
-    import time
-    sessions = [Session(uuid=f"u{i}", cwd="/tmp", title=f"s{i}",
-                        mtime=time.time() - i, path=None) for i in range(2)]
-    monkeypatch.setattr(cli.history, "scan", lambda: list(sessions))
-    cli.main(["render", "work"])
-
-    xml = paths.account_dir("work") / "menu.xml"
-    tsv = paths.account_dir("work") / "history.tsv"
-    before = (xml.read_text(), tsv.read_text())
-
-    sessions.append(sessions.pop(0))  # same set, new newest
-    cli.main(["render", "work"])
-    assert (xml.read_text(), tsv.read_text()) == before
+    fresh = [Session(uuid="brand-new", cwd=str(paths.projects_root()), title="T",
+                     mtime=9e9, path=None)]
+    monkeypatch.setattr(cli.history, "scan", lambda: fresh)
+    assert cli.main(["render", "work"]) == 0
+    assert reloads == [], "a new session is not a reason to rebuild the bar"
 
 
 def test_config_rebuilds_every_menu_even_when_the_session_set_is_unchanged():
@@ -120,10 +87,10 @@ def test_config_rebuilds_every_menu_even_when_the_session_set_is_unchanged():
 def test_display_persists_and_refreshes_the_bar(monkeypatch):
     make_account()
     fired = []
-    monkeypatch.setattr(cli.waybar, "reload", lambda: fired.append(1))
+    monkeypatch.setattr(cli.waybar, "signal", lambda n: fired.append(n))
     assert cli.main(["display", "work", "icon only"]) == 0
     assert registry.find(registry.load(), "work")["display"] == "icon only"
-    assert fired == [1], "a per-module signal repaints the label but not the menu"
+    assert fired == [1], "the label changed, so the module repaints"
 
 
 def test_display_rejects_an_invalid_mode():
@@ -161,32 +128,22 @@ def _menu_xml():
     return (paths.account_dir("work") / "menu.xml").read_text(encoding="utf-8")
 
 
-def test_changing_a_setting_moves_the_radio_dot_in_the_menu(monkeypatch):
-    """The ●/○ marks are baked into menu.xml, and Waybar caches that file — so
-    a setting change has to rewrite it and force a full reload, or the dot stays
-    on whatever was selected when the bar last started."""
+def test_a_setting_change_signals_the_label_and_does_not_reload(monkeypatch):
+    """The reload existed because the ●/○ marks were baked into a menu file
+    Waybar caches. With no cached file, a label repaint is the whole job — and
+    SIGRTMIN+n does that without rebuilding the bar."""
     make_account()
-    reloads = []
+    reloads, signals = [], []
     monkeypatch.setattr(cli.waybar, "reload", lambda: reloads.append(1))
+    monkeypatch.setattr(cli.waybar, "signal", lambda n: signals.append(n))
 
-    cli.main(["color", "work", "5"])
-    assert f"● {paths.PALETTE[5][0]}" in _menu_xml()
-    assert f"○ {paths.PALETTE[0][0]}" in _menu_xml()
-    assert reloads, "a stale cached menu is the whole bug"
+    assert cli.main(["color", "work", "5"]) == 0
+    assert cli.main(["display", "work", "index"]) == 0
+    assert cli.main(["nick", "work", "personal"]) == 0
+    assert cli.main(["hide", "work", "toggle"]) == 0
 
-    cli.main(["display", "work", "index"])
-    assert "● index" in _menu_xml()
-    assert "○ nickname" in _menu_xml()
-
-    cli.main(["hide", "work", "toggle"])
-    assert f"{cli.label.MARK_ON} Hide icon" in _menu_xml()
-
-
-def test_renaming_updates_the_menu_title_row(monkeypatch):
-    make_account()
-    monkeypatch.setattr(cli.waybar, "reload", lambda: None)
-    cli.main(["nick", "work", "personal"])
-    assert ">personal<" in _menu_xml()
+    assert signals == [1, 1, 1, 1]
+    assert reloads == [], "nothing here changes the set of modules"
 
 
 def test_rename_cancelled_keeps_the_existing_nickname(monkeypatch):
@@ -459,19 +416,16 @@ def test_headless_command_reports_and_toggles(monkeypatch, capsys):
     assert cli.main(["headless", "ghost"]) == 1
 
 
-def test_setting_the_headless_runner_rewrites_every_menu(monkeypatch):
-    """The mark lives in each account's menu.xml, and turning it on for one
-    account turns it off for the others — so all of them need rewriting."""
+def test_the_headless_toggle_touches_the_bar_not_at_all(monkeypatch):
+    """It is not in the label — it decides which account answers `ccs -p`."""
     make_account("work")
     make_account("other")
-    reloads = []
+    reloads, signals = [], []
     monkeypatch.setattr(cli.waybar, "reload", lambda: reloads.append(1))
-    cli.main(["headless", "work"])
-    assert f"{cli.label.MARK_ON} Headless runner" in (
-        paths.account_dir("work") / "menu.xml").read_text()
-    assert f"{cli.label.MARK_OFF} Headless runner" in (
-        paths.account_dir("other") / "menu.xml").read_text()
-    assert reloads, "the marks are baked into the cached menu"
+    monkeypatch.setattr(cli.waybar, "signal", lambda n: signals.append(n))
+    assert cli.main(["headless", "work"]) == 0
+    assert registry.headless_slug(registry.load()) == "work"
+    assert (reloads, signals) == ([], [])
 
 
 def test_mode_menu_offers_the_headless_runner_and_shows_its_state(monkeypatch):

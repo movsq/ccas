@@ -28,32 +28,24 @@ def notify(text: str) -> None:
 
 
 def _refresh(reg, account) -> None:
-    """Persist, warn if newly invisible, and refresh both label and menu.
+    """Persist, warn if newly invisible, and repaint the label.
 
-    The ●/○ marks and the ☐/☑ checkbox are baked into menu.xml, which Waybar
-    caches — a signal only repaints the label, so without rewriting the file
-    and forcing a full reload the dot stays wherever it was when the bar last
-    started. That is a user-initiated click, so the reload flicker is fine;
-    the 30 s render tick still guards itself with session_set_changed().
+    A signal, not a reload: SIGRTMIN+n re-runs `exec` and updates the label,
+    which since the menu stopped being a cached file is the only thing a
+    setting change can alter on screen.
     """
     if label.check_invisible_warning(account):
         notify(label.WARNING_TEXT)
     registry.save(reg)
-    menu.write(account, history.scan())
-    waybar.reload()  # subsumes the per-module signal, which only repaints labels
+    waybar.signal(account["signal"])
 
 
 def _refresh_all(reg) -> None:
-    """Rewrite every account's menu and reload once.
-
-    The headless mark is exclusive, so setting it on one account clears it on
-    the others — every menu.xml is stale, not just the one that was clicked.
+    """Persist. `headless` is exclusive, so setting it on one account clears it
+    on the others — but none of it reaches the bar: neither headless nor
+    dangerous appears in the label, and there is no menu left to rewrite.
     """
     registry.save(reg)
-    sessions = history.scan()
-    for account in reg["accounts"]:
-        menu.write(account, sessions)
-    waybar.reload()
 
 
 def _toggle_headless(reg, slug: str) -> None:
@@ -146,29 +138,12 @@ def _mutate(slug: str, field: str, value) -> int:
 
 
 def cmd_render(slug: str) -> int:
-    """Print the label and regenerate the menu as a side effect.
-
-    Waybar caches menu.xml at startup and neither the 30 s exec tick nor the
-    per-module RTMIN signal makes it re-read (see docs/superpowers/
-    spike-waybar-menu.md). Only a full SIGUSR2 reload does, so reload when the
-    session set actually changed — unconditionally would flicker every tick.
-
-    The write is bound to the same condition. Waybar is still showing the menu
-    it cached at the last reload, and hist-i resolves against line i of
-    history.tsv; rewriting the pair without reloading would leave the visible
-    row and the session it launches pointing at different things.
-    """
+    """Print the label. Nothing else — this runs every 30 s, per account."""
     reg = registry.load()
     account = registry.find(reg, slug)
     if account is None:
         return 1
-    sessions = history.scan()
-    changed = menu.session_set_changed(slug, sessions)
-    if changed:
-        menu.write(account, sessions)
     print(label.render(account, registry.index_of(reg, slug)))
-    if changed:
-        waybar.reload()
     return 0
 
 
