@@ -364,6 +364,38 @@ agent's own `Bash` tool proves nothing — that tool sets the marker itself.
 
 ---
 
+### It came back, and the lesson above was too narrow
+
+`⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker`, again,
+from a session started at the bar. This time Waybar was innocent —
+`grep -c CLAUDE_CODE_CHILD_SESSION /proc/$(pgrep -x waybar)/environ` returned 0,
+and so did kitty's, so the scrubbed restart above had held.
+
+The carrier was the **GTK panel**, left open on screen by an agent that had
+launched it from a `Bash` call to verify Task 7. A panel is not a daemon and
+nobody thinks of it as long-lived, but it does not have to be: its launch verbs
+run `kitty … claude` with `accounts.env_for()`, which is `dict(os.environ)` —
+the agent shell's, marker and all. Anything still running that can *launch* is a
+carrier, for exactly as long as it is running. That is the general rule; "don't
+restart a daemon from an agent shell" was the special case of it.
+
+So the judgement in the section above is reversed on one point. It rejected
+unsetting the variable in CCAS as papering over a poisoned parent. That was right
+about the diagnosis and wrong about the remedy, because CCAS is never a nested
+session: `accounts.env_for()` is the single door every launch path goes through,
+and the marker is false of everything on the other side of it.
+`PARENT_SESSION_VARS` drops `CLAUDE_CODE_CHILD_SESSION`, `CLAUDECODE` and
+`CLAUDE_CODE_ENTRYPOINT` there. The original objection — that unsetting leaves
+`CLAUDE_CONFIG_DIR` and the rest in place — does not survive contact with the
+code: `env_for` sets `CLAUDE_CONFIG_DIR` itself, on the next line.
+
+This does not retire the scrubbed restart. It stops CCAS from *propagating* a
+poisoned environment; it cannot clean one that a supervising process is still
+holding, and a bar carrying `CLAUDE_CONFIG_DIR` from an agent shell is still
+wrong in ways no scrub inside CCAS can see.
+
+---
+
 ### The usage row outlived the menu it was designed for
 
 `docs/superpowers/specs/2026-07-25-usage-limits-design.md` puts the per-account
