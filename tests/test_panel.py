@@ -665,3 +665,11 @@ def test_build_state_defaults_the_format_for_an_old_account(reg):
     state = panel.build_state("one")
     assert state["format"] == fmt.DEFAULT_FORMAT
     assert state["format_tokens"] == fmt.tokens_in(fmt.DEFAULT_FORMAT)
+
+
+def test_the_colour_row_is_only_offered_for_the_custom_mode():
+    """panel_ui asks state, not the registry. The rule lives here so it is
+    testable without GTK — panel_ui decides nothing."""
+    assert panel.shows_color_row({"display": "custom"}) is True
+    for mode in ("nickname", "index", "claude code", "icon only"):
+        assert panel.shows_color_row({"display": mode}) is False

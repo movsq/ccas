@@ -671,26 +671,47 @@ def _build_toggles(state, pick):
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     box.add_css_class("ccas-toggles")
 
-    checks = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
-    for text, key, kind in (("headless runner", "headless", "headless"),
-                            ("skip permissions", "dangerous", "dangerous"),
-                            ("hide icon", "hide_icon", "hide_icon")):
+    def toggle(text, key, kind):
         check = Gtk.CheckButton(label=text)
         check.set_active(state[key])
         # "toggled", not "clicked": set_active() above would fire clicked, and
         # the panel would act on its own initial render.
         check.connect("toggled", lambda _c, k=kind:
                       pick(panel.Action(k, slug, None)))
-        checks.append(check)
+        return check
+
+    # How this account *runs* — above the rule. Everything below the rule is
+    # how its widget *looks*, and the two were one undifferentiated row until
+    # the format tokens made the second half three widgets deep.
+    checks = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+    checks.append(toggle("headless runner", "headless", "headless"))
+    checks.append(toggle("skip permissions", "dangerous", "dangerous"))
     box.append(checks)
 
+    box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+    heading = Gtk.Label(label="Widget customisation", xalign=0)
+    heading.add_css_class("ccas-section")
+    box.append(heading)
+
+    box.append(toggle("hide the icon", "hide_icon", "hide_icon"))
+
     bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+    bottom.append(Gtk.Label(label="Show", xalign=0))
     modes = Gtk.DropDown.new_from_strings(paths.DISPLAY_MODES)
     if state["display"] in paths.DISPLAY_MODES:
         modes.set_selected(paths.DISPLAY_MODES.index(state["display"]))
     modes.connect("notify::selected", lambda d, _p: _on_mode(d, slug, state, pick))
     bottom.append(modes)
 
+    if panel.shows_color_row(state):
+        edit = Gtk.Button(label="Edit format…")
+        edit.connect("clicked",
+                     lambda _b: pick(panel.Action("edit_format", slug, None)))
+        bottom.append(edit)
+
+    # Named now that a second colour row sits under it: this one is the
+    # account's colour, "Colour of" below is one token's.
+    bottom.append(Gtk.Label(label="Colour", xalign=0))
     swatches = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
     swatches.set_valign(Gtk.Align.CENTER)
     current = next((a for a in state["accounts"] if a["current"]), None)
@@ -705,7 +726,53 @@ def _build_toggles(state, pick):
         swatches.append(swatch)
     bottom.append(swatches)
     box.append(bottom)
+    if panel.shows_color_row(state):
+        box.append(_build_token_colors(state, pick))
     return box
+
+
+def _build_token_colors(state, pick):
+    """Which token, and what colour. The tokens come precomputed in
+    state["format_tokens"] — this parses nothing."""
+    from gi.repository import Gtk
+
+    slug = state["slug"]
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+    row.add_css_class("ccas-token-colors")
+    row.append(Gtk.Label(label="Colour of", xalign=0))
+
+    tokens = state["format_tokens"] or ["%name"]
+    picker = Gtk.DropDown.new_from_strings(tokens)
+    row.append(picker)
+
+    def chosen():
+        return tokens[picker.get_selected()]
+
+    for name in ("auto", "dim"):
+        chip = Gtk.Button(label=name)
+        chip.add_css_class("ccas-chip")
+        chip.connect("clicked", lambda _b, v=name:
+                     pick(panel.Action("format_color", slug, (chosen(), v))))
+        row.append(chip)
+
+    swatches = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    swatches.set_valign(Gtk.Align.CENTER)
+    for _name, hexcolor in paths.PALETTE:
+        swatch = Gtk.Button()
+        swatch.add_css_class("ccas-swatch")
+        swatch.add_css_class(_tint(hexcolor))
+        swatch.connect("clicked", lambda _b, v=hexcolor:
+                       pick(panel.Action("format_color", slug, (chosen(), v))))
+        swatches.append(swatch)
+    row.append(swatches)
+
+    entry = Gtk.Entry(placeholder_text="#rrggbb", max_length=7, width_chars=8)
+    # activate only: a colour is a small enough commitment for Enter-then-close,
+    # where a rename is not — that one still goes to a terminal.
+    entry.connect("activate", lambda e:
+                  pick(panel.Action("format_color", slug, (chosen(), e.get_text()))))
+    row.append(entry)
+    return row
 
 
 def _on_mode(dropdown, slug, state, pick):

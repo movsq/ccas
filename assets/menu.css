@@ -77,5 +77,11 @@
 .ccas-swatch        { min-width: 16px; min-height: 16px; padding: 0;
                       border-radius: 999px; border: none; }
 .ccas-swatch.current { border: 2px solid #cdd6f4; }
+/* The rule and the caption that separate "how it runs" from "how it looks". */
+.ccas-section       { color: #9399b2; font-size: 0.85em; }
+.ccas-token-colors  { padding: 0 16px 10px 16px; }
+/* Sized like a swatch, but it has text to show, so it keeps its padding. */
+.ccas-chip          { min-height: 16px; padding: 2px 10px;
+                      border-radius: 999px; }
 .ccas-manage        { padding: 8px 16px; }
 .ccas-danger        { color: #f38ba8; }

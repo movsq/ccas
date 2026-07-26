@@ -156,6 +156,12 @@ def build_state(slug: str, now=None) -> dict:
     }
 
 
+def shows_color_row(state) -> bool:
+    """Whether the panel offers per-token colour. A decision, so it lives here
+    and not in panel_ui, which decides nothing."""
+    return state.get("display") == "custom"
+
+
 # ── the open panel ───────────────────────────────────────────────────────────
 
 
