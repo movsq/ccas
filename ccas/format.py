@@ -22,9 +22,31 @@ AUTO, DIM = "auto", "dim"
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
+def valid_color(value) -> bool:
+    """The only three shapes that may reach a pango attribute. This is what
+    makes the format string layout rather than markup — nothing else a user
+    types ever lands inside a span tag."""
+    return value in (AUTO, DIM) or bool(isinstance(value, str) and HEX.match(value))
+
+
+def _chosen(account: dict, token: str) -> str:
+    value = (account.get("format_colors") or {}).get(token, AUTO)
+    return value if valid_color(value) else AUTO
+
+
 def _icon(ctx) -> str:
-    color = paths.PALETTE[ctx["account"]["color"]][1]
-    attrs = "alpha='1'" if ctx["account"]["hide_icon"] else f"color='{color}'"
+    # hide_icon deliberately wins over a colour override: it is the invisibility
+    # toggle, and a colour that resurrected the glyph would make the panel's
+    # checkbox lie.
+    chosen = _chosen(ctx["account"], "%icon")
+    if ctx["account"]["hide_icon"]:
+        attrs = "alpha='1'"
+    elif chosen == AUTO:
+        attrs = f"color='{paths.PALETTE[ctx['account']['color']][1]}'"
+    elif chosen == DIM:
+        attrs = f"alpha='{usage_mod.DIM}'"
+    else:
+        attrs = f"color='{chosen}'"
     # Not pango_escape'd and not wrapped by the caller: the glyph carries its own
     # measured size and rise, and is the one token that is markup by nature.
     return f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' {attrs}>{paths.GLYPH}</span>"
@@ -159,7 +181,13 @@ def _emit(token: str, ctx) -> str:
     text = text_fn(ctx)
     if not text:
         return ""
-    attrs = auto_fn(ctx)
+    chosen = _chosen(ctx["account"], token)
+    if chosen == AUTO:
+        attrs = auto_fn(ctx)
+    elif chosen == DIM:
+        attrs = f"alpha='{usage_mod.DIM}'"
+    else:
+        attrs = f"color='{chosen}'"
     return f"<span size='{TEXT_SIZE}'{' ' + attrs if attrs else ''}>" \
            f"{pango_escape(text)}</span>"
 

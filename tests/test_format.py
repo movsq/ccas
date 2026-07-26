@@ -69,6 +69,7 @@ def test_empty_tokens_collapse_the_space_around_them():
     assert fmt.render(account(nickname=None), 1, format_override="%icon %name %email") \
         == f"{ICON} <span size='110%'>w@example.com</span>"
 
+
 NOW = 1_800_000_000.0            # a fixed epoch, so the clocks are stable
 IN_2H20 = NOW + 2 * 3600 + 20 * 60
 
@@ -138,3 +139,53 @@ def test_the_smart_tokens_are_usage_bar():
     assert bare({}, "%5h", r) == usage.bar(r, NOW)[0]
     seven = reading(five_pct=None, seven_pct=95.0, seven_at=NOW + 86400)
     assert bare({}, "%7d", seven) == "7d 95%"
+
+
+def test_auto_is_the_default_and_means_the_tokens_own_colour():
+    r = reading(five_pct=96.0)
+    out = fmt.render(account(), 1, r, NOW, format_override="%5hused")
+    assert f"color='{usage.RED}'" in out
+
+
+def test_a_named_colour_overrides_auto():
+    r = reading(five_pct=96.0)
+    a = account(format_colors={"%5hused": "#89b4fa"})
+    out = fmt.render(a, 1, r, NOW, format_override="%5hused")
+    assert "color='#89b4fa'" in out
+    assert usage.RED not in out
+
+
+def test_dim_is_an_alpha_not_a_colour():
+    a = account(format_colors={"%name": "dim"})
+    assert fmt.render(a, 1, format_override="%name") \
+        == f"<span size='110%' alpha='{usage.DIM}'>work</span>"
+
+
+def test_an_explicit_auto_is_the_same_as_absent():
+    r = reading(five_pct=96.0)
+    a = account(format_colors={"%5hused": "auto"})
+    assert fmt.render(a, 1, r, NOW, format_override="%5hused") \
+        == fmt.render(account(), 1, r, NOW, format_override="%5hused")
+
+
+def test_the_icon_takes_an_override_too():
+    a = account(format_colors={"%icon": "#a6e3a1"})
+    assert fmt.render(a, 1, format_override="%icon") \
+        == "<span size='150%' rise='-800' color='#a6e3a1'>✻</span>"
+
+
+def test_hide_icon_wins_over_a_colour_override():
+    """It is the invisibility toggle; a colour that resurrected the glyph would
+    make the panel's checkbox lie."""
+    a = account(hide_icon=True, format_colors={"%icon": "#a6e3a1"})
+    assert fmt.render(a, 1, format_override="%icon") \
+        == "<span size='150%' rise='-800' alpha='1'>✻</span>"
+
+
+def test_valid_color():
+    assert fmt.valid_color("auto") and fmt.valid_color("dim")
+    assert fmt.valid_color("#f9e2af") and fmt.valid_color("#F9E2AF")
+    assert not fmt.valid_color("f9e2af")
+    assert not fmt.valid_color("red")
+    assert not fmt.valid_color("#f9e2a")
+    assert not fmt.valid_color("' foreground='x")   # no attribute injection
