@@ -56,16 +56,45 @@ def _load_css(display) -> None:
         display, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
 
 
-def _pin_to_output(window, LayerShell) -> None:
-    """Put the panel on the output CCAS_PANEL_OUTPUT names, if it names one.
+def _setup_layer(window, LayerShell) -> None:
+    """Make the window a full-output overlay that owns the keyboard.
 
-    Unset leaves it to the compositor, which on a two-head setup is not
-    reliably the output Waybar is on — measured 2026-07-26, where it opened on
-    the other monitor. Naming a connector that is not currently connected is
-    not an error: the monitor list changes when a cable does, and a panel that
-    refuses to open is worse than one on the wrong screen.
+    Three things, each of them a reported bug:
+
+    - **All four edges.** The surface covers its output, so a click anywhere
+      outside the panel still lands *on* the panel's surface, where it closes
+      it and goes no further. A smaller surface would let that click through to
+      whatever is underneath — pausing a video is not a way to dismiss a menu.
+    - **Exclusive zone 0.** Keeps the surface out of the space Waybar reserved,
+      so the widget that opened the panel stays clickable and can close it.
+    - **EXCLUSIVE keyboard.** ON_DEMAND hands the keyboard over only once the
+      surface is clicked, so Escape did nothing until the panel had been
+      touched — worse on the monitor the pointer was not on. Sway resolves its
+      own bindings before forwarding, so this does not lock the compositor out.
     """
-    wanted = paths.panel_output()
+    LayerShell.init_for_window(window)
+    _pin_to_output(window, LayerShell)
+    LayerShell.set_layer(window, LayerShell.Layer.OVERLAY)
+    for edge in (LayerShell.Edge.TOP, LayerShell.Edge.BOTTOM,
+                 LayerShell.Edge.LEFT, LayerShell.Edge.RIGHT):
+        LayerShell.set_anchor(window, edge, True)
+    LayerShell.set_exclusive_zone(window, 0)
+    LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.EXCLUSIVE)
+
+
+def _pin_to_output(window, LayerShell) -> None:
+    """Put the panel on the output it was asked for, else the one in use.
+
+    CCAS_PANEL_OUTPUT is the user pinning it and wins. Failing that, the output
+    the pointer is on: sway focuses it, so it is the monitor whose bar was just
+    clicked. Reported on the real system — clicked left, opened right — because
+    a layer surface with no monitor set goes wherever the compositor likes.
+
+    Naming a connector that is not currently connected is not an error: the
+    monitor list changes when a cable does, and a panel that refuses to open is
+    worse than one on the wrong screen.
+    """
+    wanted = paths.panel_output() or panel.current_output()
     if not wanted:
         return
     monitors = window.get_display().get_monitors()
@@ -107,18 +136,9 @@ def show(state: dict):
 
     def on_activate(_app):
         window = Gtk.ApplicationWindow(application=app)
-        window.set_default_size(WIDTH, HEIGHT)
-        window.add_css_class("ccas-panel")
+        window.add_css_class("ccas-scrim")
 
-        LayerShell.init_for_window(window)
-        _pin_to_output(window, LayerShell)
-        LayerShell.set_layer(window, LayerShell.Layer.OVERLAY)
-        LayerShell.set_anchor(window, LayerShell.Edge.TOP, True)
-        LayerShell.set_margin(window, LayerShell.Edge.TOP, 8)
-        # ON_DEMAND, not EXCLUSIVE: the panel takes the keyboard while it has
-        # focus, without locking the compositor out if it fails to close.
-        LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.ON_DEMAND)
-
+        _setup_layer(window, LayerShell)
         _load_tints(window.get_display(), state)
         _load_css(window.get_display())
 
@@ -130,16 +150,53 @@ def show(state: dict):
                 return True
             return False
 
+        # On the window, in CAPTURE: Escape has to close the panel from wherever
+        # the focus happens to be, including inside the search entry, which would
+        # otherwise eat it to clear itself.
+        keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", on_key)
         window.add_controller(keys)
 
-        window.set_child(build_body(state, chosen, window))
+        # The panel proper, floating on a surface the size of the output.
+        frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        frame.add_css_class("ccas-panel")
+        frame.set_size_request(WIDTH, HEIGHT)
+        frame.set_halign(Gtk.Align.CENTER)
+        frame.set_valign(Gtk.Align.START)
+        frame.set_margin_top(8)
+        frame.append(build_body(state, chosen, window))
+
+        scrim = Gtk.Box()
+        scrim.set_hexpand(True)
+        scrim.set_vexpand(True)
+        scrim.append(frame)
+
+        click = Gtk.GestureClick()
+        click.set_button(0)  # any button: closing is not a left-click gesture
+
+        def on_scrim_click(_g, _n, x, y):
+            ok, rect = frame.compute_bounds(scrim)
+            if not ok or not _inside(rect, x, y):
+                window.close()
+
+        click.connect("pressed", on_scrim_click)
+        scrim.add_controller(click)
+
+        window.set_child(scrim)
         window.present()
 
     app.connect("activate", on_activate)
     # No arguments: ccs has already parsed its own, and GTK would reject them.
     app.run([])
     return chosen["action"]
+
+
+def _inside(rect, x, y) -> bool:
+    """Is (x, y) within the panel's bounds? The scrim covers the whole output, so
+    'outside the panel' is a hit test rather than something the compositor can
+    answer by which surface was clicked."""
+    return (rect.origin.x <= x <= rect.origin.x + rect.size.width
+            and rect.origin.y <= y <= rect.origin.y + rect.size.height)
 
 
 def _usage_text(row):
@@ -178,7 +235,7 @@ def _load_tints(display, state) -> None:
     colors = {c for _name, c in paths.PALETTE}
     colors |= {row["color"] for row in state["usage"] if row["color"]}
     colors |= {a["color"] for a in state["accounts"]}
-    css = "\n".join(
+    css = "window.ccas-scrim { background: transparent; }\n" + "\n".join(
         f".{_tint(c)} {{ background: {c}; }}\n"
         f"progressbar.{_tint(c)} {{ background: transparent; }}\n"
         f"progressbar.{_tint(c)} progress {{ background: {c}; }}"
@@ -211,7 +268,7 @@ def _dot(color):
     return dot
 
 
-def _build_header(state, pick, reveal_toggle):
+def _build_header(state, pick, reveal_toggle, close):
     from gi.repository import Gtk
 
     header = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -245,6 +302,13 @@ def _build_header(state, pick, reveal_toggle):
     gear.add_css_class("ccas-gear")
     gear.connect("clicked", lambda _b: reveal_toggle())
     top.append(gear)
+
+    # Escape and a click outside both close it, but neither is visible. A menu
+    # with no way out you can see is one you have to be told how to leave.
+    shut = Gtk.Button(label="✕")
+    shut.add_css_class("ccas-close")
+    shut.connect("clicked", lambda _b: close())
+    top.append(shut)
     header.append(top)
 
     current = next((a for a in state["accounts"] if a["current"]), None)
@@ -334,7 +398,8 @@ def build_body(state, chosen, window):
     revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
     root.append(_build_header(
         state, pick, lambda: revealer.set_reveal_child(
-            not revealer.get_reveal_child())))
+            not revealer.get_reveal_child()),
+        window.close))
 
     # ── verbs ────────────────────────────────────────────────────────────
     verbs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)

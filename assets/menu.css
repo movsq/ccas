@@ -9,6 +9,14 @@
  * Mocha, matching paths.PALETTE.
  */
 
+/* The surface covers the whole output so that a click beside the panel lands
+ * on it and goes no further. Dim it if you like — `transparent` here means the
+ * rest of the screen shows through untouched. */
+.ccas-scrim {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* The panel itself, floating on that surface. */
 .ccas-panel {
   background: #1e1e2e;
   color: #cdd6f4;
@@ -25,6 +33,10 @@
 .ccas-chip-dot      { min-width: 8px; min-height: 8px; border-radius: 999px; }
 .ccas-email         { color: #9399b2; font-size: 0.9em; }
 .ccas-gear          { background: transparent; border: none; padding: 4px 8px; }
+.ccas-close         { background: transparent; border: none; padding: 4px 10px;
+                      color: #9399b2; }
+.ccas-close:hover   { background: rgba(243, 139, 168, 0.20); color: #f38ba8;
+                      border-radius: 8px; }
 
 /* ── usage ──────────────────────────────────────────────────────────────── */
 

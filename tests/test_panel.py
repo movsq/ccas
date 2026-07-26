@@ -471,3 +471,150 @@ def test_current_output_is_none_when_nothing_is_focused(monkeypatch):
 def test_current_output_survives_junk_from_the_socket(monkeypatch):
     _fake_sway(monkeypatch, "<html>no</html>")
     assert panel.current_output() is None
+
+
+# ── the layer surface ────────────────────────────────────────────────────────
+
+
+class FakeLayerShell:
+    """Enough of Gtk4LayerShell to record what the panel asks of it.
+
+    The real one needs a Wayland display, which the suite does not have — and
+    these four calls are exactly the ones that were wrong on the real system.
+    """
+
+    class Layer:
+        OVERLAY = "overlay"
+
+    class Edge:
+        TOP, BOTTOM, LEFT, RIGHT = "top", "bottom", "left", "right"
+
+    class KeyboardMode:
+        NONE, EXCLUSIVE, ON_DEMAND = "none", "exclusive", "on-demand"
+
+    def __init__(self):
+        self.anchors = {}
+        self.keyboard = None
+        self.monitor = None
+        self.exclusive_zone = None
+
+    def init_for_window(self, _w):
+        pass
+
+    def set_layer(self, _w, _layer):
+        pass
+
+    def set_anchor(self, _w, edge, on):
+        self.anchors[edge] = on
+
+    def set_keyboard_mode(self, _w, mode):
+        self.keyboard = mode
+
+    def set_exclusive_zone(self, _w, zone):
+        self.exclusive_zone = zone
+
+    def set_monitor(self, _w, monitor):
+        self.monitor = monitor
+
+
+class FakeMonitors:
+    def __init__(self, names):
+        self.names = names
+
+    def get_n_items(self):
+        return len(self.names)
+
+    def get_item(self, i):
+        name = self.names[i]
+        return type("M", (), {"get_connector": lambda _s, n=name: n})()
+
+
+class FakeWindow:
+    def __init__(self, names):
+        self.names = names
+
+    def get_display(self):
+        return type("D", (), {"get_monitors": lambda _s: FakeMonitors(self.names)})()
+
+
+def test_the_panel_covers_the_whole_output(monkeypatch):
+    """Anchored to all four edges, so a click anywhere but the panel itself is
+    still a click on the panel's surface.
+
+    That is what makes 'click outside to close' possible without the click
+    reaching what is underneath — the reason it must not, in the user's words,
+    be able to unpause a video.
+    """
+    from ccas import panel_ui
+    monkeypatch.setattr(panel_ui.panel, "current_output", lambda: None)
+    shell = FakeLayerShell()
+    panel_ui._setup_layer(FakeWindow([]), shell)
+    assert shell.anchors == {"top": True, "bottom": True,
+                             "left": True, "right": True}
+
+
+def test_the_panel_leaves_the_bar_reachable(monkeypatch):
+    """Exclusive zone 0 keeps the surface out of the space Waybar reserved, so
+    the widget that opened the panel can still be clicked to close it."""
+    from ccas import panel_ui
+    monkeypatch.setattr(panel_ui.panel, "current_output", lambda: None)
+    shell = FakeLayerShell()
+    panel_ui._setup_layer(FakeWindow([]), shell)
+    assert shell.exclusive_zone == 0
+
+
+def test_the_panel_takes_the_keyboard_without_being_clicked(monkeypatch):
+    """Escape has to close it whether or not it was ever focused.
+
+    ON_DEMAND gives the keyboard only once the surface is clicked, so a panel
+    that opened on the other monitor swallowed nothing and Escape went to
+    whatever was focused instead — reported as 'escape works inconsistently'.
+    """
+    from ccas import panel_ui
+    monkeypatch.setattr(panel_ui.panel, "current_output", lambda: None)
+    shell = FakeLayerShell()
+    panel_ui._setup_layer(FakeWindow([]), shell)
+    assert shell.keyboard == FakeLayerShell.KeyboardMode.EXCLUSIVE
+
+
+def test_the_panel_opens_on_the_output_the_pointer_is_on(monkeypatch):
+    """Clicked on the left screen, opened on the right — because nothing told
+    the compositor which one was meant."""
+    from ccas import panel_ui
+    monkeypatch.delenv("CCAS_PANEL_OUTPUT", raising=False)
+    monkeypatch.setattr(panel_ui.panel, "current_output", lambda: "DP-1")
+    shell = FakeLayerShell()
+    panel_ui._pin_to_output(FakeWindow(["DP-1", "HDMI-A-1"]), shell)
+    assert shell.monitor.get_connector() == "DP-1"
+
+
+def test_an_explicit_output_wins_over_the_pointer(monkeypatch):
+    """CCAS_PANEL_OUTPUT is the user pinning it; the pointer is only a guess."""
+    from ccas import panel_ui
+    monkeypatch.setenv("CCAS_PANEL_OUTPUT", "HDMI-A-1")
+    monkeypatch.setattr(panel_ui.panel, "current_output", lambda: "DP-1")
+    shell = FakeLayerShell()
+    panel_ui._pin_to_output(FakeWindow(["DP-1", "HDMI-A-1"]), shell)
+    assert shell.monitor.get_connector() == "HDMI-A-1"
+
+
+def test_an_output_that_is_not_connected_is_not_an_error(monkeypatch):
+    """A monitor list changes when a cable does. A panel that refuses to open is
+    worse than one on the wrong screen."""
+    from ccas import panel_ui
+    monkeypatch.setenv("CCAS_PANEL_OUTPUT", "DVI-9")
+    shell = FakeLayerShell()
+    panel_ui._pin_to_output(FakeWindow(["DP-1"]), shell)
+    assert shell.monitor is None
+
+
+def test_a_click_is_outside_the_panel_or_it_is_not():
+    """The scrim covers the output, so 'outside' is a hit test rather than a
+    surface boundary the compositor can answer for us."""
+    from ccas import panel_ui
+    rect = type("R", (), {"origin": type("P", (), {"x": 100, "y": 50})(),
+                          "size": type("S", (), {"width": 200, "height": 100})()})()
+    assert panel_ui._inside(rect, 150, 80)
+    assert panel_ui._inside(rect, 100, 50)
+    assert not panel_ui._inside(rect, 99, 80)
+    assert not panel_ui._inside(rect, 150, 151)

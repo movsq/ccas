@@ -481,6 +481,58 @@ worse than one on the wrong screen.
 Both were found by opening the window and sampling pixels, not by reading the
 code: the failure is silent, and the only symptom is *where* the thing appeared.
 
+### A menu you cannot get out of
+
+Reported the day after it shipped, four complaints in one: clicking the widget
+again did not close the panel, there was no close button, clicking away from it
+did nothing, and Escape worked "very inconsistently". Underneath them was a
+fifth — it sometimes opened on the monitor the user had not clicked on.
+
+They are one bug in three parts.
+
+**The surface was too small.** Anchored to the top edge only, the panel occupied
+its own 900×620 and nothing else, so a click beside it was never delivered to
+CCAS at all: it went to whatever was underneath. There is no "clicked away"
+event to listen for. The surface now anchors to all four edges and the panel
+floats on it, which makes "outside" a hit test against the panel's bounds rather
+than something the compositor could have told us. That also settles the
+constraint the user put on the feature — the click must not reach the
+application beneath. Wayland delivers a pointer press to exactly one surface, so
+a click that closes the panel is by construction a click that did nothing else;
+it cannot pause a video. Exclusive zone stays 0, which keeps the surface out of
+the space Waybar reserved and leaves the widget that opened the panel clickable.
+
+**The keyboard was taken on demand.** `ON_DEMAND` gives a layer surface the
+keyboard only once it has been clicked, which is exactly the inconsistency
+reported: Escape worked if you had touched the panel first and not otherwise —
+and never at all when it opened on the far monitor, because the pointer was
+nowhere near it. `EXCLUSIVE` takes the keyboard at map time. It sounds like the
+riskier setting and is not, here: sway resolves its own bindings before
+forwarding, so the compositor cannot be locked out, and there are now three
+independent ways to close the panel. The Escape handler also had to move to the
+window in the CAPTURE phase — the search entry has the focus from the moment the
+panel opens, and a `GtkSearchEntry` eats Escape to clear itself.
+
+**Nothing said which output.** `CCAS_PANEL_OUTPUT` was the only answer and it is
+a manual one. sway focuses the output under the pointer, so the focused output
+is the monitor whose bar was just clicked; `panel.current_output()` asks
+`swaymsg -t get_outputs` for it and the env var still wins when set. A
+non-sway session gets None and the compositor's choice, as before.
+
+The toggle is separate and smaller: the panel writes its pid and slug to a lock
+in `XDG_RUNTIME_DIR`, and `cmd_panel` closes whatever is open before opening
+anything. Same slug means the widget was clicked twice and nothing reopens;
+a different slug is a switch between accounts. `SIGTERM` does not run a finally
+block, so the process being closed never releases its own lock — the sender
+clears it, and a lock naming a dead pid reads as nothing being open.
+
+Verified on the real system rather than argued: the panel opened on DP-1 with
+the pointer there and on HDMI-A-1 with the pointer *not* there, and a synthetic
+Escape from a uinput keyboard closed both without the pointer ever entering the
+window. There is no `wtype` or `ydotool` on this machine; `swaymsg` moves a
+pointer but cannot type, so the virtual keyboard was the only way to ask the
+compositor the real question — which is who it hands a keypress to.
+
 
 ---
 
