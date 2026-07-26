@@ -5,7 +5,7 @@ import subprocess
 import sys
 import time
 
-from . import (accounts, doctor, history, label, launch, paths, pickers,
+from . import (accounts, doctor, history, label, launch, panel, paths, pickers,
                registry, usage, waybar)
 
 
@@ -22,6 +22,10 @@ NO_ACCOUNT_ARGS = {"--version", "-v", "--help", "-h",
 # than a glyph: the vetted-glyph rule is about Waybar's FontAwesome-first stack,
 # and this row is drawn by fzf or fuzzel, whose fonts nothing here has measured.
 ADD_ROW = "+  Add account…"
+
+# Not an exit code: a chip click reopens the panel on another account, and the
+# loop in cmd_panel has to tell that apart from a command that finished.
+SWITCH = object()
 
 
 def notify(text: str) -> None:
@@ -137,6 +141,45 @@ def _mutate(slug: str, field: str, value) -> int:
         return 1
     _refresh(reg, registry.find(reg, slug))
     return 0
+
+
+def dispatch_panel(action):
+    """Turn the panel's one Action into the command it names.
+
+    Every branch goes through the entry point the fuzzel menu already used, so
+    the panel gains no write path of its own: set_headless() keeps the runner
+    exclusive, set_field() keeps display and colour validated, and accounts and
+    launch keep the invariants they already hold. The widget tree decides
+    nothing — it says what was clicked and this says what that means.
+    """
+    if action is None:
+        return 1  # Esc, or a click outside the surface
+    kind, slug, value = action
+    if kind == "switch":
+        return SWITCH
+    if kind == "new":
+        # cwd and scope are the same directory: the panel picked it explicitly,
+        # which is what the bar click never had.
+        return launch.run(slug, "new", value, True, value)
+    if kind == "resume":
+        return launch.run(slug, "resume", value, True, None)
+    if kind == "headless":
+        _toggle_headless(registry.load(), slug)
+        return 0
+    if kind == "dangerous":
+        return _toggle_dangerous(registry.load(), slug)
+    if kind == "hide_icon":
+        account = registry.find(registry.load(), slug)
+        if account is None:
+            return 1
+        return _mutate(slug, "hide_icon", not account["hide_icon"])
+    if kind in ("display", "color"):
+        return _mutate(slug, kind, value)
+    if kind == "add":
+        return cmd_add(True)
+    if kind in ("rename", "remove"):
+        return cmd_manage(kind, slug, True)
+    raise ValueError(f"unknown panel action: {kind}")
 
 
 def cmd_render(slug: str) -> int:

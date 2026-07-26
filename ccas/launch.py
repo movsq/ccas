@@ -67,6 +67,17 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd, dangerous: bool = False):
         return target, _claude(dangerous=dangerous)
 
     rows = _rows()
+
+    if mode == "resume":
+        # Before the cwd scoping, deliberately: a uuid is already unambiguous,
+        # so narrowing by directory could only turn a valid resume into None.
+        # The panel knows which session was clicked; asking again through a
+        # picker is the cascade it exists to remove.
+        for _label, uuid, session_cwd in rows:
+            if uuid == arg:
+                return session_cwd, _claude("--resume", uuid, dangerous=dangerous)
+        return None
+
     if cwd is not None and not gui:
         rows = [r for r in rows if r[2] == cwd]
 

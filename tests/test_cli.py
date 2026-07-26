@@ -1147,3 +1147,84 @@ def test_usage_says_a_rolled_over_window_is_open(monkeypatch, capsys):
     capsys.readouterr()
     cli.main(["usage"])
     assert "5h window open" in capsys.readouterr().out
+
+
+# ── the panel's action dispatch ───────────────────────────────────────────────
+
+def _panel_never_called(*a, **k):
+    raise AssertionError("this door must not open the panel")
+
+
+def test_dispatch_new_launches_in_the_selected_project(monkeypatch, tmp_path):
+    """The panel supplies a real cwd, which is what lets the GUI verb say
+    'New session in ~/alpha' honestly rather than lie about a directory."""
+    make_account("work")
+    seen = {}
+    monkeypatch.setattr(cli.launch, "run", lambda *a: seen.setdefault("args", a) or 0)
+    cli.dispatch_panel(cli.panel.Action("new", "work", str(tmp_path / "alpha")))
+    assert seen["args"] == ("work", "new", str(tmp_path / "alpha"), True,
+                            str(tmp_path / "alpha"))
+
+
+def test_dispatch_resume_passes_the_uuid_through(monkeypatch):
+    """No picker in between — resume mode takes the uuid the panel already has."""
+    make_account("work")
+    seen = {}
+    monkeypatch.setattr(cli.launch, "run", lambda *a: seen.setdefault("args", a) or 0)
+    cli.dispatch_panel(cli.panel.Action("resume", "work", "uuid-1"))
+    assert seen["args"][1:3] == ("resume", "uuid-1")
+
+
+def test_dispatch_headless_stays_exclusive(monkeypatch):
+    """registry.set_headless() is what keeps it exclusive; the panel must route
+    through it rather than set the field on one account."""
+    make_account("work")
+    make_account("other")
+    cli.dispatch_panel(cli.panel.Action("headless", "other", None))
+    assert registry.headless_slug(registry.load()) == "other"
+    cli.dispatch_panel(cli.panel.Action("headless", "other", None))
+    assert registry.headless_slug(registry.load()) is None
+
+
+def test_dispatch_dangerous_flips_only_its_own_account(monkeypatch):
+    """Unlike headless, dangerous is per-account and not exclusive."""
+    make_account("work")
+    make_account("other")
+    cli.dispatch_panel(cli.panel.Action("dangerous", "work", None))
+    reg = registry.load()
+    assert registry.find(reg, "work")["dangerous"] is True
+    assert registry.find(reg, "other")["dangerous"] is False
+
+
+def test_dispatch_hide_icon_toggles(monkeypatch):
+    make_account("work")
+    cli.dispatch_panel(cli.panel.Action("hide_icon", "work", None))
+    assert registry.find(registry.load(), "work")["hide_icon"] is True
+
+
+def test_dispatch_display_and_color_go_through_the_registry(monkeypatch):
+    """set_field() validates the mode and the index. The panel must not get its
+    own unchecked write path."""
+    make_account("work")
+    cli.dispatch_panel(cli.panel.Action("display", "work", "icon only"))
+    assert registry.find(registry.load(), "work")["display"] == "icon only"
+    assert cli.dispatch_panel(cli.panel.Action("display", "work", "nonsense")) == 1
+
+
+def test_dispatch_switch_returns_the_reopen_sentinel(monkeypatch):
+    """A chip click reopens the panel on another account rather than exiting, so
+    it cannot come back as an ordinary exit code."""
+    make_account("work")
+    assert cli.dispatch_panel(cli.panel.Action("switch", "work", None)) is cli.SWITCH
+
+
+def test_dispatch_none_is_a_cancel(monkeypatch):
+    """Esc and click-outside both arrive as no action."""
+    assert cli.dispatch_panel(None) == 1
+
+
+def test_dispatch_rejects_an_unknown_kind(monkeypatch):
+    """A typo in the widget tree must not silently do nothing."""
+    make_account("work")
+    with pytest.raises(ValueError):
+        cli.dispatch_panel(cli.panel.Action("teleport", "work", None))

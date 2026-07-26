@@ -177,3 +177,42 @@ def test_the_danger_flag_precedes_resume(tmp_path, monkeypatch):
     _workdir, argv = launch.resolve("work", "last", None, True, None,
                                     dangerous=True)
     assert argv[1:] == [DANGER, "--resume", "uuid-0"]
+
+
+def _never_called(*a, **k):
+    raise AssertionError("the panel already knows which session was clicked")
+
+
+def test_resume_mode_takes_a_uuid_and_asks_nothing(tmp_path, monkeypatch):
+    """The panel already knows which session was clicked. Reopening a picker to
+    ask again is the cascade the panel exists to remove."""
+    monkeypatch.setattr(launch.pickers, "choose", _never_called)
+    seed(tmp_path, monkeypatch)
+    workdir, argv = launch.resolve("work", "resume", "uuid-1", True, None)
+    assert workdir == str(tmp_path / "proj")
+    assert argv[-2:] == ["--resume", "uuid-1"]
+
+
+def test_resume_mode_returns_none_for_an_unknown_uuid(tmp_path, monkeypatch):
+    """A session trashed between the panel opening and the row being clicked
+    must fail rather than launch a different one."""
+    seed(tmp_path, monkeypatch)
+    assert launch.resolve("work", "resume", "gone", True, None) is None
+
+
+def test_resume_mode_puts_dangerous_before_the_resume_flag(tmp_path, monkeypatch):
+    """--resume takes a value; a flag landing between it and its uuid breaks it.
+    The same rule _claude() already enforces for the other modes."""
+    seed(tmp_path, monkeypatch)
+    _workdir, argv = launch.resolve("work", "resume", "uuid-0", True, None, True)
+    assert argv[1] == launch.DANGEROUS
+    assert argv[-2:] == ["--resume", "uuid-0"]
+
+
+def test_resume_mode_ignores_cwd_scoping(tmp_path, monkeypatch):
+    """A uuid is already unambiguous. Scoping it to a directory could only turn
+    a valid resume into None."""
+    seed(tmp_path, monkeypatch)
+    workdir, _argv = launch.resolve("work", "resume", "uuid-1", False,
+                                    str(tmp_path / "elsewhere"))
+    assert workdir == str(tmp_path / "proj")
