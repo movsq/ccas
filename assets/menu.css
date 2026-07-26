@@ -73,15 +73,62 @@
 
 /* ── toggles and manage ─────────────────────────────────────────────────── */
 
-.ccas-toggles       { padding: 10px 16px; }
+.ccas-toggles       { padding: 12px 16px 4px 16px; }
+.ccas-toggles separator { background: rgba(255, 255, 255, 0.07);
+                          min-height: 1px; margin: 6px 0 2px 0; }
+
+/* The caption under the rule. Small caps rather than bold: it has to read as a
+ * label for the block below it, not as another control competing with them. */
+.ccas-section       { color: #7f849c; font-size: 0.78em; font-weight: 600;
+                      letter-spacing: 0.09em; text-transform: uppercase;
+                      margin: 2px 0 4px 2px; }
+
+/* A swatch is pure colour, so it needs a hit area larger than the ink and a
+ * ring that appears on hover — without one there is no feedback at all that
+ * the pointer is on a target rather than between two. */
 .ccas-swatch        { min-width: 16px; min-height: 16px; padding: 0;
-                      border-radius: 999px; border: none; }
-.ccas-swatch.current { border: 2px solid #cdd6f4; }
-/* The rule and the caption that separate "how it runs" from "how it looks". */
-.ccas-section       { color: #9399b2; font-size: 0.85em; }
-.ccas-token-colors  { padding: 0 16px 10px 16px; }
-/* Sized like a swatch, but it has text to show, so it keeps its padding. */
-.ccas-chip          { min-height: 16px; padding: 2px 10px;
-                      border-radius: 999px; }
+                      border-radius: 999px; border: 2px solid transparent; }
+.ccas-swatch:hover  { border-color: rgba(205, 214, 244, 0.45); }
+.ccas-swatch.current { border-color: #cdd6f4; }
+
+/* No horizontal padding: it sits inside .ccas-toggles, which already has it,
+ * and a second 16px put this row's label out of line with "Show" above it. */
+.ccas-token-colors  { padding: 2px 0 8px 0; }
+/* Sized like a swatch and sitting in the same row, so it matches their height
+ * and roundness — but it has text to show, so it keeps its padding. */
+.ccas-color-chip    { min-height: 16px; padding: 2px 12px;
+                      border-radius: 999px; border: none;
+                      color: #9399b2; font-size: 0.85em;
+                      background: rgba(255, 255, 255, 0.06); }
+.ccas-color-chip:hover { background: rgba(255, 255, 255, 0.12); color: #cdd6f4; }
+
+/* A secondary button: it opens a terminal, which is a bigger step than the
+ * controls around it, but it is not the row's subject and should not be the
+ * heaviest thing in it. Outline, not fill. */
+.ccas-ghost         { min-height: 22px; padding: 2px 12px; border-radius: 8px;
+                      background: transparent; color: #9399b2;
+                      border: 1px solid rgba(255, 255, 255, 0.13); }
+.ccas-ghost:hover   { background: rgba(255, 255, 255, 0.08); color: #cdd6f4;
+                      border-color: rgba(255, 255, 255, 0.22); }
+
+/* The two dropdowns and the hex entry, matched to the chips beside them —
+ * GTK's defaults give each a different height and the row reads as debris. */
+.ccas-toggles dropdown > button,
+.ccas-token-colors dropdown > button,
+.ccas-token-colors entry {
+  min-height: 22px; padding: 2px 10px; border-radius: 8px;
+  border: none; background: rgba(255, 255, 255, 0.06);
+}
+.ccas-toggles dropdown > button:hover,
+.ccas-token-colors dropdown > button:hover { background: rgba(255, 255, 255, 0.12); }
+.ccas-token-colors entry { font-family: monospace; font-size: 0.85em; }
+.ccas-token-colors entry:focus-within { background: rgba(255, 255, 255, 0.10); }
+/* The label that names each row ("Show", "Colour", "Colour of") recedes; the
+ * things you can act on stay at full contrast. Both overrides have to outweigh
+ * the descendant selector above, so they are written the same way. */
+.ccas-toggles > box > label,
+.ccas-token-colors > label { color: #9399b2; }
+.ccas-toggles label.ccas-section { color: #7f849c; }
+
 .ccas-manage        { padding: 8px 16px; }
 .ccas-danger        { color: #f38ba8; }

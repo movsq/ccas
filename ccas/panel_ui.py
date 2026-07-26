@@ -705,6 +705,7 @@ def _build_toggles(state, pick):
 
     if panel.shows_color_row(state):
         edit = Gtk.Button(label="Edit format…")
+        edit.add_css_class("ccas-ghost")
         edit.connect("clicked",
                      lambda _b: pick(panel.Action("edit_format", slug, None)))
         bottom.append(edit)
@@ -750,7 +751,10 @@ def _build_token_colors(state, pick):
 
     for name in ("auto", "dim"):
         chip = Gtk.Button(label=name)
-        chip.add_css_class("ccas-chip")
+        # Its own class, not the header's .ccas-chip: they are the same shape
+        # but the account chip is a row and this is a button the size of a
+        # swatch, and sharing the name had the two rules overriding each other.
+        chip.add_css_class("ccas-color-chip")
         chip.connect("clicked", lambda _b, v=name:
                      pick(panel.Action("format_color", slug, (chosen(), v))))
         row.append(chip)
