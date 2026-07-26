@@ -1,4 +1,7 @@
+import re
+
 import ccas.format as fmt
+import ccas.usage as usage
 
 ICON = "<span size='150%' rise='-800' color='#f38ba8'>✻</span>"
 
@@ -54,14 +57,84 @@ def test_unknown_tokens_render_literally():
     from a crashed one, so a typo must name itself on screen."""
     assert fmt.render(account(format="%bogus"), 1) == "%bogus"
     assert fmt.unknown_tokens("%name %bogus %nope") == ["%bogus", "%nope"]
-    assert fmt.unknown_tokens("%name %email") == []
+    assert fmt.unknown_tokens("%name %5h") == []
 
 
 def test_tokens_in_is_ordered_and_deduplicated():
-    assert fmt.tokens_in("%icon %name %icon %email") == ["%icon", "%name", "%email"]
+    assert fmt.tokens_in("%icon %name %icon %5h") == ["%icon", "%name", "%5h"]
 
 
 def test_empty_tokens_collapse_the_space_around_them():
     """An unwired hook must not leave a stray gap in the middle of the label."""
     assert fmt.render(account(nickname=None), 1, format_override="%icon %name %email") \
         == f"{ICON} <span size='110%'>w@example.com</span>"
+
+NOW = 1_800_000_000.0            # a fixed epoch, so the clocks are stable
+IN_2H20 = NOW + 2 * 3600 + 20 * 60
+
+
+def reading(five_pct=62.0, five_at=IN_2H20, seven_pct=None, seven_at=None):
+    out = {"fetched_at": NOW, "source": "statusline",
+           "five_hour": None, "seven_day": None}
+    if five_pct is not None:
+        out["five_hour"] = {"percent": five_pct, "resets_at": int(five_at)}
+    if seven_pct is not None:
+        out["seven_day"] = {"percent": seven_pct, "resets_at": int(seven_at)}
+    return out
+
+
+def bare(account_kw, token, usage=None, now=NOW):
+    """The token's text with its span stripped — the markup is asserted
+    separately in the colour tests, and repeating it here would hide the fact
+    being checked."""
+    out = fmt.render(account(**account_kw), 1, usage, now, format_override=token)
+    return re.sub(r"<[^>]+>", "", out)
+
+
+def test_five_hour_tokens():
+    r = reading()
+    assert bare({}, "%5hreset", r) == usage.reset_clock(int(IN_2H20))
+    assert bare({}, "%5htimeleft", r) == "2h20m"
+    assert bare({}, "%5hused", r) == "62%"
+    assert bare({}, "%5hquotaleft", r) == "38%"
+
+
+def test_seven_day_tokens():
+    """%7dreset is a weekday and a clock: a 7-day reset can be days out, and a
+    bare HH:MM would be a lie about which day."""
+    r = reading(seven_pct=100.0, seven_at=NOW + 2 * 86400 + 21 * 3600)
+    assert bare({}, "%7dreset", r) == usage.reset_time(int(NOW + 2 * 86400 + 21 * 3600), NOW)
+    assert bare({}, "%7dtimeleft", r) == "2d21h"
+    assert bare({}, "%7dused", r) == "100%"
+    assert bare({}, "%7dquotaleft", r) == "0%"
+
+
+def test_timeleft_under_an_hour_drops_the_hours():
+    assert bare({}, "%5htimeleft", reading(five_at=NOW + 48 * 60)) == "48m"
+
+
+def test_timeleft_pads_the_minutes_beside_an_hour():
+    """'2h5m' would sort and read as longer than '2h50m'; the pad keeps the
+    field width fixed so the bar does not jiggle as the minutes tick down."""
+    assert bare({}, "%5htimeleft", reading(five_at=NOW + 2 * 3600 + 5 * 60)) == "2h05m"
+
+
+def test_an_absent_window_renders_every_one_of_its_tokens_empty():
+    for token in ("%5hreset", "%5htimeleft", "%5hused", "%5hquotaleft", "%5h"):
+        assert fmt.render(account(), 1, None, NOW, format_override=token) == ""
+
+
+def test_an_open_window_has_no_clock_but_keeps_its_percentage():
+    """resets_at in the past means the window rolled over, so the clock is
+    meaningless — but the recorded percentage is still the last thing known."""
+    r = reading(five_at=NOW - 60)
+    assert bare({}, "%5hreset", r) == ""
+    assert bare({}, "%5htimeleft", r) == ""
+    assert bare({}, "%5hused", r) == "62%"
+
+
+def test_the_smart_tokens_are_usage_bar():
+    r = reading()
+    assert bare({}, "%5h", r) == usage.bar(r, NOW)[0]
+    seven = reading(five_pct=None, seven_pct=95.0, seven_at=NOW + 86400)
+    assert bare({}, "%7d", seven) == "7d 95%"

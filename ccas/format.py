@@ -9,8 +9,11 @@ only colours that reach the pango are the three validated shapes valid_color
 accepts, so nothing a user types can produce a span attribute.
 """
 import re
+import time
 
-from . import paths
+# The module, not its names: this needs six of them, and `usage` is what the
+# reading itself is called at every call site here.
+from . import paths, usage as usage_mod
 from .label import ICON_RISE, ICON_SIZE, TEXT_SIZE, pango_escape
 
 DEFAULT_FORMAT = "%icon %name %5h"
@@ -27,6 +30,77 @@ def _icon(ctx) -> str:
     return f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' {attrs}>{paths.GLYPH}</span>"
 
 
+def _state(ctx, key):
+    return usage_mod.state(ctx["usage"], key, ctx["now"])
+
+
+def _timeleft(seconds: float) -> str:
+    """d/h/m, two units at most: '2d21h', '2h20m', '48m'."""
+    seconds = max(0, int(seconds))
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes = rest // 60
+    if days:
+        return f"{days}d{hours}h"
+    if hours:
+        return f"{hours}h{minutes:02d}m"
+    return f"{minutes}m"
+
+
+def _now(ctx) -> float:
+    return time.time() if ctx["now"] is None else ctx["now"]
+
+
+def _reset(key, absolute):
+    def text(ctx):
+        st = _state(ctx, key)
+        if st.kind != usage_mod.BOUNDED:
+            return ""
+        return usage_mod.reset_time(st.resets_at, _now(ctx)) if absolute \
+            else usage_mod.reset_clock(st.resets_at)
+    return text
+
+
+def _timeleft_token(key):
+    def text(ctx):
+        st = _state(ctx, key)
+        if st.kind != usage_mod.BOUNDED:
+            return ""
+        return _timeleft(st.resets_at - _now(ctx))
+    return text
+
+
+def _percent(key, remaining):
+    def text(ctx):
+        st = _state(ctx, key)
+        if st.percent is None:
+            return ""
+        value = 100 - st.percent if remaining else st.percent
+        return f"{value:.0f}%"
+    return text
+
+
+def _ramp(key):
+    """The auto colour for a usage token: the ramp, or dim below it. The same
+    decision usage.bar() makes, so a hand-written format and the smart token
+    agree about pressure."""
+    def attrs(ctx):
+        st = _state(ctx, key)
+        if st.percent is None:
+            return ""
+        value = usage_mod.color(st.percent)
+        return f"color='{value}'" if value else f"alpha='{usage_mod.DIM}'"
+    return attrs
+
+
+def _smart(ctx):
+    return (usage_mod.bar(ctx["usage"], ctx["now"]) or ("", ""))[0]
+
+
+def _smart_attrs(ctx):
+    return (usage_mod.bar(ctx["usage"], ctx["now"]) or ("", ""))[1]
+
+
 # token -> (text_fn(ctx) -> str, auto_attrs_fn(ctx) -> str)
 # The text is plain and gets wrapped in a TEXT_SIZE span by _emit; %icon is the
 # exception and returns finished markup, flagged by the None pair below.
@@ -35,6 +109,21 @@ TOKENS = {
     "%name": (lambda ctx: ctx["account"].get("nickname") or "", lambda ctx: ""),
     "%email": (lambda ctx: ctx["account"]["email"], lambda ctx: ""),
     "%index": (lambda ctx: str(ctx["index"]), lambda ctx: ""),
+
+    "%5hreset": (_reset("five_hour", False), _ramp("five_hour")),
+    "%5htimeleft": (_timeleft_token("five_hour"), _ramp("five_hour")),
+    "%5hused": (_percent("five_hour", False), _ramp("five_hour")),
+    "%5hquotaleft": (_percent("five_hour", True), _ramp("five_hour")),
+    # %5h and %7d share _smart: usage.bar() already decides between the windows,
+    # so having both names is a convenience for reading the format string, not
+    # two behaviours.
+    "%5h": (_smart, _smart_attrs),
+
+    "%7dreset": (_reset("seven_day", True), _ramp("seven_day")),
+    "%7dtimeleft": (_timeleft_token("seven_day"), _ramp("seven_day")),
+    "%7dused": (_percent("seven_day", False), _ramp("seven_day")),
+    "%7dquotaleft": (_percent("seven_day", True), _ramp("seven_day")),
+    "%7d": (_smart, _smart_attrs),
 }
 
 
