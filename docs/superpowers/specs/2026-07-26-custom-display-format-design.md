@@ -82,8 +82,10 @@ can be days out and a bare `09:00` would be a lie about which day.
 }
 ```
 
-`format` defaults to `%icon %name %5h`. `format_colors` defaults to `{}`, and a
-token absent from it is `auto`.
+`format` defaults to `%icon %name %5h`. `format_colors` defaults to `{}`. A token
+**absent from the dict is `auto`**, and choosing `auto` in the panel deletes the
+key rather than storing the string — so the dict only ever holds deviations from
+the default and an untouched account carries no colour state at all.
 
 Three colour values:
 
@@ -94,9 +96,11 @@ Three colour values:
 - `dim` — `usage.DIM` alpha.
 - `#rrggbb` — a literal colour.
 
-`registry.set_field` validates: `format` must be a string, `format_colors` a dict
-whose values are `auto`, `dim`, or a `#rrggbb` hex. It does **not** reject
-unknown tokens — see below.
+`registry.set_field` validates alongside the `display` and `color` checks it
+already carries: `format` must be a string, `format_colors` a dict whose values
+are `auto`, `dim`, or a `#rrggbb` hex. It does **not** reject unknown tokens —
+see below. Both fields are written through `cli._mutate`, the same path `nick`,
+`color`, `display` and `hide_icon` already take, so nothing gains a write path.
 
 `paths.DISPLAY_MODES` becomes
 `["nickname", "index", "claude code", "icon only", "custom"]`.
@@ -176,8 +180,21 @@ Colour of   [ %5hreset    ▾ ]  [auto][dim][●][●][●][●][●][●][●][
   commitment that Enter-then-close is the right shape, where a rename is not.
 
 Every control emits one `panel.Action` and the panel closes, unchanged.
-`panel.build_state` grows `format` and `format_colors`; `panel_ui` decides
-nothing, as always.
+
+`panel.build_state` grows three keys: `format`, `format_colors`, and
+`format_tokens` — the ordered, de-duplicated list of tokens the format actually
+uses, computed by calling `format.py`. The third is what keeps `panel_ui`
+deciding nothing: the widget tree renders the list it is handed and never parses
+a format string.
+
+`dispatch_panel` gains one branch, `format_color`, whose value is a
+`(token, colour)` pair; it reads `format_colors`, applies the change (deleting
+the key for `auto`), and writes through `_mutate`. `format` itself is never set
+from the panel — that is what `Format…` and the terminal are for.
+
+`main()` gains a `format` command, placed with the other field commands and
+therefore already behind the `--` and leading-`-` passthrough branches, which
+must stay ahead of it.
 
 ## Migration
 
@@ -197,9 +214,11 @@ back for anyone who wants it.
 - `test_label.py` — the four built-in modes no longer carry a usage token, and
   `icon only` with a live reading is exactly the icon.
 - `test_registry.py` — validation of both new fields, and their defaults.
-- `test_panel.py` — `build_state` carries both fields; the token dropdown's
-  contents follow the format.
-- `test_cli.py` — the four `ccs format` forms and the unknown-token warning.
+- `test_panel.py` — `build_state` carries all three keys; `format_tokens`
+  follows the format, in order, de-duplicated.
+- `test_cli.py` — the four `ccs format` forms, the unknown-token warning, the
+  `format_color` panel branch including `auto` deleting the key, and that the
+  passthrough branches still win over the new command.
 - `test_doctor.py` — an unknown token is reported and nothing is written.
 
 ## Out of scope
