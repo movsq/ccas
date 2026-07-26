@@ -452,11 +452,15 @@ def test_mode_menu_still_launches_the_other_four_rows(monkeypatch):
     assert len(calls) == 4
 
 
-def test_mode_menu_from_the_bar_uses_the_dropdown_verbs(monkeypatch):
-    """A bar click has no "here". `os.getcwd()` there is Waybar's directory —
-    `~`, wherever the compositor started it — so the terminal's cwd-scoped rows
-    offered to start a session in, and search the history of, a directory the
-    user never chose. The GtkMenu the picker replaced never had them.
+def test_the_terminal_keeps_its_cwd_scoped_verbs(monkeypatch):
+    """There the cwd is the user's own, and scoping to it is the whole reason
+    that screen is shaped the way it is.
+
+    The bar's half of this test is gone with the rule it pinned: the two doors
+    used to differ in their launch verbs, because `os.getcwd()` from a bar click
+    is Waybar's directory — `~`, wherever the compositor started it — and
+    directory-free labels were the only honest ones. The panel's project pane
+    supplies a real directory, so it says "New session in ~/4s" and means it.
     """
     make_account("work")
     monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
@@ -464,29 +468,9 @@ def test_mode_menu_from_the_bar_uses_the_dropdown_verbs(monkeypatch):
     monkeypatch.setattr(cli.pickers, "choose",
                         lambda p, o, g, note=None: seen.append(o))
 
-    cli.cmd_mode_menu("work", gui=True)
-    assert seen[0][:3] == ["New session", "Resume last session",
-                           "Resume from history…"]
-    assert not [o for o in seen[0] if "here" in o or o == "All projects…"]
-
-    # The terminal keeps them: there the cwd is the user's own, and scoping to
-    # it is the whole reason that screen is shaped the way it is.
     cli.cmd_mode_menu("work", gui=False)
-    assert seen[1][0].startswith("New here")
-    assert "All projects…" in seen[1]
-
-
-def test_the_bar_verbs_launch_unscoped(monkeypatch):
-    """The labels promise the whole history, not this directory's slice, so no
-    cwd may reach `launch.run` — `resolve()` filters on it under a terminal."""
-    make_account("work")
-    calls = []
-    monkeypatch.setattr(cli.launch, "run", lambda *a, **k: calls.append(a) or 0)
-    for i in range(3):
-        monkeypatch.setattr(cli.pickers, "choose", lambda p, o, g, i=i, note=None: o[i])
-        assert cli.cmd_mode_menu("work", gui=True) == 0
-    assert [(c[1], c[2], c[4]) for c in calls] == [
-        ("new", None, None), ("last", None, None), ("search", None, None)]
+    assert seen[0][0].startswith("New here")
+    assert "All projects…" in seen[0]
 
 
 def test_mode_menu_offers_display_colour_and_hide(monkeypatch):
@@ -1228,3 +1212,38 @@ def test_dispatch_rejects_an_unknown_kind(monkeypatch):
     make_account("work")
     with pytest.raises(ValueError):
         cli.dispatch_panel(cli.panel.Action("teleport", "work", None))
+
+
+# ── the GUI door ──────────────────────────────────────────────────────────────
+
+def test_gui_mode_menu_opens_the_panel_not_the_picker(monkeypatch):
+    """The whole change, in one test: a bar click reaches the panel."""
+    make_account("one")
+    monkeypatch.setattr(cli.pickers, "choose", _panel_never_called)
+    monkeypatch.setattr(cli.panel_ui, "show", lambda s: None)
+    assert cli.cmd_mode_menu("one", True) == 1
+
+
+def test_switch_reopens_the_panel_on_the_other_account(monkeypatch):
+    """A chip click must not exit — it is a switch, not a choice."""
+    make_account("one")
+    make_account("two")
+    seen = []
+
+    def fake_show(state):
+        seen.append(state["slug"])
+        return (cli.panel.Action("switch", "two", None) if len(seen) == 1
+                else None)
+
+    monkeypatch.setattr(cli.panel_ui, "show", fake_show)
+    cli.cmd_panel("one")
+    assert seen == ["one", "two"]
+
+
+def test_terminal_mode_menu_still_uses_fzf(monkeypatch):
+    """A TTY and an ssh session cannot run GTK. The terminal door is unchanged
+    and must not be routed through the panel."""
+    make_account("one")
+    monkeypatch.setattr(cli.panel_ui, "show", _panel_never_called)
+    monkeypatch.setattr(cli.pickers, "choose", lambda *a, **k: None)
+    assert cli.cmd_mode_menu("one", False) == 1

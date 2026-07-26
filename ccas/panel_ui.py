@@ -119,6 +119,7 @@ def show(state: dict):
         # focus, without locking the compositor out if it fails to close.
         LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.ON_DEMAND)
 
+        _load_tints(window.get_display(), state)
         _load_css(window.get_display())
 
         keys = Gtk.EventControllerKey()
@@ -156,19 +157,47 @@ def _usage_text(row):
     return f"≥{row['percent']:.0f}%  clears {row['resets']}"
 
 
+def _tint(color: str) -> str:
+    """The CSS class carrying `color`, defined by _load_tints().
+
+    A class rather than a per-widget provider: Gtk.Widget.get_style_context() is
+    deprecated in GTK 4, and the display-level provider is the supported way to
+    say this. The hex is the class name, so two widgets asking for one colour
+    share one rule.
+    """
+    return "ccas-tint-" + color.lstrip("#").lower()
+
+
+def _load_tints(display, state) -> None:
+    """One provider for every colour the panel needs, at APPLICATION priority.
+
+    Below the user's menu.css (USER), deliberately: these say what a colour *is*,
+    and the stylesheet stays free to override anything it names.
+    """
+    from gi.repository import Gtk
+    colors = {c for _name, c in paths.PALETTE}
+    colors |= {row["color"] for row in state["usage"] if row["color"]}
+    colors |= {a["color"] for a in state["accounts"]}
+    css = "\n".join(
+        f".{_tint(c)} {{ background: {c}; }}\n"
+        f"progressbar.{_tint(c)} {{ background: transparent; }}\n"
+        f"progressbar.{_tint(c)} progress {{ background: {c}; }}"
+        for c in sorted(colors))
+    provider = Gtk.CssProvider()
+    provider.load_from_string(css)
+    Gtk.StyleContext.add_provider_for_display(
+        display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+
 def _usage_bar(row):
     from gi.repository import Gtk
     bar = Gtk.ProgressBar()
     bar.add_css_class("ccas-usage-bar")
     bar.set_fraction(0.0 if row["percent"] is None else row["percent"] / 100)
     if row["color"]:
-        # Per-row, so it cannot live in menu.css: the colour is a function of
-        # the reading. A provider on the widget beats the stylesheet's default.
-        provider = Gtk.CssProvider()
-        provider.load_from_string(
-            f"progressbar progress {{ background: {row['color']}; }}")
-        bar.get_style_context().add_provider(
-            provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        # A function of the reading, so it cannot live in menu.css as a fixed
+        # rule — but the colour it picks is one of a known few.
+        bar.add_css_class(_tint(row["color"]))
     return bar
 
 
@@ -178,10 +207,7 @@ def _dot(color):
     from gi.repository import Gtk
     dot = Gtk.Box()
     dot.add_css_class("ccas-chip-dot")
-    provider = Gtk.CssProvider()
-    provider.load_from_string(f"box {{ background: {color}; }}")
-    dot.get_style_context().add_provider(
-        provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    dot.add_css_class(_tint(color))
     return dot
 
 
@@ -504,12 +530,9 @@ def _build_toggles(state, pick):
     for index, (_name, hexcolor) in enumerate(paths.PALETTE):
         swatch = Gtk.Button()
         swatch.add_css_class("ccas-swatch")
+        swatch.add_css_class(_tint(hexcolor))
         if current and current["color"] == hexcolor:
             swatch.add_css_class("current")
-        provider = Gtk.CssProvider()
-        provider.load_from_string(f"button {{ background: {hexcolor}; }}")
-        swatch.get_style_context().add_provider(
-            provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         swatch.connect("clicked", lambda _b, i=index:
                        pick(panel.Action("color", slug, i)))
         swatches.append(swatch)

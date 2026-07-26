@@ -5,8 +5,8 @@ import subprocess
 import sys
 import time
 
-from . import (accounts, doctor, history, label, launch, panel, paths, pickers,
-               registry, usage, waybar)
+from . import (accounts, doctor, history, label, launch, panel, panel_ui, paths,
+               pickers, registry, usage, waybar)
 
 
 # `claude <args>` normally resolves an account, because almost everything it can
@@ -412,7 +412,25 @@ def _color_menu(reg, slug: str, gui: bool) -> int:
     return _mutate(slug, "color", rows.index(choice))
 
 
+def cmd_panel(slug: str) -> int:
+    """The GUI door. Loops so a chip click reopens rather than exits."""
+    while True:
+        action = panel_ui.show(panel.build_state(slug))
+        result = dispatch_panel(action)
+        if result is not SWITCH:
+            return result
+        slug = action.slug
+
+
 def cmd_mode_menu(slug: str, gui: bool) -> int:
+    # The two doors used to differ in their launch verbs, because the bar click
+    # had no meaningful cwd and directory-free labels were the only honest ones.
+    # The panel's project pane supplies a real directory, so that rule is retired
+    # and the split is now the toolkit: GTK from the bar, fzf from a terminal —
+    # a TTY and an ssh session cannot run the former.
+    if gui:
+        return cmd_panel(slug)
+
     cwd = os.getcwd()
     short = history.abbreviate(cwd)
     reg = registry.load()
