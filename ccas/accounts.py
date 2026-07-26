@@ -89,8 +89,20 @@ def to_trash(path: Path) -> Path:
     return target
 
 
+# Markers saying "you are inside a Claude Code session". A session CCAS starts
+# is a new top-level one, so none of them are true of it — and the first is
+# actively harmful, because Claude Code reads it as "do not save a transcript".
+# CCAS inherits them whenever it is launched from something that was itself
+# started inside an agent shell: Waybar once, the GTK panel later. Scrubbing
+# them here is what makes that impossible rather than merely unlikely.
+PARENT_SESSION_VARS = ("CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE",
+                       "CLAUDE_CODE_ENTRYPOINT")
+
+
 def env_for(slug: str) -> dict:
     env = dict(os.environ)
+    for name in PARENT_SESSION_VARS:
+        env.pop(name, None)
     env["CLAUDE_CONFIG_DIR"] = str(paths.account_dir(slug))
     env["CCAS_INNER"] = "1"
     return env

@@ -135,6 +135,27 @@ def test_env_for_sets_config_dir_and_recursion_guard():
     assert "PATH" in env
 
 
+def test_env_for_scrubs_the_parent_session_markers(monkeypatch):
+    """A session CCAS starts is a new top-level one, never a child of whatever
+    launched it.
+
+    Found on the real system, twice. Claude Code sets CLAUDE_CODE_CHILD_SESSION
+    in the shells it spawns, and any launcher started from one inherits it and
+    hands it to every session it opens — where it silently disables transcript
+    saving. First it was Waybar, restarted from inside an agent shell; then the
+    GTK panel, left open by an agent, whose verbs spawn kitty with that same
+    environment. Scrubbing here makes the whole class of it impossible, whatever
+    CCAS itself was started from.
+    """
+    monkeypatch.setenv("CLAUDE_CODE_CHILD_SESSION", "1")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("CLAUDE_CODE_ENTRYPOINT", "cli")
+    env = accounts.env_for("work")
+    assert "CLAUDE_CODE_CHILD_SESSION" not in env
+    assert "CLAUDECODE" not in env
+    assert "CLAUDE_CODE_ENTRYPOINT" not in env
+
+
 def test_auth_status_never_invokes_claude_by_bare_name(monkeypatch):
     seen = {}
 
