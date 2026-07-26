@@ -166,9 +166,41 @@ def _no_legacy_shell_function() -> Check:
                  "to strip it, then open a new shell" if present else "")
 
 
+def _panel_import_error():
+    """The exact reason the panel cannot open, or None if it can.
+
+    Imported here rather than at module scope for the same reason panel_ui does
+    it inside show(): `ccs doctor` must run on a machine that has none of this,
+    since telling the user what is missing is the whole point of the check.
+    """
+    try:
+        import ctypes
+        ctypes.CDLL("libgtk4-layer-shell.so.0", mode=ctypes.RTLD_GLOBAL)
+        import gi
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Gtk4LayerShell", "1.0")
+        from gi.repository import Gtk, Gtk4LayerShell  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 — any failure is the same report
+        return exc
+    return None
+
+
+def _panel_dependencies() -> Check:
+    """Report only. Naming the package is as far as doctor may go: installing
+    one would be a write, and a repair inside doctor masks the fault it is
+    looking for."""
+    error = _panel_import_error()
+    return Check(error is None, "the panel's dependencies are installed",
+                 "" if error is None else
+                 f"{error}\n    the bar's click opens nothing without them; "
+                 "install with: sudo pacman -S python-gobject gtk4 "
+                 "gtk4-layer-shell")
+
+
 def run(reg: dict) -> list:
     checks = [_claude_home_has_no_symlinks(), *_binaries(),
               _no_legacy_shell_function(), _statusline_hook(),
+              _panel_dependencies(),
               *_registry_checks(reg),
               *_waybar_matches(reg)]
     for account in reg["accounts"]:

@@ -242,3 +242,22 @@ def test_an_unreadable_settings_file_says_which_it_was():
     (paths.claude_home() / "settings.json").unlink()
     bad = [c for c in failures(reg) if "statusline" in c.label.lower()]
     assert bad and "missing" in bad[0].detail
+
+
+def test_doctor_names_the_panels_missing_dependencies(monkeypatch):
+    """A bar click that opens nothing and says nothing is the worst failure
+    available, so doctor names the package before it is clicked."""
+    import sys
+    monkeypatch.setitem(sys.modules, "gi", None)
+    checks = doctor.run(healthy())
+    row = next(c for c in checks if "panel" in c.label)
+    assert not row.ok
+    assert "gtk4-layer-shell" in row.detail
+
+
+def test_doctor_says_nothing_is_wrong_when_the_panel_can_open(monkeypatch):
+    """The check must pass on the machine it was written on, or it is noise
+    every other check has to be read around."""
+    monkeypatch.setattr(doctor, "_panel_import_error", lambda: None)
+    row = next(c for c in doctor.run(healthy()) if "panel" in c.label)
+    assert row.ok and row.detail == ""
