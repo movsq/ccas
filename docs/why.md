@@ -693,3 +693,70 @@ window itself (30) — no single one worth chasing.
 `CCAS_PANEL_OUTPUT` now skips the probe outright rather than probing and letting
 `_pin_to_output` discard the answer. That is the path an agent drives the panel
 from, and it was already documented as skipping it.
+
+## One widget per monitor, and a panel that closed instead of moving
+
+Reported 2026-07-26: *"clicking my old account widget on the left monitor and
+then on the right, alternately — sometimes the previous one just closes and the
+new one doesn't open"*, and separately, *"sometimes it still focuses the wrong
+monitor, the one where a window is focused instead of the one where I clicked"*.
+
+Three causes, none of them the one the report first suggested. The bar config
+CCAS writes has no `"output"`, so **Waybar draws every module on every bar**:
+one account has one widget per monitor, and the two complaints turn out to be
+the same click seen from two sides.
+
+**The toggle compared slugs.** `cmd_panel` closed whatever panel was open and
+stopped there if the slug matched the one it was asked for — which is right for
+a second click on the same widget and wrong for the *copy of that widget on the
+other bar*, where the slug is identical and the intent is the opposite. Same
+widget now means the account **and** the monitor, so the lock carries the
+connector the panel opened on and the comparison is against the pair.
+
+That is also why the close moved *inside* the gate. The monitor a click came
+from is not known until the pointer probe answers, which happens inside the
+panel process, after `panel_ui.show()` has started GTK — so the decision cannot
+be taken before it. A panel that is still alive costs the probe nothing
+(measured: 29 ms to answer with another panel up on the same output).
+
+**`Gtk.Application` with an `application_id` is single-instance**, and that is
+the whole of "the old one closed and no new one opened". While the previous
+panel process still holds the id, `app.run()` does not start a main loop at all:
+it forwards `activate` to the process that has it and returns. The new process
+then built nothing, returned None as if it had been cancelled, and released the
+lock on the way out — while the *old* panel quietly re-ran its activate handler.
+One pid logged five probes, one per click, and not one of those clicks produced
+a panel. It was always a race — SIGTERM does not make a process gone by the time
+the next one reaches GTK — and closing after the probe makes the overlap normal
+rather than exceptional. `Gio.ApplicationFlags.NON_UNIQUE` fixes it; note the
+flag lives on `Gio`, not `Gtk`, in GTK4, and reaching for `Gtk.ApplicationFlags`
+raises `AttributeError` outside the import guard, so the panel simply never
+appears and nothing says why.
+
+**The probe's timeout was shorter than a mouse click.** Waybar spawns `on-click`
+on button *press*, and sway holds an implicit pointer grab until the button
+comes up — during which a surface mapping under the cursor is told nothing at
+all. So a click held longer than `PROBE_MS` got no `enter`, fell through to
+`current_output()`, and opened on the monitor holding the focused *window*,
+which under `focus_follows_mouse no` is reliably not the one that was clicked.
+Measured: a 1.2 s hold on the DP-1 widget with focus on HDMI-A-1 timed out at
+120 ms and opened on HDMI-A-1; the `enter` arrived the instant the button came
+up. The grab always ends, so the fix is to outlast it — `PROBE_MS` is 1500, and
+nothing normal pays it because `enter` still resolves the probe in about 5 ms.
+It also covers a slower case that was already there: a pointer over an ordinary
+window took 1123 ms to produce an `enter`.
+
+A chip click reopens with the connector it already has, and skips the probe
+entirely. The surface that has just gone away is the panel's own, on the output
+a second probe would be asking about.
+
+### What could not be measured, and why it is written down anyway
+
+Whether killing the panel *before* probing blinds the probe on that output could
+not be settled. On DP-1 — the output the user was on — a kill 200 ms before a
+probe changed nothing (31 ms to answer). On HDMI-A-1 it failed four times out of
+four, but so, eventually, did the baseline with nothing open and nothing killed:
+the synthetic pointer stops working on an output the user is not using, which
+`CLAUDE.md` already warned about and which cost half a day once before. The
+reordering stands on its own — the toggle needs the connector before it can
+decide — and the ambiguity is recorded here rather than dressed up as a result.

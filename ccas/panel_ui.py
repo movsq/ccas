@@ -26,10 +26,19 @@ WIDTH, HEIGHT = 900, 620
 
 # How long the pointer probe waits for an answer it may never get. The enter
 # event resolves it the moment it arrives — about 5 ms after the probes map —
-# so this is now only the fallback for the case where the pointer is on no probe
-# at all: an idle output, which never sends wl_pointer.enter and once read as a
-# panel that would not open.
-PROBE_MS = 120
+# so nothing normal pays this, and it stays the fallback for the case where the
+# pointer is on no probe at all: an idle output, which never sends
+# wl_pointer.enter and once read as a panel that would not open.
+#
+# It was 120 ms, which was too short for the one case that matters. Waybar
+# spawns the command on button *press*, and sway holds an implicit pointer grab
+# until the button comes up — a surface mapping under the cursor during a grab
+# is told nothing. So a click held longer than the timeout got no enter, fell
+# through to the focused output and opened on the wrong monitor. Measured
+# 2026-07-26: a 1.2 s hold timed out at 120 ms and opened on HDMI-A-1 with the
+# pointer on DP-1; the enter arrived the instant the button came up. The number
+# is therefore how long a human might hold a mouse button, not a repaint budget.
+PROBE_MS = 1500
 
 # GSK's renderer for the panel's first surface. The default here is vulkan and
 # initialising it costs ~180 ms before anything is on screen; cairo costs ~2 ms
@@ -98,20 +107,17 @@ def _setup_layer(window, LayerShell, output=None) -> None:
 
 
 def _pin_to_output(window, LayerShell, output=None) -> None:
-    """Put the panel on a connector, in order of how much each answer is worth.
+    """Put the panel on `output`, which panel.choose_output already settled.
 
-    CCAS_PANEL_OUTPUT is the user pinning it and wins. Then `output`, which is
-    the monitor the pointer was actually found on (see `_pointer_output`). Then
-    the focused output, which is a guess: with `focus_follows_mouse no` — the
-    user's setting — it names the monitor holding the focused *window*, which is
-    reliably the wrong one. Reported twice, the second time because that guess
-    was the whole answer.
+    No precedence here: which connector wins is a decision, it belongs in
+    panel.py, and the same answer has to go in the lock — the next click on the
+    same account's widget compares against it to tell 'close' from 'move here'.
 
     Naming a connector that is not currently connected is not an error: the
     monitor list changes when a cable does, and a panel that refuses to open is
     worse than one on the wrong screen.
     """
-    wanted = paths.panel_output() or output or panel.current_output()
+    wanted = output
     if not wanted:
         return
     monitors = window.get_display().get_monitors()
@@ -122,11 +128,22 @@ def _pin_to_output(window, LayerShell, output=None) -> None:
             return
 
 
-def show(state: dict):
+def show(state: dict, gate=None, output=None):
     """Open the panel, block until it closes, return the chosen Action or None.
 
     None means cancelled — Esc, or a click outside the surface. cli.dispatch_panel
     reads that as an exit rather than as a command.
+
+    `gate` is called once with the connector the panel is about to open on, and
+    a False from it means don't. That is the toggle: whether a click is the
+    second one on the same widget cannot be known until the probe has said which
+    monitor it came from, which is here and not in cli. The gate decides — this
+    module only asks it.
+
+    `output` is a connector already settled — the caller reopening the panel it
+    just closed, on a chip click. It skips the probe, which would be both a
+    delay and a wrong answer: the surface that has just gone away is this very
+    panel's, on the output the probe would be asking about.
     """
     try:
         # Before `import gi`, and load-bearing. gtk4-layer-shell has to come
@@ -149,19 +166,32 @@ def show(state: dict):
         import gi
         gi.require_version("Gtk", "4.0")
         gi.require_version("Gtk4LayerShell", "1.0")
-        from gi.repository import Gtk, Gtk4LayerShell as LayerShell
+        from gi.repository import Gio, Gtk, Gtk4LayerShell as LayerShell
     except (ImportError, ValueError, OSError):
         _notify(MISSING_DEPS)
         return None
 
     chosen = {"action": None}
-    app = Gtk.Application(application_id="dev.ccas.panel")
+    # NON_UNIQUE or the second panel process is not a process at all: an
+    # application_id makes Gtk.Application single-instance, so while the panel
+    # this click is replacing still holds the id, app.run() forwards `activate`
+    # to *it* and returns without ever starting a main loop. The click closed a
+    # panel and opened nothing, which is exactly how it was reported.
+    app = Gtk.Application(application_id="dev.ccas.panel",
+                          flags=Gio.ApplicationFlags.NON_UNIQUE)
 
     def on_activate(_app):
         from gi.repository import GLib
-        _pointer_output(app, Gtk, GLib, LayerShell, state,
-                        lambda connector: _open(app, Gtk, LayerShell,
-                                                state, chosen, connector))
+
+        def settled(probe):
+            connector = output or panel.choose_output(probe)
+            if gate is not None and not gate(connector):
+                app.quit()   # the same widget, on the same bar: it just closed
+                return
+            _open(app, Gtk, LayerShell, state, chosen, connector)
+
+        _pointer_output(app, Gtk, GLib, LayerShell, state, settled,
+                        skip=output is not None)
 
     app.connect("activate", on_activate)
     # No arguments: ccs has already parsed its own, and GTK would reject them.
@@ -193,7 +223,7 @@ def _skip_probe() -> bool:
     return bool(paths.panel_output())
 
 
-def _pointer_output(app, Gtk, GLib, LayerShell, state, then) -> None:
+def _pointer_output(app, Gtk, GLib, LayerShell, state, then, skip=False) -> None:
     """Find the monitor the pointer is on, then call `then(connector)`.
 
     Wayland tells a client nothing about where the pointer is until it is over
@@ -212,7 +242,7 @@ def _pointer_output(app, Gtk, GLib, LayerShell, state, then) -> None:
     display = Gdk_display(Gtk)
     # Before the first present(): a probe that paints is a flash on every open.
     _load_base(display)
-    if _skip_probe():
+    if skip or _skip_probe():
         then(None)
         return
     monitors = display.get_monitors()

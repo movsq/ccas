@@ -242,10 +242,35 @@ existed. Four things about it are load-bearing and were each a bug first:
   clicked, and the Escape handler is on the window in the CAPTURE phase because
   `GtkSearchEntry` eats Escape to clear itself.
 
-The open panel writes its pid and slug to `paths.panel_lock()`; `cmd_panel`
-closes whatever is open first, and stops there if the slug matches. `SIGTERM`
-does not run a finally block, so the sender clears the lock, and a lock naming a
-dead pid reads as nothing being open.
+- **`Gio.ApplicationFlags.NON_UNIQUE`**, or a second panel process is not a
+  process: an `application_id` makes `Gtk.Application` single-instance, so while
+  the panel being replaced still holds the id, `app.run()` forwards `activate`
+  to *it* and returns without a main loop. The click closed a panel and opened
+  nothing. The flag is on `Gio` in GTK4 — `Gtk.ApplicationFlags` raises
+  `AttributeError`, outside the import guard, and the panel silently never
+  appears.
+
+The open panel writes its pid, slug **and connector** to `paths.panel_lock()`.
+Waybar draws every module on every bar, so one account has one widget per
+monitor: *the same widget* is the slug **and** the output, and comparing slugs
+alone made the copy on the other bar read as a second click — the panel closed
+and nothing opened. `SIGTERM` does not run a finally block, so the sender clears
+the lock, and a lock naming a dead pid reads as nothing being open.
+
+`cmd_panel` therefore closes the running panel **inside the gate**, not before
+`panel_ui.show()`: which monitor the click came from is not known until the
+pointer probe answers, inside the panel process. The gate is called once with
+the settled connector, closes what was open, and returns False when that was
+this widget's own panel. A chip click reopens through the same gate — hence the
+`first` flag, or the panel would send itself `SIGTERM` — and reuses the
+connector rather than probing again.
+
+`PROBE_MS` is **1500, and it is a mouse-hold budget, not a repaint one.** Waybar
+spawns `on-click` on button *press*, sway holds an implicit pointer grab until
+the button comes up, and a surface mapping under the cursor during a grab is
+told nothing — so a click held longer than the timeout probed nothing and opened
+on the focused *window's* monitor. Nothing normal pays it: `enter` still answers
+in about 5 ms.
 
 Which output it opens on: `CCAS_PANEL_OUTPUT` wins, then the **pointer probe**,
 then `panel.current_output()`, then the compositor. The probe is the real answer

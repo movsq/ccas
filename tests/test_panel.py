@@ -370,7 +370,24 @@ def lock(monkeypatch, tmp_path):
 
 def test_claim_records_this_process_and_its_account(lock):
     panel.claim("one")
-    assert panel.running_panel() == (os.getpid(), "one")
+    assert panel.running_panel() == (os.getpid(), "one", None)
+
+
+def test_the_lock_records_which_monitor_the_panel_is_on(lock):
+    """Waybar draws every module on every bar, so one slug has as many widgets
+    as there are monitors. Without the output in the lock, clicking the same
+    account's widget on the other screen is indistinguishable from clicking the
+    same widget twice — the panel closed and nothing opened."""
+    panel.claim("one", "DP-1")
+    assert panel.running_panel() == (os.getpid(), "one", "DP-1")
+
+
+def test_a_lock_written_without_an_output_still_reads(lock):
+    """A panel opened by the previous version, or one whose output nothing could
+    name. Unknown is None, and never equal to a real connector — so the click
+    reopens rather than dying quietly, which is the failure being fixed."""
+    lock.write_text(f"{os.getpid()} one", encoding="utf-8")
+    assert panel.running_panel() == (os.getpid(), "one", None)
 
 
 def test_release_leaves_nothing_behind(lock):
@@ -391,8 +408,8 @@ def test_close_running_names_the_account_it_closed(monkeypatch, lock):
     means the user asked for another account and one opens."""
     signalled = []
     monkeypatch.setattr(panel.os, "kill", lambda pid, sig: signalled.append((pid, sig)))
-    panel.claim("two")
-    assert panel.close_running() == "two"
+    panel.claim("two", "DP-1")
+    assert panel.close_running() == ("two", "DP-1")
     # The liveness probe is a kill(pid, 0) of its own; the signal that closes it
     # is the one being pinned here.
     assert (os.getpid(), panel.signal.SIGTERM) in signalled
@@ -580,22 +597,25 @@ def test_the_panel_takes_the_keyboard_without_being_clicked(monkeypatch):
 def test_the_panel_opens_on_the_output_the_pointer_is_on(monkeypatch):
     """Clicked on the left screen, opened on the right — because nothing told
     the compositor which one was meant."""
-    from ccas import panel_ui
     monkeypatch.delenv("CCAS_PANEL_OUTPUT", raising=False)
-    monkeypatch.setattr(panel_ui.panel, "current_output", lambda: "DP-1")
-    shell = FakeLayerShell()
-    panel_ui._pin_to_output(FakeWindow(["DP-1", "HDMI-A-1"]), shell)
-    assert shell.monitor.get_connector() == "DP-1"
+    monkeypatch.setattr(panel, "current_output",
+                        lambda: pytest.fail("the probe answered; do not guess"))
+    assert panel.choose_output("DP-1") == "DP-1"
 
 
 def test_an_explicit_output_wins_over_the_pointer(monkeypatch):
     """CCAS_PANEL_OUTPUT is the user pinning it; the pointer is only a guess."""
-    from ccas import panel_ui
     monkeypatch.setenv("CCAS_PANEL_OUTPUT", "HDMI-A-1")
-    monkeypatch.setattr(panel_ui.panel, "current_output", lambda: "DP-1")
-    shell = FakeLayerShell()
-    panel_ui._pin_to_output(FakeWindow(["DP-1", "HDMI-A-1"]), shell)
-    assert shell.monitor.get_connector() == "HDMI-A-1"
+    assert panel.choose_output("DP-1") == "HDMI-A-1"
+
+
+def test_the_focused_output_is_only_reached_when_the_probe_says_nothing(monkeypatch):
+    """It is the worst answer available and is kept only because it beats none:
+    with `focus_follows_mouse no` it names the monitor holding the focused
+    *window*, which is reliably not the one whose bar was clicked."""
+    monkeypatch.delenv("CCAS_PANEL_OUTPUT", raising=False)
+    monkeypatch.setattr(panel, "current_output", lambda: "HDMI-A-1")
+    assert panel.choose_output(None) == "HDMI-A-1"
 
 
 def test_an_output_that_is_not_connected_is_not_an_error(monkeypatch):
@@ -657,6 +677,30 @@ def test_the_panel_picks_the_cairo_renderer_before_gtk_is_imported():
     assert body.index("GSK_RENDERER") < body.index("'gi'")
 
 
+def test_a_second_panel_process_is_not_handed_to_the_first(monkeypatch):
+    """NON_UNIQUE, and it is the whole of 'the old one closed and no new one
+    opened'.
+
+    A Gtk.Application with an application_id is single-instance: while another
+    process still holds the id, app.run() does not start a main loop at all — it
+    sends `activate` to the process that has it and returns. So a click arriving
+    while the previous panel was still alive built nothing, returned None, and
+    released the lock on its way out, while the *old* panel quietly re-ran its
+    activate handler. Measured 2026-07-26: one pid logged five probes, one per
+    click, and none of the five clicks produced a panel.
+
+    It is a race in any ordering — SIGTERM does not make a process gone by the
+    time the next one reaches GTK — and closing the old panel after the probe
+    rather than before it makes the overlap the normal case.
+    """
+    import ast
+    import pathlib
+    tree = ast.parse(pathlib.Path("ccas/panel_ui.py").read_text())
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "show")
+    assert "NON_UNIQUE" in ast.dump(fn)
+
+
 def test_an_explicit_renderer_is_the_users_to_choose(monkeypatch):
     """setdefault, not assignment: GSK_RENDERER in the environment is someone
     debugging their own graphics stack, and we are not the ones to overrule it."""
@@ -694,15 +738,19 @@ def test_the_output_is_asked_for_explicitly_when_known(monkeypatch):
     assert shell.monitor.get_connector() == "HDMI-A-1"
 
 
-def test_the_focused_output_is_the_last_resort(monkeypatch):
-    """When the probe finds nothing — another compositor, or a pointer nothing
-    could see — the focused output is still better than no answer at all."""
+def test_the_probe_outlasts_a_held_mouse_button(monkeypatch):
+    """Waybar spawns the command on button *press*, and sway holds an implicit
+    pointer grab for as long as the button is down — during which a surface that
+    maps under the cursor is told nothing at all. So a click held longer than
+    the timeout got no `enter`, fell through to the focused output and opened on
+    the wrong monitor (measured 2026-07-26: 120 ms timeout, 1.2 s hold, panel on
+    HDMI-A-1 with the pointer on DP-1).
+
+    The grab always ends, and the `enter` arrives the instant it does — so the
+    timeout has to outlast a human holding a mouse button, not a repaint.
+    """
     from ccas import panel_ui
-    monkeypatch.delenv("CCAS_PANEL_OUTPUT", raising=False)
-    monkeypatch.setattr(panel_ui.panel, "current_output", lambda: "DP-1")
-    shell = FakeLayerShell()
-    panel_ui._pin_to_output(FakeWindow(["DP-1", "HDMI-A-1"]), shell, None)
-    assert shell.monitor.get_connector() == "DP-1"
+    assert panel_ui.PROBE_MS >= 1000
 
 
 # ── the custom format ─────────────────────────────────────────────────────────

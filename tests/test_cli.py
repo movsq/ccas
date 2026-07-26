@@ -1,4 +1,5 @@
 import importlib
+import os
 import time
 import io
 import json
@@ -1233,7 +1234,7 @@ def test_gui_mode_menu_opens_the_panel_not_the_picker(monkeypatch):
     """The whole change, in one test: a bar click reaches the panel."""
     make_account("one")
     monkeypatch.setattr(cli.pickers, "choose", _panel_never_called)
-    monkeypatch.setattr(cli.panel_ui, "show", lambda s: None)
+    monkeypatch.setattr(cli.panel_ui, "show", lambda s, gate=None, output=None: None)
     assert cli.cmd_mode_menu("one", True) == 1
 
 
@@ -1243,7 +1244,7 @@ def test_switch_reopens_the_panel_on_the_other_account(monkeypatch):
     make_account("two")
     seen = []
 
-    def fake_show(state):
+    def fake_show(state, gate=None, output=None):
         seen.append(state["slug"])
         return (cli.panel.Action("switch", "two", None) if len(seen) == 1
                 else None)
@@ -1262,27 +1263,152 @@ def test_terminal_mode_menu_still_uses_fzf(monkeypatch):
     assert cli.cmd_mode_menu("one", False) == 1
 
 
-def test_clicking_the_same_widget_twice_closes_the_panel(monkeypatch):
+def _gated(monkeypatch, connector):
+    """Run cmd_panel with a panel that reports `connector` as its output.
+
+    The toggle cannot be decided before the panel process knows which monitor
+    was clicked, and only the pointer probe knows that — so cmd_panel hands
+    panel_ui.show a gate and show calls it with the answer. Returns the slugs
+    that were actually opened.
+    """
+    opened = []
+
+    def fake_show(state, gate=None, output=None):
+        if gate is not None and not gate(connector):
+            return None
+        opened.append(state["slug"])
+        return None
+
+    monkeypatch.setattr(cli.panel_ui, "show", fake_show)
+    return opened
+
+
+def test_clicking_the_same_widget_twice_closes_the_panel(monkeypatch, tmp_path):
     """The bar's click is a toggle. A second one on the widget that opened the
     panel closes it and opens nothing — anything else means the only way to
     dismiss it is to find its close button."""
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
     make_account("one")
-    monkeypatch.setattr(cli.panel, "close_running", lambda: "one")
-    monkeypatch.setattr(cli.panel_ui, "show", _panel_never_called)
+    monkeypatch.setattr(cli.panel, "close_running", lambda: ("one", "DP-1"))
+    opened = _gated(monkeypatch, "DP-1")
     assert cli.cmd_panel("one") == 0
+    assert opened == []
 
 
-def test_clicking_another_account_replaces_the_open_panel(monkeypatch):
-    """Two widgets, one panel: the second account's click closes the first
-    account's panel and opens its own, rather than stacking them."""
+def test_the_same_account_clicked_on_the_other_bar_moves_the_panel(monkeypatch, tmp_path):
+    """Waybar draws every module on every monitor, so one account has one widget
+    per bar. Clicking its copy on the other screen used to close the panel and
+    open nothing — the toggle compared slugs, and the slug was the same. It is
+    the same widget only if it is also the same monitor.
+    """
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
+    make_account("one")
+    monkeypatch.setattr(cli.panel, "close_running", lambda: ("one", "DP-1"))
+    opened = _gated(monkeypatch, "HDMI-A-1")
+    cli.cmd_panel("one")
+    assert opened == ["one"]
+
+
+def test_the_open_panel_is_closed_after_the_probe_and_not_before(monkeypatch, tmp_path):
+    """Order, and it is what the per-monitor toggle rests on.
+
+    Closing first is what a toggle reads like, but the decision needs the
+    connector the click came from and only the probe knows it — so closing
+    before there is an answer means deciding without one, which is the bug this
+    file's neighbour pins. A panel that is still up costs the probe nothing:
+    measured 2026-07-26 at 29 ms to answer with another panel open on the same
+    output. `docs/why.md` has the part of this that could not be measured.
+    """
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
+    make_account("one")
+    order = []
+    monkeypatch.setattr(cli.panel, "close_running",
+                        lambda: order.append("closed") or None)
+
+    def fake_show(state, gate=None, output=None):
+        order.append("probed")
+        gate("DP-1")
+        return None
+
+    monkeypatch.setattr(cli.panel_ui, "show", fake_show)
+    cli.cmd_panel("one")
+    assert order == ["probed", "closed"]
+
+
+def test_a_chip_click_does_not_make_the_panel_close_itself(monkeypatch, tmp_path):
+    """The gate runs again when a chip reopens the panel on another account, and
+    by then the lock names *this* process — a second close_running() there would
+    SIGTERM the panel that is asking the question."""
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
     make_account("one")
     make_account("two")
-    monkeypatch.setattr(cli.panel, "close_running", lambda: "one")
+    closes = []
+    monkeypatch.setattr(cli.panel, "close_running",
+                        lambda: closes.append(1) or None)
     seen = []
-    monkeypatch.setattr(cli.panel_ui, "show",
-                        lambda state: seen.append(state["slug"]))
+
+    def fake_show(state, gate=None, output=None):
+        gate("DP-1")
+        seen.append(state["slug"])
+        return (cli.panel.Action("switch", "two", None) if len(seen) == 1
+                else None)
+
+    monkeypatch.setattr(cli.panel_ui, "show", fake_show)
+    cli.cmd_panel("one")
+    assert seen == ["one", "two"]
+    assert len(closes) == 1
+
+
+def test_a_chip_click_reopens_where_the_panel_already_was(monkeypatch, tmp_path):
+    """And without probing again, for the reason the probe now runs before the
+    close: the surface that just went away is this panel's own, on the output a
+    second probe would be asking about. The answer is already known — reusing it
+    is both correct and one less thing to wait for."""
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
+    make_account("one")
+    make_account("two")
+    monkeypatch.setattr(cli.panel, "close_running", lambda: None)
+    given = []
+
+    def fake_show(state, gate=None, output=None):
+        given.append(output)
+        gate(output or "HDMI-A-1")
+        return (cli.panel.Action("switch", "two", None) if len(given) == 1
+                else None)
+
+    monkeypatch.setattr(cli.panel_ui, "show", fake_show)
+    cli.cmd_panel("one")
+    assert given == [None, "HDMI-A-1"]
+
+
+def test_the_open_panel_records_the_monitor_it_opened_on(monkeypatch, tmp_path):
+    """Which is what the next click compares against, so it has to be the
+    output the panel actually took — after the probe, not before it."""
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
+    make_account("one")
+    monkeypatch.setattr(cli.panel, "close_running", lambda: None)
+    held = []
+
+    def fake_show(state, gate=None, output=None):
+        gate("HDMI-A-1")
+        held.append(cli.panel.running_panel())
+        return None
+
+    monkeypatch.setattr(cli.panel_ui, "show", fake_show)
+    cli.cmd_panel("one")
+    assert held == [(os.getpid(), "one", "HDMI-A-1")]
+
+
+def test_clicking_another_account_replaces_the_open_panel(monkeypatch, tmp_path):
+    """Two widgets, one panel: the second account's click closes the first
+    account's panel and opens its own, rather than stacking them."""
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
+    make_account("one")
+    make_account("two")
+    monkeypatch.setattr(cli.panel, "close_running", lambda: ("one", "DP-1"))
+    opened = _gated(monkeypatch, "DP-1")
     cli.cmd_panel("two")
-    assert seen == ["two"]
+    assert opened == ["two"]
 
 
 def test_the_open_panel_is_findable_and_stops_being_so(monkeypatch, tmp_path):
@@ -1293,14 +1419,15 @@ def test_the_open_panel_is_findable_and_stops_being_so(monkeypatch, tmp_path):
     make_account("one")
     held = []
 
-    def fake_show(_state):
+    def fake_show(_state, gate=None, output=None):
+        gate("DP-1")
         held.append(cli.panel.running_panel())
         raise KeyboardInterrupt
 
     monkeypatch.setattr(cli.panel_ui, "show", fake_show)
     with pytest.raises(KeyboardInterrupt):
         cli.cmd_panel("one")
-    assert held == [(__import__("os").getpid(), "one")]
+    assert held == [(os.getpid(), "one", "DP-1")]
     assert cli.panel.running_panel() is None
 
 

@@ -166,28 +166,35 @@ def shows_color_row(state) -> bool:
 
 
 def running_panel():
-    """(pid, slug) of the panel that is open, or None.
+    """(pid, slug, output) of the panel that is open, or None.
 
     A pid that no longer exists is None, not a stale answer: the panel is killed
     with SIGTERM, which does not run the finally block that would have released
     the lock, so a leftover file is the normal case rather than the odd one.
+
+    The output is there because Waybar draws every module on every bar: one
+    account has one widget per monitor, and without it the toggle cannot tell a
+    second click on the same widget from the first click on its twin.
+    `-` — a panel whose monitor nothing could name — reads back as None, which
+    equals no connector, so that click reopens rather than dying quietly.
     """
     try:
-        pid_text, slug = paths.panel_lock().read_text(encoding="utf-8").split(None, 1)
-        pid = int(pid_text)
-    except (OSError, ValueError):
+        fields = paths.panel_lock().read_text(encoding="utf-8").split()
+        pid, slug = int(fields[0]), fields[1]
+        output = fields[2] if len(fields) > 2 else "-"
+    except (OSError, ValueError, IndexError):
         return None
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError):
         return None
-    return pid, slug.strip()
+    return pid, slug, (None if output == "-" else output)
 
 
-def claim(slug: str) -> None:
+def claim(slug: str, output=None) -> None:
     lock = paths.panel_lock()
     lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text(f"{os.getpid()} {slug}", encoding="utf-8")
+    lock.write_text(f"{os.getpid()} {slug} {output or '-'}", encoding="utf-8")
 
 
 def release() -> None:
@@ -195,23 +202,40 @@ def release() -> None:
 
 
 def close_running():
-    """Close whatever panel is open and say whose it was, or None if none was.
+    """Close whatever panel is open and say (slug, output) of it, or None.
 
-    The bar's click is a toggle. The caller compares the returned slug with the
-    one it was asked to open: equal means the same widget was clicked twice and
-    nothing should reopen, different means the user went to another account.
+    The bar's click is a toggle. The caller compares the pair with the account
+    it was asked to open and the monitor that was clicked: both equal means the
+    same widget was clicked twice and nothing should reopen. A different slug is
+    another account, and a different output is the *same* account's widget on
+    another bar — which means bring the panel here, not switch it off.
     """
     found = running_panel()
     if found is None:
         release()  # a lock with a dead pid in it, and nothing to signal
         return None
-    pid, slug = found
+    pid, slug, output = found
     try:
         os.kill(pid, signal.SIGTERM)
     except OSError:
         pass
     release()
-    return slug
+    return slug, output
+
+
+def choose_output(probe):
+    """Which connector the panel opens on, given what the probe found.
+
+    A decision, so it lives here rather than in panel_ui: the answer is also
+    what goes in the lock, and the lock is compared against by the next click.
+
+    CCAS_PANEL_OUTPUT is the user pinning it and wins. Then the probe, which is
+    the monitor the pointer was actually found on. Then the focused output,
+    which is a guess and a bad one — with `focus_follows_mouse no` it names the
+    monitor holding the focused *window* — kept only because it beats opening
+    wherever the compositor feels like.
+    """
+    return paths.panel_output() or probe or current_output()
 
 
 def current_output():

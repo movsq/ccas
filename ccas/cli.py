@@ -541,13 +541,48 @@ def cmd_panel(slug: str) -> int:
     was this same widget's, that is the whole of it. Clicking a widget to open
     something and then having no way to shut it from the same widget was the
     complaint that put this here.
+
+    *Same widget* is the account **and** the monitor. Waybar draws every module
+    on every bar, so one account has one widget per screen; comparing slugs
+    alone made the copy on the other monitor a second click on the first, which
+    closed the panel and opened nothing. The monitor is not known until the
+    pointer probe answers, inside the panel process — hence the gate, which
+    panel_ui calls with the connector before it builds anything.
+
+    Which is why the close happens *in* the gate rather than before it: there
+    is nothing to decide with until the probe has answered. A panel that is
+    still up costs the probe nothing — measured at 29 ms with one open on the
+    same output — and `docs/why.md` records what that ordering could and could
+    not be shown to fix.
     """
-    if panel.close_running() == slug:
-        return 0
+    where = {"first": True}
+
+    def gate(connector) -> bool:
+        # Only the click that started this process can be a toggle-off, and only
+        # it has a panel to close. A chip click reopens through the same gate,
+        # by which time the lock names *this* process — closing there would be
+        # the panel sending itself SIGTERM.
+        if not where.pop("first", False):
+            panel.claim(slug, connector)
+            return True
+        closed = panel.close_running()
+        if closed == (slug, connector):
+            where["toggled_off"] = True
+            return False
+        where["output"] = connector
+        panel.claim(slug, connector)
+        return True
+
     try:
         while True:
-            panel.claim(slug)
-            action = panel_ui.show(panel.build_state(slug))
+            if where.get("output"):
+                panel.claim(slug, where["output"])
+            action = panel_ui.show(panel.build_state(slug), gate,
+                                   where.get("output"))
+            if where.get("toggled_off"):
+                # Not a cancelled panel: the click did what it was for, which
+                # was to shut the one that was already open.
+                return 0
             result = dispatch_panel(action)
             if result is not SWITCH:
                 return result
