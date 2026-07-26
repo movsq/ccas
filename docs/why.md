@@ -423,6 +423,33 @@ The general shape of this: a screen that merges two callers inherits the
 assumptions of whichever one it was copied from, and `os.getcwd()` is the
 assumption that survives a merge invisibly, because it is never passed in.
 
+### The layer surface that was an ordinary window
+
+`gtk4-layer-shell` has to be loaded before `libwayland`. PyGObject loads
+`libwayland` first, so `Gtk4LayerShell.init_for_window()` did nothing: the panel
+opened as a plain `xdg_toplevel`, on whichever output the compositor picked —
+the Dell, not the bar's screen — with `GtkWindow is not a layer surface` on
+stderr and four more warnings under it. Nothing crashed. It just was not a menu:
+no anchoring, no click-outside dismissal, and it showed up in the window list.
+
+The library's own advice is `LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so`. That
+would have to live in the `ccs` launcher, and `ccs` execs `claude` — so every
+session launched from the bar would inherit the preload for the rest of its
+life. `ctypes.CDLL("libgtk4-layer-shell.so.0", mode=ctypes.RTLD_GLOBAL)`
+immediately before `import gi` is the same fix scoped to the one process that
+needs it, and `panel_ui.show()` does that first, before anything else.
+
+The second half of the same bug: a layer surface with no monitor set goes
+wherever the compositor puts it, which on two heads is not reliably the one
+Waybar is on. `CCAS_PANEL_OUTPUT` names a connector; unset keeps the
+compositor's choice. Naming a disconnected output is deliberately not an error —
+the monitor list changes when a cable does, and a panel that refuses to open is
+worse than one on the wrong screen.
+
+Both were found by opening the window and sampling pixels, not by reading the
+code: the failure is silent, and the only symptom is *where* the thing appeared.
+
+
 ---
 
 ---
