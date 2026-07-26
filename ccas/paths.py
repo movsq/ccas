@@ -70,6 +70,12 @@ def bashrc() -> Path:
     return _env("CCAS_BASHRC", Path.home() / ".bashrc")
 
 
+def menu_css() -> Path:
+    """The GTK panel's stylesheet. install.sh ships it once and never overwrites
+    it — the same stance taken toward style.css being the user's."""
+    return _env("CCAS_MENU_CSS", Path.home() / ".config" / "ccas" / "menu.css")
+
+
 def ccs_bin() -> Path:
     return _env("CCAS_CCS_BIN", Path.home() / ".local/bin/ccs")
 

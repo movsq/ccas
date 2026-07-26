@@ -34,3 +34,19 @@ def test_trash_dir_is_under_home_and_never_deleted(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_TRASH", str(tmp_path / "trash"))
     importlib.reload(paths)
     assert paths.trash_dir() == tmp_path / "trash"
+
+
+def test_menu_css_defaults_under_config_home(monkeypatch):
+    """The panel stylesheet is the user's, so it lives in ~/.config rather than
+    in the account directory CCAS rewrites."""
+    monkeypatch.delenv("CCAS_MENU_CSS", raising=False)
+    importlib.reload(paths)
+    assert paths.menu_css() == Path.home() / ".config" / "ccas" / "menu.css"
+
+
+def test_menu_css_is_env_overridable(monkeypatch, tmp_path):
+    """Every path is overridable or the test-isolation rule breaks: a test that
+    reads the real stylesheet is one the user's theme can break."""
+    monkeypatch.setenv("CCAS_MENU_CSS", str(tmp_path / "m.css"))
+    importlib.reload(paths)
+    assert paths.menu_css() == tmp_path / "m.css"
