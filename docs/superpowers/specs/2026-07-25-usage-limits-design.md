@@ -1,5 +1,11 @@
 # Per-account usage limits on the bar
 
+**Amended, 2026-07-26.** The measurement and the three states are unchanged
+and still in force. Where it says the reading appears in the account's *menu*,
+read: the panel's two bars.
+
+> Kept as the record of what was decided and why. It is not a description of how CCAS works now — `README.md` and `CLAUDE.md` are.
+
 2026-07-25.
 
 Show, per account, how much of the 5-hour window is spent and when it clears —

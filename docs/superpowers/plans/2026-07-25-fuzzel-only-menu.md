@@ -1,5 +1,12 @@
 # Retiring `menu.xml` Implementation Plan
 
+**Shipped, 2026-07-25**, and its GUI half retired on 2026-07-26 by the GTK panel.
+The `menu-file` removal it exists for is permanent.
+
+> Kept as the record of what was planned. Unticked boxes below mean the
+> plan was executed inline rather than ticked off in the file — the
+> commits are the record of what actually shipped.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. (CCAS's CLAUDE.md records that the user declined subagent-driven development; work inline.) Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Delete Waybar's cached `menu-file` from CCAS so the bar stops reloading itself when a new Claude session appears, moving the bar's left click onto the fuzzel picker that already exists.

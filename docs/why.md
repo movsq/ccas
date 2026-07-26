@@ -59,7 +59,7 @@ Fix: every Waybar-generated command now starts with `--gui`, consumed in
 through `waybar._ccs()`, which appends the flag. The `ccs -p` passthrough
 deliberately does **not** — it is the terminal path and must use fzf. Two tests
 pin the pair (`test_generated_commands_all_force_gui_mode`,
-`test_passthrough_does_not_force_gui_mode`), because this exact mistake was made
+`test_passthrough_does_not_open_the_panel`), because this exact mistake was made
 and caught during the session, back when a bashrc function was the terminal
 path.
 
@@ -567,21 +567,26 @@ Two things were measured rather than assumed:
 - **40 ms is too early and 80 ms is enough** for the enter to arrive after the
   surface maps. `PROBE_MS` is 120.
 
-**What could not be verified, and why.** The probe answers correctly on DP-1,
-every time, atomically — the cursor is placed by the probe process itself and
-the right connector comes back. On HDMI-A-1 it never answers, and neither does
-anything else: with the panel pinned there, a click outside it does not close it
-either, and a probe on the TOP layer is as silent as one on OVERLAY. The cursor
-is provably on that output at the time (`grim -c` shows it inside the probe's own
-red tint), so the surface is mapped and the pointer is over it.
+**A synthetic pointer is not a pointer.** The probe answered correctly on DP-1
+every time, atomically — the cursor placed by the probe process itself, the right
+connector back. On HDMI-A-1 it never answered, and neither did anything else:
+with the panel pinned there a click outside it did not close it, and a probe on
+the TOP layer was as silent as one on OVERLAY, while `grim -c` showed the cursor
+sitting inside the probe's own tint. Every reading said the surface was mapped
+and the pointer was over it.
 
-The most likely reading is that `swaymsg seat - cursor set/move` does not make
-sway recompute pointer focus on an output where no real input is happening —
-DP-1 works because a hand is on the mouse there, generating the motion that
-does. That would make the HDMI result an artefact of the test rather than of the
-panel. It is not proven, and it is the one thing here a synthetic pointer could
-not settle: this repo's rule is to automate the check rather than ask the user
-to click, and the check that remains needs a hand on the mouse.
+It was the test. `swaymsg seat - cursor set/move` does not make sway recompute
+pointer focus on an output where no real input is happening; DP-1 passed because
+a hand was on the mouse there, generating the motion that does. The user clicked
+the widget on the other monitor and the panel opened on it, first try.
+
+The lesson is narrower than "automate the check" and worth keeping: **a
+synthetic pointer can move the cursor but cannot always make the compositor act
+on where it now is.** `swaymsg cursor` is enough to drive a widget on the output
+the user is already working on — that is what the recipe under Working style is
+for — and is not evidence about an idle one. The keyboard has no such problem: a
+uinput device is a real device, and that is why the Escape checks above hold
+without an asterisk.
 
 
 ---

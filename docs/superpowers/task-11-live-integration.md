@@ -1,5 +1,11 @@
 # Task 11 — live integration results
 
+**Historical, 2026-07-26.** A snapshot of one afternoon's live checks. The
+`~/.bashrc` managed block it describes no longer exists — `ccs` replaced the
+`claude()` shell function and `waybar.strip_bashrc()` takes the old one out.
+
+> Kept as the record of what was decided and why. It is not a description of how CCAS works now — `README.md` and `CLAUDE.md` are.
+
 **Date:** 2026-07-25
 **Status:** Steps 1–3 and 7 verified. Steps 4–6 deferred at the user's request
 (they were away from the machine; the OAuth browser flow needs a real

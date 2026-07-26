@@ -1,5 +1,11 @@
 # CLI Account Management Implementation Plan
 
+**Shipped, 2026-07-25.**
+
+> Kept as the record of what was planned. Unticked boxes below mean the
+> plan was executed inline rather than ticked off in the file — the
+> commits are the record of what actually shipped.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reach `add`, `rename` and `remove` from the interactive `ccs` picker, the way the Waybar menu already can.

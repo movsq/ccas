@@ -1,5 +1,11 @@
 # Retiring `menu.xml`: one picker, no cached menu
 
+**Superseded, 2026-07-26** by `2026-07-26-gtk4-panel-design.md`. Retiring
+`menu-file` stuck and is still why the bar does not reload; the fuzzel picker
+that replaced it is gone, and `ccas/pickers.py` now has fzf branches only.
+
+> Kept as the record of what was decided and why. It is not a description of how CCAS works now — `README.md` and `CLAUDE.md` are.
+
 2026-07-25.
 
 The bar reloads itself when a new Claude session appears. This removes the

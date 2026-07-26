@@ -1,5 +1,12 @@
 # CLI account management — design
 
+**Amended, 2026-07-26.** `add`, `rename` and `remove` still route through
+`cmd_manage`, but the GUI half of the prompts is gone with fuzzel: from the
+panel these three open a terminal of their own (`cli._in_terminal`), because
+each needs free text, a confirmation or a login and a bar click has no stdin.
+
+> Kept as the record of what was decided and why. It is not a description of how CCAS works now — `README.md` and `CLAUDE.md` are.
+
 **Date:** 2026-07-25
 **Status:** Approved design, ready for implementation planning
 

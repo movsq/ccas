@@ -1,5 +1,12 @@
 # Spike: Waybar `menu-file` capabilities
 
+**Historical, 2026-07-26.** Every finding below is still true of Waybar, and
+the first of them is why CCAS stopped using `menu-file` at all — a menu that
+is cached at startup has to be invalidated by rebuilding the bar. The bar's
+click now opens the GTK panel and generates nothing.
+
+> Kept as the record of what was decided and why. It is not a description of how CCAS works now — `README.md` and `CLAUDE.md` are.
+
 **Date:** 2026-07-25
 **Waybar version:** 0.15.0
 **Resolves:** spec §11 "Open risk"

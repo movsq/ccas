@@ -22,7 +22,7 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `paths.py` | every filesystem location, each `CCAS_*`-overridable. Nothing else may hardcode a path. |
 | `registry.py` | `accounts.json`: slugs, colours, display mode, `headless`, `default`. |
 | `accounts.py` | the account directory: create, `relink` (the never-write-to-`~/.claude` guarantee), `rename`, trash, `env_for`. |
-| `waybar.py` | the managed blocks in `config.jsonc` and `~/.bashrc`, plus reload/signal. |
+| `waybar.py` | the managed block in `config.jsonc`, stripping the legacy one from `~/.bashrc`, plus reload/signal. |
 | `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
 | `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
 | `usage.py` | the per-account usage reading: recording it, both source shapes, the three states, and how each is said. |
@@ -143,8 +143,12 @@ per slug (`#custom-cc-<slug>`; GTK CSS has no prefix matching), documented in
 FontAwesome wins for any codepoint it happens to cover. `☑` (U+2611) is in
 FontAwesome, `☐` (U+2610) is not — so a checkbox pair rendered from two
 different fonts at two different sizes and the checked state looked empty.
-`label.MARK_ON`/`MARK_OFF` (U+25CF/U+25CB) are the vetted pair; every stateful
-row uses them. Check a new glyph before shipping it:
+`label.MARK_ON`/`MARK_OFF` (U+25CF/U+25CB) are the vetted pair, and the rule
+applies to **anything Waybar draws** — the bar label and the fzf rows, which
+inherit the terminal's font. It does *not* apply to the panel: that is a
+separate process with its own stylesheet and no FontAwesome in sight, which is
+why its toggles are real `GtkCheckButton`s rather than a glyph pair. Check a new
+glyph before shipping it anywhere the bar can see it:
 
 ```bash
 pango-view --font="FontAwesome, JetBrainsMono Nerd Font Mono, monospace 28" \
@@ -201,7 +205,7 @@ Anything new that generates a command for Waybar must go through it.
 The `ccs -p` passthrough deliberately does **not** — that path is a real terminal
 and must use fzf. Two tests pin the pair
 (`test_generated_commands_all_force_gui_mode`,
-`test_passthrough_does_not_force_gui_mode`), because this exact mistake was made
+`test_passthrough_does_not_open_the_panel`), because this exact mistake was made
 once already, back when the bashrc function was the terminal path.
 
 **The two doors differ in their toolkit, not in their verbs.** `cmd_mode_menu`
@@ -266,6 +270,11 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   `ccs render <slug>`, read `~/.config/waybar/config.jsonc`. `grim` plus PIL
   cropping gives you a screenshot; Waybar is on `HDMI-A-1` (x 2560–4480),
   `DP-1` is x 0–2560.
+- **A synthetic pointer only works on the output the user is already using.**
+  `swaymsg cursor` moves the cursor, but sway does not recompute pointer focus
+  on an idle output, so a layer surface there receives nothing and the test
+  reads as a broken feature. Half a day went into that once — `docs/why.md` has
+  it. A uinput keyboard has no such limit; it is a real device.
 - **Clicking something yourself: `swaymsg seat - cursor move`, never `cursor
   set`.** `set` teleports the pointer — the cursor lands on the target and
   `grim -c` proves it, but no motion event reaches a layer surface, so it keeps

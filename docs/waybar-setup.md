@@ -160,6 +160,7 @@ Notes:
 | change | what makes it visible |
 |---|---|
 | `style.css` | `killall -SIGUSR2 waybar` |
+| `~/.config/ccas/menu.css` (the panel) | nothing — reopen the panel |
 | `config.jsonc` (module added/removed) | `killall -SIGUSR2 waybar` |
 | label markup (`label.py`) | `./install.sh`, then the next render tick |
 | account settings (colour, nickname, display) | nothing — `ccs` signals `SIGRTMIN+n` itself |

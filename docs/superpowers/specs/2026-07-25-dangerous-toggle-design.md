@@ -1,5 +1,10 @@
 # Per-account `--dangerously-skip-permissions`
 
+**Amended, 2026-07-26.** Still in force. The toggle is now a checkbox in the
+panel rather than a marked row in a menu; nothing about what it does changed.
+
+> Kept as the record of what was decided and why. It is not a description of how CCAS works now — `README.md` and `CLAUDE.md` are.
+
 2026-07-25.
 
 A per-account toggle that makes CCAS launch Claude Code with

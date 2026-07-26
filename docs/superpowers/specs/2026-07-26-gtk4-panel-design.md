@@ -1,7 +1,17 @@
 # GTK4 panel — replacing the fuzzel menu with an application window
 
-Status: design, approved 2026-07-26. Supersedes the GUI half of
-`2026-07-25-fuzzel-only-menu-design.md`.
+Status: **shipped 2026-07-26**; designed and approved the same day. Supersedes
+the GUI half of `2026-07-25-fuzzel-only-menu-design.md`.
+
+Four behaviours were added after it shipped and are not described below, each
+from a bug found in the first day of real use: the bar's widget is a toggle
+(a second click closes the panel it opened), there is a `✕` in the header, a
+click anywhere outside the panel dismisses it without reaching what is beneath,
+and Escape closes it whether or not the panel was ever focused. Two consequences
+worth knowing before editing this: the surface covers its whole output rather
+than being panel-sized, and it opens on the monitor the **pointer** is on, found
+by probing every output rather than by asking sway. `docs/why.md` has why for
+each, and `CLAUDE.md` has the rules that came out of them.
 
 ## Why
 

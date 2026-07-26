@@ -1,5 +1,13 @@
 # CCAS — Claude Code Account Switcher
 
+**Superseded in part, 2026-07-26.** The Waybar `GtkMenu` this designed is
+gone twice over: `2026-07-25-fuzzel-only-menu-design.md` replaced it with a
+fuzzel picker, and `2026-07-26-gtk4-panel-design.md` replaced that with the
+GTK panel. The isolation model, the registry and the never-write-to-`~/.claude`
+invariant are unchanged and still in force.
+
+> Kept as the record of what was decided and why. It is not a description of how CCAS works now — `README.md` and `CLAUDE.md` are.
+
 **Date:** 2026-07-25
 **Status:** Approved design, ready for implementation planning
 
