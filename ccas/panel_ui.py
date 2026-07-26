@@ -453,9 +453,97 @@ def build_body(state, chosen, window):
                        pick(panel.Action("new", slug, view["project"])))
     resume_button.connect("clicked", lambda _b: resume_selected())
 
+    root.append(_build_toggles(state, pick))
+    revealer.set_child(_build_manage(state, pick))
+    root.append(revealer)
+
     fill_projects()
     # After the fills, so nothing that runs during them can steal it back.
     entry.grab_focus()
-
-    root.append(revealer)
     return root
+
+
+def _build_toggles(state, pick):
+    """Every switchable thing, with its state readable without opening anything.
+
+    That is the panel's whole argument over the cascade: whether skip-permissions
+    is on used to be knowable only by opening a submenu to read a mark.
+
+    Real GtkCheckButtons, not label.MARK_ON/MARK_OFF. That pair exists to survive
+    Waybar's FontAwesome-first font stack, which this process does not inherit.
+    """
+    from gi.repository import Gtk
+
+    slug = state["slug"]
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    box.add_css_class("ccas-toggles")
+
+    checks = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+    for text, key, kind in (("headless runner", "headless", "headless"),
+                            ("skip permissions", "dangerous", "dangerous"),
+                            ("hide icon", "hide_icon", "hide_icon")):
+        check = Gtk.CheckButton(label=text)
+        check.set_active(state[key])
+        # "toggled", not "clicked": set_active() above would fire clicked, and
+        # the panel would act on its own initial render.
+        check.connect("toggled", lambda _c, k=kind:
+                      pick(panel.Action(k, slug, None)))
+        checks.append(check)
+    box.append(checks)
+
+    bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+    modes = Gtk.DropDown.new_from_strings(paths.DISPLAY_MODES)
+    if state["display"] in paths.DISPLAY_MODES:
+        modes.set_selected(paths.DISPLAY_MODES.index(state["display"]))
+    modes.connect("notify::selected", lambda d, _p: _on_mode(d, slug, state, pick))
+    bottom.append(modes)
+
+    swatches = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    swatches.set_valign(Gtk.Align.CENTER)
+    current = next((a for a in state["accounts"] if a["current"]), None)
+    for index, (_name, hexcolor) in enumerate(paths.PALETTE):
+        swatch = Gtk.Button()
+        swatch.add_css_class("ccas-swatch")
+        if current and current["color"] == hexcolor:
+            swatch.add_css_class("current")
+        provider = Gtk.CssProvider()
+        provider.load_from_string(f"button {{ background: {hexcolor}; }}")
+        swatch.get_style_context().add_provider(
+            provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        swatch.connect("clicked", lambda _b, i=index:
+                       pick(panel.Action("color", slug, i)))
+        swatches.append(swatch)
+    bottom.append(swatches)
+    box.append(bottom)
+    return box
+
+
+def _on_mode(dropdown, slug, state, pick):
+    """Only on a real change. set_selected() during the build emits this too, and
+    acting on it would rewrite the registry every time the panel opened."""
+    mode = paths.DISPLAY_MODES[dropdown.get_selected()]
+    if mode != state["display"]:
+        pick(panel.Action("display", slug, mode))
+
+
+def _build_manage(state, pick):
+    """The rare, destructive half — behind the header's ⚙ rather than in reach.
+
+    Rename and remove route to cmd_manage, which prompts in the terminal. The
+    revealer names the action; cli runs it.
+    """
+    from gi.repository import Gtk
+
+    slug = state["slug"]
+    box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+    box.add_css_class("ccas-manage")
+    for text, kind, danger in (("Rename…", "rename", False),
+                               (f"Remove {slug}…", "remove", True),
+                               ("Add account…", "add", False)):
+        button = Gtk.Button(label=text)
+        if danger:
+            button.add_css_class("ccas-danger")
+        button.connect("clicked", lambda _b, k=kind:
+                       pick(panel.Action(k, slug, None)))
+        box.append(button)
+    return box
