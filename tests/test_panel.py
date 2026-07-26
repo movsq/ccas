@@ -280,3 +280,56 @@ def test_filter_keeps_the_account_half_untouched(reg, hist):
     assert narrowed["usage"] == state["usage"]
     assert narrowed["accounts"] == state["accounts"]
     assert narrowed["dangerous"] == state["dangerous"]
+
+
+# ── the split between the tested half and the toolkit half ────────────────────
+
+def _imported_names(path):
+    import ast
+    import pathlib
+    names = set()
+    for node in ast.walk(ast.parse(pathlib.Path(path).read_text())):
+        if isinstance(node, ast.Import):
+            names |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module.split(".")[0])
+    return names
+
+
+def test_panel_never_imports_gi():
+    """The split is the point: panel.py is testable because it cannot reach a
+    toolkit, and one stray convenience import would silently end that."""
+    assert "gi" not in _imported_names("ccas/panel.py")
+
+
+def test_panel_ui_does_not_import_gi_at_module_level():
+    """A missing PyGObject must not be able to break `ccs statusline`, which
+    runs in every prompt of every session. The import lives inside show()."""
+    import ast
+    import pathlib
+    tree = ast.parse(pathlib.Path("ccas/panel_ui.py").read_text())
+    top = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
+    assert not any("gi" in ast.dump(n) for n in top)
+
+
+def test_cli_imports_with_pygobject_unavailable():
+    """ccs list, ccs doctor, ccs statusline and the passthrough all have to keep
+    working on stdlib alone — importing the CLI must not pull in GTK."""
+    import subprocess
+    import sys
+    code = ("import sys; sys.modules['gi'] = None; "
+            "import ccas.cli, ccas.panel_ui; print('ok')")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True)
+    assert out.stdout.strip() == "ok", out.stderr
+
+
+def test_show_reports_missing_dependencies_rather_than_dying(monkeypatch, capsys):
+    """A bar click that opens nothing and says nothing is the worst available
+    failure. Missing PyGObject has to be visible, not silent."""
+    import sys as _sys
+    from ccas import panel_ui
+    monkeypatch.setitem(_sys.modules, "gi", None)
+    monkeypatch.setattr(panel_ui.shutil, "which", lambda _n: None)
+    assert panel_ui.show({"slug": "one"}) is None
+    assert "gtk4-layer-shell" in capsys.readouterr().err

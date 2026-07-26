@@ -1,0 +1,65 @@
+/* CCAS panel — yours to edit.
+ *
+ * install.sh copies this to ~/.config/ccas/menu.css once and never overwrites
+ * it, the same stance CCAS takes toward style.css. Reopen the panel to see a
+ * change; nothing needs reinstalling and no code has to be touched.
+ *
+ * Unlike the bar, this process does not inherit Waybar's FontAwesome-first
+ * font stack, so any glyph you like is safe here. Colours below are Catppuccin
+ * Mocha, matching paths.PALETTE.
+ */
+
+.ccas-panel {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: 12px;
+}
+
+/* ── header ─────────────────────────────────────────────────────────────── */
+
+.ccas-header        { padding: 12px 16px 8px 16px; }
+.ccas-chip          { padding: 4px 12px; border-radius: 999px;
+                      background: transparent; border: none; }
+.ccas-chip:hover    { background: rgba(255, 255, 255, 0.06); }
+.ccas-chip.current  { background: rgba(255, 255, 255, 0.10); }
+.ccas-chip-dot      { min-width: 8px; min-height: 8px; border-radius: 999px; }
+.ccas-email         { color: #9399b2; font-size: 0.9em; }
+.ccas-gear          { background: transparent; border: none; padding: 4px 8px; }
+
+/* ── usage ──────────────────────────────────────────────────────────────── */
+
+.ccas-usage-key     { color: #9399b2; font-family: monospace; }
+.ccas-usage-bar     { min-height: 6px; }
+.ccas-usage-bar trough  { min-height: 6px; border-radius: 999px;
+                          background: rgba(255, 255, 255, 0.07); }
+.ccas-usage-bar progress { min-height: 6px; border-radius: 999px;
+                           background: #89b4fa; }
+.ccas-usage-label   { color: #9399b2; font-size: 0.85em; }
+
+/* ── launch verbs ───────────────────────────────────────────────────────── */
+
+.ccas-verb          { padding: 10px 20px; border-radius: 8px;
+                      background: rgba(255, 255, 255, 0.06); border: none; }
+.ccas-verb:hover    { background: rgba(255, 255, 255, 0.12); }
+.ccas-verb:disabled { color: #585b70; }
+
+/* ── search and the two panes ───────────────────────────────────────────── */
+
+#ccas-search        { margin: 8px 16px; }
+.ccas-panes         { margin: 0 16px; }
+.ccas-project-row   { padding: 6px 10px; }
+.ccas-project-age   { color: #9399b2; font-family: monospace;
+                      font-size: 0.85em; }
+.ccas-session-row   { padding: 6px 10px; }
+.ccas-session-age   { color: #9399b2; font-family: monospace;
+                      font-size: 0.85em; }
+.ccas-empty         { color: #585b70; padding: 16px; }
+
+/* ── toggles and manage ─────────────────────────────────────────────────── */
+
+.ccas-toggles       { padding: 10px 16px; }
+.ccas-swatch        { min-width: 16px; min-height: 16px; padding: 0;
+                      border-radius: 999px; border: none; }
+.ccas-swatch.current { border: 2px solid #cdd6f4; }
+.ccas-manage        { padding: 8px 16px; }
+.ccas-danger        { color: #f38ba8; }
