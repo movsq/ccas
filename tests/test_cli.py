@@ -6,6 +6,7 @@ import types
 import pytest
 
 import ccas.format as fmt
+import ccas.panel as panel
 import ccas.paths as paths
 import ccas.registry as registry
 import ccas.cli as cli
@@ -1401,3 +1402,39 @@ def test_the_passthrough_still_wins_over_the_new_command(monkeypatch):
     monkeypatch.setattr(cli, "cmd_tty", lambda args, gui: seen.append(args) or 0)
     cli.main(["-p", "format"])
     assert seen == [["-p", "format"]]
+
+
+def test_the_panel_sets_one_tokens_colour():
+    make_account()
+    assert cli.dispatch_panel(
+        panel.Action("format_color", "work", ("%name", "#89b4fa"))) == 0
+    assert registry.find(registry.load(), "work")["format_colors"] \
+        == {"%name": "#89b4fa"}
+
+
+def test_the_panel_clears_a_colour_by_choosing_auto():
+    make_account()
+    cli.dispatch_panel(panel.Action("format_color", "work", ("%name", "dim")))
+    cli.dispatch_panel(panel.Action("format_color", "work", ("%name", "auto")))
+    assert registry.find(registry.load(), "work")["format_colors"] == {}
+
+
+def test_the_panel_rejects_a_bad_colour():
+    make_account()
+    assert cli.dispatch_panel(
+        panel.Action("format_color", "work", ("%name", "' x='y"))) == 1
+
+
+def test_the_panel_cannot_set_the_format_itself():
+    """Format… spawns a terminal instead — the panel is gone by the time it
+    starts, and a bar click has no stdin to prompt on."""
+    make_account()
+    with pytest.raises(ValueError):
+        cli.dispatch_panel(panel.Action("format", "work", "%name"))
+
+
+def test_the_format_button_opens_a_terminal(monkeypatch):
+    seen = []
+    monkeypatch.setattr(cli, "_in_terminal", lambda args: seen.append(args) or 0)
+    cli.dispatch_panel(panel.Action("edit_format", "work", None))
+    assert seen == [["format", "work"]]

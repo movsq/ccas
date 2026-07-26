@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from ccas import panel, paths, registry, usage
+from ccas import format as fmt, panel, paths, registry, usage
 
 
 @pytest.fixture
@@ -642,3 +642,26 @@ def test_the_focused_output_is_the_last_resort(monkeypatch):
     shell = FakeLayerShell()
     panel_ui._pin_to_output(FakeWindow(["DP-1", "HDMI-A-1"]), shell, None)
     assert shell.monitor.get_connector() == "DP-1"
+
+
+# ── the custom format ─────────────────────────────────────────────────────────
+
+def test_build_state_carries_the_format_and_its_tokens(reg):
+    """format_tokens is precomputed here so panel_ui never parses a format
+    string — the widget tree renders what it is handed and decides nothing."""
+    registry.set_field(reg, "one", "format", "%icon %name %icon %5h")
+    registry.save(reg)
+    state = panel.build_state("one")
+    assert state["format"] == "%icon %name %icon %5h"
+    assert state["format_tokens"] == ["%icon", "%name", "%5h"]
+    assert state["format_colors"] == {}
+
+
+def test_build_state_defaults_the_format_for_an_old_account(reg):
+    """An account written before the field existed is read, not migrated."""
+    account = registry.find(reg, "one")
+    del account["format"], account["format_colors"]
+    registry.save(reg)
+    state = panel.build_state("one")
+    assert state["format"] == fmt.DEFAULT_FORMAT
+    assert state["format_tokens"] == fmt.tokens_in(fmt.DEFAULT_FORMAT)

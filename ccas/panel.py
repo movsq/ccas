@@ -14,7 +14,7 @@ import subprocess
 import time
 from collections import namedtuple
 
-from . import history, label, paths, registry, usage
+from . import format as fmt, history, label, paths, registry, usage
 
 # What the widget tree hands back. `kind` picks the branch cli.dispatch_panel
 # takes, `slug` says whose, and `value` is that branch's argument — None for the
@@ -138,6 +138,12 @@ def build_state(slug: str, now=None) -> dict:
         "slug": slug,
         "accounts": _accounts(reg, slug),
         "display": account.get("display", "nickname"),
+        "format": account.get("format") or fmt.DEFAULT_FORMAT,
+        "format_colors": dict(account.get("format_colors") or {}),
+        # Precomputed so panel_ui parses nothing: the widget tree renders the
+        # list it is handed. Ordered and de-duplicated, so the dropdown reads
+        # left to right the way the label does.
+        "format_tokens": fmt.tokens_in(account.get("format") or fmt.DEFAULT_FORMAT),
         "hide_icon": bool(account.get("hide_icon")),
         "headless": bool(account.get("headless")),
         "dangerous": bool(account.get("dangerous")),

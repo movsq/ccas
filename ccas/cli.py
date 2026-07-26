@@ -218,6 +218,23 @@ def dispatch_panel(action):
         return _mutate(slug, "hide_icon", not account["hide_icon"])
     if kind in ("display", "color"):
         return _mutate(slug, kind, value)
+    if kind == "format_color":
+        token, color = value
+        if not fmt.valid_color(color):
+            return 1
+        account = registry.find(registry.load(), slug)
+        if account is None:
+            return 1
+        colors = dict(account.get("format_colors") or {})
+        if color == fmt.AUTO:
+            colors.pop(token, None)
+        else:
+            colors[token] = color
+        return _mutate(slug, "format_colors", colors)
+    # "format" is deliberately not a branch: the panel cannot prompt for free
+    # text, so the button spawns a terminal running the command instead.
+    if kind == "edit_format":
+        return _in_terminal(["format", slug])
     if kind == "add":
         return _in_terminal(["add"])
     if kind in ("rename", "remove"):
