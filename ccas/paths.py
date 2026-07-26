@@ -76,6 +76,17 @@ def menu_css() -> Path:
     return _env("CCAS_MENU_CSS", Path.home() / ".config" / "ccas" / "menu.css")
 
 
+def panel_output():
+    """Which output the panel opens on, or None for the compositor's choice.
+
+    A layer surface with no monitor set lands wherever the compositor decides,
+    which on a two-head setup is not reliably the one Waybar is on. The
+    connector name is the user's hardware ("HDMI-A-1"), so it is configuration
+    rather than something CCAS may hardcode.
+    """
+    return os.environ.get("CCAS_PANEL_OUTPUT") or None
+
+
 def ccs_bin() -> Path:
     return _env("CCAS_CCS_BIN", Path.home() / ".local/bin/ccs")
 

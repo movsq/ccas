@@ -52,6 +52,26 @@ def _load_css(display) -> None:
         display, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
 
 
+def _pin_to_output(window, LayerShell) -> None:
+    """Put the panel on the output CCAS_PANEL_OUTPUT names, if it names one.
+
+    Unset leaves it to the compositor, which on a two-head setup is not
+    reliably the output Waybar is on — measured 2026-07-26, where it opened on
+    the other monitor. Naming a connector that is not currently connected is
+    not an error: the monitor list changes when a cable does, and a panel that
+    refuses to open is worse than one on the wrong screen.
+    """
+    wanted = paths.panel_output()
+    if not wanted:
+        return
+    monitors = window.get_display().get_monitors()
+    for i in range(monitors.get_n_items()):
+        monitor = monitors.get_item(i)
+        if monitor.get_connector() == wanted:
+            LayerShell.set_monitor(window, monitor)
+            return
+
+
 def show(state: dict):
     """Open the panel, block until it closes, return the chosen Action or None.
 
@@ -59,11 +79,22 @@ def show(state: dict):
     reads that as an exit rather than as a command.
     """
     try:
+        # Before `import gi`, and load-bearing. gtk4-layer-shell has to come
+        # ahead of libwayland or every surface it makes silently degrades to an
+        # ordinary toplevel — measured 2026-07-26: the panel opened as a normal
+        # window on the other monitor, with "GtkWindow is not a layer surface"
+        # on stderr and nothing on the bar. The library's own advice is
+        # LD_PRELOAD, but that would have to live in the ccs launcher and would
+        # then be inherited by every claude session ccs execs. An RTLD_GLOBAL
+        # load here is the same fix scoped to the one process that needs it.
+        import ctypes
+        ctypes.CDLL("libgtk4-layer-shell.so.0", mode=ctypes.RTLD_GLOBAL)
+
         import gi
         gi.require_version("Gtk", "4.0")
         gi.require_version("Gtk4LayerShell", "1.0")
         from gi.repository import Gtk, Gtk4LayerShell as LayerShell
-    except (ImportError, ValueError):
+    except (ImportError, ValueError, OSError):
         _notify(MISSING_DEPS)
         return None
 
@@ -76,6 +107,7 @@ def show(state: dict):
         window.add_css_class("ccas-panel")
 
         LayerShell.init_for_window(window)
+        _pin_to_output(window, LayerShell)
         LayerShell.set_layer(window, LayerShell.Layer.OVERLAY)
         LayerShell.set_anchor(window, LayerShell.Edge.TOP, True)
         LayerShell.set_margin(window, LayerShell.Edge.TOP, 8)

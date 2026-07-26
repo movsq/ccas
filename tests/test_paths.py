@@ -50,3 +50,19 @@ def test_menu_css_is_env_overridable(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_MENU_CSS", str(tmp_path / "m.css"))
     importlib.reload(paths)
     assert paths.menu_css() == tmp_path / "m.css"
+
+
+def test_panel_output_is_unset_by_default(monkeypatch):
+    """Unset means the compositor's choice. CCAS must not hardcode a connector
+    name — the bar's output is the user's hardware, not ours."""
+    monkeypatch.delenv("CCAS_PANEL_OUTPUT", raising=False)
+    importlib.reload(paths)
+    assert paths.panel_output() is None
+
+
+def test_panel_output_is_env_overridable(monkeypatch):
+    """A layer surface with no monitor set lands wherever the compositor puts
+    it — which was the Dell, not the bar's output."""
+    monkeypatch.setenv("CCAS_PANEL_OUTPUT", "HDMI-A-1")
+    importlib.reload(paths)
+    assert paths.panel_output() == "HDMI-A-1"

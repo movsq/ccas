@@ -333,3 +333,24 @@ def test_show_reports_missing_dependencies_rather_than_dying(monkeypatch, capsys
     monkeypatch.setattr(panel_ui.shutil, "which", lambda _n: None)
     assert panel_ui.show({"slug": "one"}) is None
     assert "gtk4-layer-shell" in capsys.readouterr().err
+
+
+def test_layer_shell_is_loaded_before_gtk(monkeypatch):
+    """gtk4-layer-shell must be linked ahead of libwayland or its surfaces
+    silently degrade to ordinary windows.
+
+    Measured on the real system 2026-07-26: without this the panel opened as a
+    normal toplevel on whichever output the compositor felt like, with
+    'GtkWindow is not a layer surface' on stderr and nothing on the bar. A
+    ctypes RTLD_GLOBAL load before `import gi` is the fix that needs no
+    LD_PRELOAD in the launcher.
+    """
+    import ast
+    import pathlib
+    tree = ast.parse(pathlib.Path("ccas/panel_ui.py").read_text())
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "show")
+    body = ast.dump(fn)
+    assert "RTLD_GLOBAL" in body
+    assert body.index("RTLD_GLOBAL") < body.index("'gi'"), \
+        "the preload must happen before gi is imported"
