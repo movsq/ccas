@@ -32,6 +32,15 @@ chmod +x "$BIN_DIR/ccs"
 
 export CCAS_CCS_BIN="${CCAS_CCS_BIN:-$BIN_DIR/ccs}"
 
+# The panel's stylesheet, once. Never overwritten: it is the user's the moment
+# it exists, the same stance CCAS takes toward style.css. A reinstall that
+# reverted their colours would be a deletion in all but name.
+MENU_CSS="${CCAS_MENU_CSS:-$HOME/.config/ccas/menu.css}"
+if [ ! -e "$MENU_CSS" ]; then
+  mkdir -p "$(dirname "$MENU_CSS")"
+  cp "$SRC/assets/menu.css" "$MENU_CSS"
+fi
+
 # Re-link every existing account so entries added by a Claude Code update get
 # shared rather than stranded inside one account directory.
 "$BIN_DIR/ccs" relink || true

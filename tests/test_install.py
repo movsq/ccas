@@ -137,3 +137,42 @@ def test_uninstall_purge_moves_accounts_to_trash_intact(tmp_path):
     survivors = list((tmp_path / "trash").rglob("precious.json"))
     assert survivors, "account data must be moved to trash, never deleted"
     assert survivors[0].read_text() == "do not lose me"
+
+
+def _sandbox_env(tmp_path):
+    env = dict(os.environ)
+    env.update({
+        "CCAS_HOME": str(tmp_path / "claude"),
+        "CCAS_CLAUDE_JSON": str(tmp_path / "claude.json"),
+        "CCAS_ACCOUNTS_ROOT": str(tmp_path / "accts"),
+        "CCAS_TRASH": str(tmp_path / "trash"),
+        "CCAS_WAYBAR_CONFIG": str(tmp_path / "config.jsonc"),
+        "CCAS_BASHRC": str(tmp_path / "bashrc"),
+        "CCAS_BIN_DIR": str(tmp_path / "bin"),
+        "CCAS_SHARE_DIR": str(tmp_path / "share"),
+        "CCAS_MENU_CSS": str(tmp_path / "menu.css"),
+        "CCAS_SKIP_RELOAD": "1",
+    })
+    (tmp_path / "claude").mkdir()
+    (tmp_path / "config.jsonc").write_text('{\n    "modules-right": ["clock"]\n}\n')
+    return env
+
+
+def test_install_ships_the_panel_stylesheet(tmp_path):
+    """The panel opens without it, unstyled. Shipping it once is what makes it
+    a thing the user can edit rather than a thing they have to write."""
+    env = _sandbox_env(tmp_path)
+    subprocess.run(["bash", str(ROOT / "install.sh")], env=env, check=True,
+                   capture_output=True, text=True)
+    assert (tmp_path / "menu.css").read_text() == \
+        (ROOT / "assets" / "menu.css").read_text()
+
+
+def test_install_never_overwrites_an_edited_stylesheet(tmp_path):
+    """The same stance CCAS takes toward style.css: it is the user's the moment
+    it exists. A reinstall that reverted their colours would be a deletion."""
+    env = _sandbox_env(tmp_path)
+    (tmp_path / "menu.css").write_text("/* mine */\n")
+    subprocess.run(["bash", str(ROOT / "install.sh")], env=env, check=True,
+                   capture_output=True, text=True)
+    assert (tmp_path / "menu.css").read_text() == "/* mine */\n"
