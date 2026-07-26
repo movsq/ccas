@@ -276,6 +276,17 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   on an idle output, so a layer surface there receives nothing and the test
   reads as a broken feature. Half a day went into that once — `docs/why.md` has
   it. A uinput keyboard has no such limit; it is a real device.
+- **Open the panel with `CCAS_PANEL_OUTPUT=<connector>` when you drive it
+  yourself.** It skips the pointer probe, which is the previous rule's victim:
+  the probe waits for `wl_pointer.enter`, an idle output never sends one, and
+  the panel then opens nowhere at all while its process sits there presenting
+  frames. `(CCAS_PANEL_OUTPUT=HDMI-A-1 setsid ccs --gui <slug> >log 2>&1 &)`,
+  sleep 3, then `grim`.
+- **`pkill -f` matches the shell you typed it in.** `pkill -f "ccs --gui"` kills
+  the bash running it, because that string is in its own `/proc/…/cmdline` — so
+  the panel is never launched and reads as a panel that will not open. It cost
+  half a dozen rounds of that once. Kill a pid from `pgrep`, or pick a pattern
+  the command line cannot contain.
 - **Clicking something yourself: `swaymsg seat - cursor move`, never `cursor
   set`.** `set` teleports the pointer — the cursor lands on the target and
   `grim -c` proves it, but no motion event reaches a layer surface, so it keeps
