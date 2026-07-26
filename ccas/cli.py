@@ -229,7 +229,11 @@ def _format_edit(reg, slug: str, account: dict) -> int:
 
 
 def dispatch_panel(action):
-    """Turn the panel's one Action into the command it names.
+    """Turn a panel Action into the command it names.
+
+    Called twice over, from two moments: once with whatever show() returned, and
+    directly from the open panel for every panel.STAYS_OPEN kind — a setting is
+    applied where it was ticked, without the window going away.
 
     Every branch goes through the entry point the retired fuzzel menu used, so
     the panel gains no write path of its own: set_headless() keeps the runner
@@ -577,8 +581,12 @@ def cmd_panel(slug: str) -> int:
         while True:
             if where.get("output"):
                 panel.claim(slug, where["output"])
+            # `apply`: the settings kinds are run inside the open panel and
+            # never come back as an Action, so ticking a box changes the thing
+            # and leaves the panel up. Same branches, same writes — only the
+            # moment differs.
             action = panel_ui.show(panel.build_state(slug), gate,
-                                   where.get("output"))
+                                   where.get("output"), dispatch_panel)
             if where.get("toggled_off"):
                 # Not a cancelled panel: the click did what it was for, which
                 # was to shut the one that was already open.

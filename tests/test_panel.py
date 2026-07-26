@@ -782,3 +782,38 @@ def test_the_colour_row_is_only_offered_for_the_custom_mode():
     assert panel.shows_color_row({"display": "custom"}) is True
     for mode in ("nickname", "index", "claude code", "icon only"):
         assert panel.shows_color_row({"display": mode}) is False
+
+
+def test_a_setting_is_applied_without_shutting_the_panel():
+    """Ticking 'hide the icon' used to end the panel: every button went through
+    the one Action the panel returns, so a setting and a launch closed alike.
+    The settings kinds are applied in place instead — you came to change several
+    things, and reopening the panel per tick is not how that reads."""
+    from ccas import panel
+    for kind in ("headless", "dangerous", "hide_icon",
+                 "display", "color", "format_color"):
+        assert kind in panel.STAYS_OPEN
+    # A launch, a switch and anything that spawns a terminal still end it: the
+    # panel has handed the screen to something else.
+    for kind in ("new", "resume", "switch", "edit_format",
+                 "add", "rename", "remove"):
+        assert kind not in panel.STAYS_OPEN
+
+
+def test_the_panel_is_given_a_way_to_apply_a_setting(monkeypatch):
+    """cmd_panel passes dispatch_panel down as `apply`, so the widget tree can
+    run a settings action without the show() call returning."""
+    from ccas import cli, panel, panel_ui
+    seen = {}
+
+    def fake_show(state, gate=None, output=None, apply=None):
+        seen["apply"] = apply
+        return None
+
+    monkeypatch.setattr(panel_ui, "show", fake_show)
+    monkeypatch.setattr(panel, "close_running", lambda: None)
+    monkeypatch.setattr(panel, "claim", lambda *a, **k: None)
+    monkeypatch.setattr(panel, "release", lambda: None)
+    monkeypatch.setattr(panel, "build_state", lambda slug: {"slug": slug})
+    cli.cmd_panel("one")
+    assert seen["apply"] is cli.dispatch_panel

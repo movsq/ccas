@@ -1234,7 +1234,7 @@ def test_gui_mode_menu_opens_the_panel_not_the_picker(monkeypatch):
     """The whole change, in one test: a bar click reaches the panel."""
     make_account("one")
     monkeypatch.setattr(cli.pickers, "choose", _panel_never_called)
-    monkeypatch.setattr(cli.panel_ui, "show", lambda s, gate=None, output=None: None)
+    monkeypatch.setattr(cli.panel_ui, "show", lambda s, gate=None, output=None, apply=None: None)
     assert cli.cmd_mode_menu("one", True) == 1
 
 
@@ -1244,7 +1244,7 @@ def test_switch_reopens_the_panel_on_the_other_account(monkeypatch):
     make_account("two")
     seen = []
 
-    def fake_show(state, gate=None, output=None):
+    def fake_show(state, gate=None, output=None, apply=None):
         seen.append(state["slug"])
         return (cli.panel.Action("switch", "two", None) if len(seen) == 1
                 else None)
@@ -1273,7 +1273,7 @@ def _gated(monkeypatch, connector):
     """
     opened = []
 
-    def fake_show(state, gate=None, output=None):
+    def fake_show(state, gate=None, output=None, apply=None):
         if gate is not None and not gate(connector):
             return None
         opened.append(state["slug"])
@@ -1325,7 +1325,7 @@ def test_the_open_panel_is_closed_after_the_probe_and_not_before(monkeypatch, tm
     monkeypatch.setattr(cli.panel, "close_running",
                         lambda: order.append("closed") or None)
 
-    def fake_show(state, gate=None, output=None):
+    def fake_show(state, gate=None, output=None, apply=None):
         order.append("probed")
         gate("DP-1")
         return None
@@ -1347,7 +1347,7 @@ def test_a_chip_click_does_not_make_the_panel_close_itself(monkeypatch, tmp_path
                         lambda: closes.append(1) or None)
     seen = []
 
-    def fake_show(state, gate=None, output=None):
+    def fake_show(state, gate=None, output=None, apply=None):
         gate("DP-1")
         seen.append(state["slug"])
         return (cli.panel.Action("switch", "two", None) if len(seen) == 1
@@ -1370,7 +1370,7 @@ def test_a_chip_click_reopens_where_the_panel_already_was(monkeypatch, tmp_path)
     monkeypatch.setattr(cli.panel, "close_running", lambda: None)
     given = []
 
-    def fake_show(state, gate=None, output=None):
+    def fake_show(state, gate=None, output=None, apply=None):
         given.append(output)
         gate(output or "HDMI-A-1")
         return (cli.panel.Action("switch", "two", None) if len(given) == 1
@@ -1389,7 +1389,7 @@ def test_the_open_panel_records_the_monitor_it_opened_on(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.panel, "close_running", lambda: None)
     held = []
 
-    def fake_show(state, gate=None, output=None):
+    def fake_show(state, gate=None, output=None, apply=None):
         gate("HDMI-A-1")
         held.append(cli.panel.running_panel())
         return None
@@ -1419,7 +1419,7 @@ def test_the_open_panel_is_findable_and_stops_being_so(monkeypatch, tmp_path):
     make_account("one")
     held = []
 
-    def fake_show(_state, gate=None, output=None):
+    def fake_show(_state, gate=None, output=None, apply=None):
         gate("DP-1")
         held.append(cli.panel.running_panel())
         raise KeyboardInterrupt

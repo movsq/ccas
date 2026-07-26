@@ -21,7 +21,17 @@ from . import format as fmt, history, label, paths, registry, usage
 # kinds that take none.
 Action = namedtuple("Action", "kind slug value")
 
-WINDOW_LABELS = {"five_hour": "5h", "seven_day": "wk"}
+# The kinds that are a *setting*, not a departure. Everything else hands the
+# screen to something else — a session, another account's panel, a terminal —
+# so the panel closing is part of what was asked for. These are not: ticking
+# "hide the icon" and having the panel vanish means reopening it to tick the
+# next thing, which is the opposite of gathering the switches in one place.
+# cli.dispatch_panel runs them in place, through the same branches as before.
+STAYS_OPEN = frozenset({
+    "headless", "dangerous", "hide_icon", "display", "color", "format_color",
+})
+
+WINDOW_LABELS ={"five_hour": "5h", "seven_day": "wk"}
 
 UNTITLED = "(untitled)"
 

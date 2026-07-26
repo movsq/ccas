@@ -128,7 +128,7 @@ def _pin_to_output(window, LayerShell, output=None) -> None:
             return
 
 
-def show(state: dict, gate=None, output=None):
+def show(state: dict, gate=None, output=None, apply=None):
     """Open the panel, block until it closes, return the chosen Action or None.
 
     None means cancelled — Esc, or a click outside the surface. cli.dispatch_panel
@@ -144,6 +144,11 @@ def show(state: dict, gate=None, output=None):
     just closed, on a chip click. It skips the probe, which would be both a
     delay and a wrong answer: the surface that has just gone away is this very
     panel's, on the output the probe would be asking about.
+
+    `apply` runs a panel.STAYS_OPEN action there and then — cli.dispatch_panel,
+    which the returned Action would otherwise have reached after the window was
+    gone. A setting is not a departure, so it does not end the panel; the
+    toggles are rebuilt from fresh state instead.
     """
     try:
         # Before `import gi`, and load-bearing. gtk4-layer-shell has to come
@@ -188,7 +193,7 @@ def show(state: dict, gate=None, output=None):
             if gate is not None and not gate(connector):
                 app.quit()   # the same widget, on the same bar: it just closed
                 return
-            _open(app, Gtk, LayerShell, state, chosen, connector)
+            _open(app, Gtk, LayerShell, state, chosen, connector, apply)
 
         _pointer_output(app, Gtk, GLib, LayerShell, state, settled,
                         skip=output is not None)
@@ -304,7 +309,7 @@ def Gdk_display(Gtk):
     return Gdk.Display.get_default()
 
 
-def _open(app, Gtk, LayerShell, state, chosen, connector) -> None:
+def _open(app, Gtk, LayerShell, state, chosen, connector, apply=None) -> None:
     """Build the panel proper on `connector`."""
     window = Gtk.ApplicationWindow(application=app)
     window.add_css_class("ccas-scrim")
@@ -335,7 +340,7 @@ def _open(app, Gtk, LayerShell, state, chosen, connector) -> None:
     frame.set_halign(Gtk.Align.CENTER)
     frame.set_valign(Gtk.Align.START)
     frame.set_margin_top(8)
-    frame.append(build_body(state, chosen, window))
+    frame.append(build_body(state, chosen, window, apply))
 
     scrim = Gtk.Box()
     scrim.set_hexpand(True)
@@ -559,6 +564,7 @@ def _empty(text):
 
 
 def _clear(listbox):
+    """Empty any GTK4 container that takes remove() — a ListBox or a Box."""
     child = listbox.get_first_child()
     while child is not None:
         nxt = child.get_next_sibling()
@@ -566,20 +572,32 @@ def _clear(listbox):
         child = nxt
 
 
-def build_body(state, chosen, window):
+def build_body(state, chosen, window, apply=None):
     """The panel's root widget: header, verbs, search, the two panes, toggles.
 
     `state` is rendered, never consulted for a decision — panel.py already made
     them. The one thing held here is the unfiltered state, so that a keystroke
     refilters it instead of rescanning ~/.claude/projects.
     """
-    from gi.repository import Gtk
-
-    def pick(action):
-        chosen["action"] = action
-        window.close()
+    from gi.repository import Gtk, GLib
 
     slug = state["slug"]
+    # Set while the toggles are being rebuilt: set_active() and set_selected()
+    # emit the very signals that call pick(), so a refresh would otherwise
+    # re-apply everything it just rendered.
+    filling_toggles = {"on": False}
+
+    def pick(action):
+        if apply is not None and action.kind in panel.STAYS_OPEN:
+            if filling_toggles["on"]:
+                return
+            apply(action)
+            # Out of the signal handler before the widget that emitted it is
+            # destroyed, and after the registry write the refresh reads back.
+            GLib.idle_add(refresh_toggles)
+            return
+        chosen["action"] = action
+        window.close()
     root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
     revealer = Gtk.Revealer()
@@ -732,7 +750,24 @@ def build_body(state, chosen, window):
                        pick(panel.Action("new", slug, view["project"])))
     resume_button.connect("clicked", lambda _b: resume_selected())
 
-    root.append(_build_toggles(state, pick))
+    # A holder, so a setting can be applied and re-rendered without rebuilding
+    # the panes: the search text and the selected session are the user's place
+    # in the panel, and ticking a checkbox is no reason to lose either.
+    toggles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+
+    def refresh_toggles():
+        filling_toggles["on"] = True
+        try:
+            _clear(toggles)
+            # Fresh, not the captured `state`: display mode decides whether the
+            # format row is there at all, and the account is on disk now.
+            toggles.append(_build_toggles(panel.build_state(slug), pick))
+        finally:
+            filling_toggles["on"] = False
+        return False  # a one-shot idle callback
+
+    toggles.append(_build_toggles(state, pick))
+    root.append(toggles)
     revealer.set_child(_build_manage(state, pick))
     root.append(revealer)
 
