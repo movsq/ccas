@@ -201,3 +201,82 @@ def test_no_history_leaves_the_selection_empty_rather_than_erroring(reg):
     assert state["projects"] == []
     assert state["selected_project"] is None
     assert state["selected_session"] is None
+
+
+def test_empty_query_restores_everything(reg, hist):
+    """Clearing the box must not leave the panes narrowed."""
+    state = panel.build_state("one", now=hist)
+    assert panel.filter_state(state, "") == state
+    assert panel.filter_state(state, "   ") == state
+
+
+def test_filter_matches_a_session_title(reg, hist):
+    """The common case: you remember what it was called."""
+    state = panel.filter_state(panel.build_state("one", now=hist), "beta")
+    uuids = [s["uuid"] for rows in state["sessions"].values() for s in rows]
+    assert uuids == ["u3"]
+
+
+def test_filter_is_case_insensitive(reg, hist):
+    state = panel.filter_state(panel.build_state("one", now=hist), "ONLY IN BETA")
+    assert [p["short"].split("/")[-1] for p in state["projects"]] == ["beta"]
+
+
+def test_filter_matches_a_project_path_and_keeps_its_sessions(reg, hist, tmp_path):
+    """Typing a directory name is how the search doubles as a project filter, so
+    a path match must not then drop the sessions under it for not matching."""
+    state = panel.filter_state(panel.build_state("one", now=hist), "alpha")
+    assert [p["path"] for p in state["projects"]] == [str(tmp_path / "alpha")]
+    assert [s["uuid"] for s in state["sessions"][str(tmp_path / "alpha")]] == \
+        ["u1", "u2"]
+
+
+def test_filter_narrows_the_project_column_to_projects_with_a_match(reg, hist):
+    """B, not A: the search earns its place exactly when you cannot remember
+    which project it was in, so the left column has to move too."""
+    state = panel.filter_state(panel.build_state("one", now=hist), "gamma")
+    assert len(state["projects"]) == 1
+
+
+def test_filter_moves_the_selection_to_the_best_match(reg, hist, tmp_path):
+    """The selection has to follow, or Enter resumes something you filtered
+    away."""
+    state = panel.filter_state(panel.build_state("one", now=hist), "beta")
+    assert state["selected_project"] == str(tmp_path / "beta")
+    assert state["selected_session"] == "u3"
+
+
+def test_filter_with_no_match_empties_both_panes(reg, hist):
+    """Empty and honest. There is nothing to select and Enter must do nothing."""
+    state = panel.filter_state(panel.build_state("one", now=hist), "zzzz")
+    assert state["projects"] == []
+    assert state["sessions"] == {}
+    assert state["selected_project"] is None
+    assert state["selected_session"] is None
+
+
+def test_filter_keeps_the_project_column_in_recency_order(reg, hist):
+    """Filtering narrows; it must not reorder. A match list sorted by relevance
+    would put an old project above a new one and break the top-row default."""
+    state = panel.filter_state(panel.build_state("one", now=hist), "only")
+    assert [p["short"].split("/")[-1] for p in state["projects"]] == \
+        ["beta", "gamma"]
+
+
+def test_filter_does_not_mutate_the_state_it_was_given(reg, hist):
+    """The unfiltered state is kept so clearing the box is free, rather than a
+    rescan of ~/.claude/projects on every backspace."""
+    state = panel.build_state("one", now=hist)
+    before = len(state["projects"])
+    panel.filter_state(state, "beta")
+    assert len(state["projects"]) == before
+    assert len(state["sessions"]) == 3
+
+
+def test_filter_keeps_the_account_half_untouched(reg, hist):
+    """Typing in the search must not blank the usage bars or the chip row."""
+    state = panel.build_state("one", now=hist)
+    narrowed = panel.filter_state(state, "beta")
+    assert narrowed["usage"] == state["usage"]
+    assert narrowed["accounts"] == state["accounts"]
+    assert narrowed["dangerous"] == state["dangerous"]

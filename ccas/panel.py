@@ -81,6 +81,43 @@ def _panes(now: float):
     return projects, by_project
 
 
+def filter_state(state: dict, query: str) -> dict:
+    """Narrow both panes to `query`. A new dict; the argument is untouched.
+
+    Both panes, not just the sessions: the search earns its place when you
+    cannot remember which project something was in, and a left column that
+    stays full while the right one empties says the opposite.
+
+    A project whose *path* matches keeps all of its sessions, so typing a
+    directory name works as a project filter rather than as a filter that finds
+    the project and then hides everything inside it.
+
+    Narrowing only — never reordering. The panes are in recency order and that
+    is what makes the top row the right default; ranking matches by relevance
+    would put an old project above a newer one the moment you typed.
+    """
+    q = query.strip().lower()
+    if not q:
+        return state
+
+    sessions, projects = {}, []
+    for project in state["projects"]:
+        rows = state["sessions"].get(project["path"], [])
+        hits = (rows if q in project["short"].lower()
+                else [s for s in rows if q in s["title"].lower()])
+        if hits:
+            projects.append(project)
+            sessions[project["path"]] = hits
+
+    selected = projects[0]["path"] if projects else None
+    return {**state,
+            "projects": projects,
+            "sessions": sessions,
+            "selected_project": selected,
+            "selected_session": (sessions[selected][0]["uuid"] if selected
+                                 else None)}
+
+
 def build_state(slug: str, now=None) -> dict:
     """Everything the panel renders, as plain data.
 
