@@ -7,6 +7,10 @@ the panel's behaviour inside the test suite rather than inside a toolkit.
 
 test_panel_never_imports_gi pins the split.
 """
+import json
+import os
+import signal
+import subprocess
 import time
 from collections import namedtuple
 
@@ -144,3 +148,74 @@ def build_state(slug: str, now=None) -> dict:
         "selected_session": (by_project[selected][0]["uuid"] if selected
                              else None),
     }
+
+
+# ── the open panel ───────────────────────────────────────────────────────────
+
+
+def running_panel():
+    """(pid, slug) of the panel that is open, or None.
+
+    A pid that no longer exists is None, not a stale answer: the panel is killed
+    with SIGTERM, which does not run the finally block that would have released
+    the lock, so a leftover file is the normal case rather than the odd one.
+    """
+    try:
+        pid_text, slug = paths.panel_lock().read_text(encoding="utf-8").split(None, 1)
+        pid = int(pid_text)
+    except (OSError, ValueError):
+        return None
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        return None
+    return pid, slug.strip()
+
+
+def claim(slug: str) -> None:
+    lock = paths.panel_lock()
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(f"{os.getpid()} {slug}", encoding="utf-8")
+
+
+def release() -> None:
+    paths.panel_lock().unlink(missing_ok=True)
+
+
+def close_running():
+    """Close whatever panel is open and say whose it was, or None if none was.
+
+    The bar's click is a toggle. The caller compares the returned slug with the
+    one it was asked to open: equal means the same widget was clicked twice and
+    nothing should reopen, different means the user went to another account.
+    """
+    found = running_panel()
+    if found is None:
+        release()  # a lock with a dead pid in it, and nothing to signal
+        return None
+    pid, slug = found
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+    release()
+    return slug
+
+
+def current_output():
+    """The connector the pointer is on, asked of sway, or None if it cannot say.
+
+    sway focuses the output under the pointer, so the focused output is the one
+    whose bar was just clicked. None leaves the choice to the compositor, which
+    is what CCAS_PANEL_OUTPUT overrides and what a non-sway session gets.
+    """
+    try:
+        proc = subprocess.run(["swaymsg", "-t", "get_outputs"],
+                              capture_output=True, text=True, timeout=2)
+        outputs = json.loads(proc.stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    for output in outputs:
+        if isinstance(output, dict) and output.get("focused"):
+            return output.get("name")
+    return None

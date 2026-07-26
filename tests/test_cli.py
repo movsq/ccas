@@ -23,6 +23,8 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_TRASH", str(tmp_path / "trash"))
     monkeypatch.setenv("CCAS_WAYBAR_CONFIG", str(cfg))
     monkeypatch.setenv("CCAS_BASHRC", str(tmp_path / "bashrc"))
+    # cmd_panel reads and writes it, and the real one names a live pid.
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
     for module in (paths, registry, cli):
         importlib.reload(module)
     monkeypatch.setattr(cli.waybar, "reload", lambda: None)
@@ -1247,3 +1249,45 @@ def test_terminal_mode_menu_still_uses_fzf(monkeypatch):
     monkeypatch.setattr(cli.panel_ui, "show", _panel_never_called)
     monkeypatch.setattr(cli.pickers, "choose", lambda *a, **k: None)
     assert cli.cmd_mode_menu("one", False) == 1
+
+
+def test_clicking_the_same_widget_twice_closes_the_panel(monkeypatch):
+    """The bar's click is a toggle. A second one on the widget that opened the
+    panel closes it and opens nothing — anything else means the only way to
+    dismiss it is to find its close button."""
+    make_account("one")
+    monkeypatch.setattr(cli.panel, "close_running", lambda: "one")
+    monkeypatch.setattr(cli.panel_ui, "show", _panel_never_called)
+    assert cli.cmd_panel("one") == 0
+
+
+def test_clicking_another_account_replaces_the_open_panel(monkeypatch):
+    """Two widgets, one panel: the second account's click closes the first
+    account's panel and opens its own, rather than stacking them."""
+    make_account("one")
+    make_account("two")
+    monkeypatch.setattr(cli.panel, "close_running", lambda: "one")
+    seen = []
+    monkeypatch.setattr(cli.panel_ui, "show",
+                        lambda state: seen.append(state["slug"]))
+    cli.cmd_panel("two")
+    assert seen == ["two"]
+
+
+def test_the_open_panel_is_findable_and_stops_being_so(monkeypatch, tmp_path):
+    """The lock is claimed for the whole time the panel is up and gone after,
+    including when the panel raises — a lock outliving its process makes the
+    next click a no-op."""
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
+    make_account("one")
+    held = []
+
+    def fake_show(_state):
+        held.append(cli.panel.running_panel())
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.panel_ui, "show", fake_show)
+    with pytest.raises(KeyboardInterrupt):
+        cli.cmd_panel("one")
+    assert held == [(__import__("os").getpid(), "one")]
+    assert cli.panel.running_panel() is None

@@ -66,3 +66,18 @@ def test_panel_output_is_env_overridable(monkeypatch):
     monkeypatch.setenv("CCAS_PANEL_OUTPUT", "HDMI-A-1")
     importlib.reload(paths)
     assert paths.panel_output() == "HDMI-A-1"
+
+
+def test_panel_lock_lives_in_the_runtime_dir(monkeypatch):
+    """One open panel per session, so the toggle knows what to close. The
+    runtime dir is where a pid that dies with the session belongs."""
+    monkeypatch.delenv("CCAS_PANEL_LOCK", raising=False)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+    importlib.reload(paths)
+    assert paths.panel_lock() == Path("/run/user/1000/ccas-panel.lock")
+
+
+def test_panel_lock_is_env_overridable(monkeypatch, tmp_path):
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "lock"))
+    importlib.reload(paths)
+    assert paths.panel_lock() == tmp_path / "lock"

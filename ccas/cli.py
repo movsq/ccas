@@ -413,13 +413,25 @@ def _color_menu(reg, slug: str, gui: bool) -> int:
 
 
 def cmd_panel(slug: str) -> int:
-    """The GUI door. Loops so a chip click reopens rather than exits."""
-    while True:
-        action = panel_ui.show(panel.build_state(slug))
-        result = dispatch_panel(action)
-        if result is not SWITCH:
-            return result
-        slug = action.slug
+    """The GUI door. Loops so a chip click reopens rather than exits.
+
+    The bar's click is a toggle: whatever panel is open closes first, and if it
+    was this same widget's, that is the whole of it. Clicking a widget to open
+    something and then having no way to shut it from the same widget was the
+    complaint that put this here.
+    """
+    if panel.close_running() == slug:
+        return 0
+    try:
+        while True:
+            panel.claim(slug)
+            action = panel_ui.show(panel.build_state(slug))
+            result = dispatch_panel(action)
+            if result is not SWITCH:
+                return result
+            slug = action.slug
+    finally:
+        panel.release()
 
 
 def cmd_mode_menu(slug: str, gui: bool) -> int:

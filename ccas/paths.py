@@ -87,6 +87,17 @@ def panel_output():
     return os.environ.get("CCAS_PANEL_OUTPUT") or None
 
 
+def panel_lock() -> Path:
+    """Where the open panel records its pid, so a second click can close it.
+
+    The runtime dir, not a config dir: it holds a pid, which means nothing after
+    the session that owns it ends. Falls back to /tmp for the login that has no
+    XDG_RUNTIME_DIR — a stale file there is handled the same way a stale pid is.
+    """
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    return _env("CCAS_PANEL_LOCK", Path(runtime) / "ccas-panel.lock")
+
+
 def ccs_bin() -> Path:
     return _env("CCAS_CCS_BIN", Path.home() / ".local/bin/ccs")
 

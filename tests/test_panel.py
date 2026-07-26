@@ -354,3 +354,120 @@ def test_layer_shell_is_loaded_before_gtk(monkeypatch):
     assert "RTLD_GLOBAL" in body
     assert body.index("RTLD_GLOBAL") < body.index("'gi'"), \
         "the preload must happen before gi is imported"
+
+
+# ── the open-panel lock ──────────────────────────────────────────────────────
+# A bar click is a toggle: the second one closes what the first one opened. That
+# needs the panel process to be findable, which is all the lock is for. It is
+# not mutual exclusion — two panels at once is not a corruption, just a mess.
+
+
+@pytest.fixture
+def lock(monkeypatch, tmp_path):
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
+    return tmp_path / "panel.lock"
+
+
+def test_claim_records_this_process_and_its_account(lock):
+    panel.claim("one")
+    assert panel.running_panel() == (os.getpid(), "one")
+
+
+def test_release_leaves_nothing_behind(lock):
+    panel.claim("one")
+    panel.release()
+    assert panel.running_panel() is None
+    assert not lock.exists()
+
+
+def test_nothing_is_running_without_a_lock(lock):
+    assert panel.running_panel() is None
+    assert panel.close_running() is None
+
+
+def test_close_running_names_the_account_it_closed(monkeypatch, lock):
+    """The caller compares that slug with its own: same means the click was a
+    second click on the same widget and the panel should stay closed, different
+    means the user asked for another account and one opens."""
+    signalled = []
+    monkeypatch.setattr(panel.os, "kill", lambda pid, sig: signalled.append((pid, sig)))
+    panel.claim("two")
+    assert panel.close_running() == "two"
+    # The liveness probe is a kill(pid, 0) of its own; the signal that closes it
+    # is the one being pinned here.
+    assert (os.getpid(), panel.signal.SIGTERM) in signalled
+
+
+def test_close_running_clears_the_lock_even_though_the_panel_cannot(monkeypatch, lock):
+    """SIGTERM does not run a finally block, so the panel it kills never gets to
+    release its own lock. Whoever sent the signal has to."""
+    monkeypatch.setattr(panel.os, "kill", lambda pid, sig: None)
+    panel.claim("two")
+    panel.close_running()
+    assert not lock.exists()
+
+
+def test_a_dead_panel_is_nothing_to_close(monkeypatch, lock):
+    """A pid outliving its process would make the widget's first click a no-op
+    that closes nothing — the toggle stuck in the off position forever."""
+    lock.write_text("999999 one", encoding="utf-8")
+
+    def gone(pid, sig):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(panel.os, "kill", gone)
+    assert panel.running_panel() is None
+    assert panel.close_running() is None
+
+
+def test_a_damaged_lock_is_ignored_rather_than_raised(lock):
+    """It lives in a directory anything may write to; a bar click must open the
+    panel regardless of what it finds there."""
+    lock.write_text("not a pid at all", encoding="utf-8")
+    assert panel.running_panel() is None
+
+
+# ── which output the panel opens on ──────────────────────────────────────────
+
+
+def _fake_sway(monkeypatch, payload, rc=0):
+    class R:
+        returncode = rc
+        stdout = payload
+
+    monkeypatch.setattr(panel.subprocess, "run", lambda *a, **k: R())
+
+
+def test_current_output_is_the_one_the_pointer_is_on(monkeypatch):
+    """sway focuses the output under the pointer, so the focused one is the
+    monitor whose bar was clicked.
+
+    Reported on the real system: clicked on the left screen, opened on the
+    right. A layer surface with no monitor set goes wherever the compositor
+    likes, and the panel then had the keyboard on a screen the user was not
+    looking at — which is also why Escape appeared not to work.
+    """
+    _fake_sway(monkeypatch, json.dumps([
+        {"name": "DP-1", "focused": False},
+        {"name": "HDMI-A-1", "focused": True},
+    ]))
+    assert panel.current_output() == "HDMI-A-1"
+
+
+def test_current_output_is_none_when_sway_is_not_there(monkeypatch):
+    """Another compositor, or none. The panel still has to open."""
+    def boom(*a, **k):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(panel.subprocess, "run", boom)
+    assert panel.current_output() is None
+
+
+def test_current_output_is_none_when_nothing_is_focused(monkeypatch):
+    _fake_sway(monkeypatch, json.dumps([{"name": "DP-1", "focused": False}]))
+    assert panel.current_output() is None
+
+
+def test_current_output_survives_junk_from_the_socket(monkeypatch):
+    _fake_sway(monkeypatch, "<html>no</html>")
+    assert panel.current_output() is None
