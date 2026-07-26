@@ -153,13 +153,13 @@ The current GUI flow is a sequence of blocking picker calls, each returning a
 string that decides the next call. The panel is one window returning one
 action, so that structure collapses.
 
-New module `ccas/panel.py`, split so that only the widget tree is untestable:
+Two new modules, split so that only the widget tree is untestable — and so
+that the split is enforceable by a test rather than merely intended:
 
-| function | role |
+| module | role |
 |---|---|
-| `build_state(slug)` | pure: registry + usage + history → a plain dict. No GTK. |
-| `filter_state(state, query)` | pure: the search. No GTK. |
-| `show(state) -> action` | the widget tree. Returns an action tuple or None. |
+| `ccas/panel.py` | pure. `build_state(slug)` (registry + usage + history → a plain dict), `filter_state(state, query)` (the search), and the `Action` type. **Never imports `gi`**, which `test_panel.py` asserts. |
+| `ccas/panel_ui.py` | the widget tree. `show(state) -> Action \| None`. The only module that imports `gi`, lazily. |
 
 `cli.py`'s `--gui` branch builds the state, calls `show()`, and dispatches the
 returned action through the existing `launch.resolve()` / `registry` /
