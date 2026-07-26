@@ -12,6 +12,10 @@
 /* The surface covers the whole output so that a click beside the panel lands
  * on it and goes no further. Dim it if you like — `transparent` here means the
  * rest of the screen shows through untouched. */
+/* The one-frame probe that finds which monitor the pointer is on. Never seen;
+ * a background here would flash the screen on every open. */
+.ccas-probe { background: transparent; }
+
 .ccas-scrim {
   background: rgba(0, 0, 0, 0.25);
 }

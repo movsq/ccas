@@ -533,6 +533,56 @@ window. There is no `wtype` or `ydotool` on this machine; `swaymsg` moves a
 pointer but cannot type, so the virtual keyboard was the only way to ask the
 compositor the real question — which is who it hands a keypress to.
 
+### Which monitor, part two: the focused output is not the pointer's
+
+The first fix asked sway for the focused output. That is wrong here, and the
+config says why in one line: `focus_follows_mouse no`. The focused output is the
+one holding the focused *window*, so the panel followed whatever was last
+clicked into rather than the bar that was just clicked — reported as "it always
+opens on the monitor where I have a window focused".
+
+There is no better answer to ask for. sway's IPC has no cursor position at all:
+`get_outputs` has a `focused` flag and `get_seats` has devices, and that is the
+whole of it. Wayland tells a client nothing about the pointer until the pointer
+is over one of that client's surfaces.
+
+Which is the answer, and it is what fuzzel does for the same question: put a
+surface on **every** output and see which one the pointer is already inside.
+`panel_ui._pointer_output()` maps one transparent probe per monitor, takes the
+`wl_pointer.enter`, and builds the real panel on that connector; the probes are
+dropped after the panel exists, so the application never runs out of windows.
+Exclusive zone -1 on them deliberately — they must cover the bar, because the
+bar is exactly where the pointer is one moment after its widget was clicked.
+
+Two things were measured rather than assumed:
+
+- **A GTK4 window that paints nothing gets no input region**, and a layer
+  surface with no input region receives no pointer events at all. The first
+  probe used `background: transparent` and came back empty every single time, on
+  both monitors; `rgba(0,0,0,0.01)` — under a quarter of one 8-bit step, so
+  still invisible — fixed it outright. The same trap sits under `.ccas-scrim`:
+  setting it fully transparent in `menu.css` would silently stop the panel
+  closing on an outside click *and* let that click through to whatever is
+  beneath. `assets/menu.css` says so where someone would be about to do it.
+- **40 ms is too early and 80 ms is enough** for the enter to arrive after the
+  surface maps. `PROBE_MS` is 120.
+
+**What could not be verified, and why.** The probe answers correctly on DP-1,
+every time, atomically — the cursor is placed by the probe process itself and
+the right connector comes back. On HDMI-A-1 it never answers, and neither does
+anything else: with the panel pinned there, a click outside it does not close it
+either, and a probe on the TOP layer is as silent as one on OVERLAY. The cursor
+is provably on that output at the time (`grim -c` shows it inside the probe's own
+red tint), so the surface is mapped and the pointer is over it.
+
+The most likely reading is that `swaymsg seat - cursor set/move` does not make
+sway recompute pointer focus on an output where no real input is happening —
+DP-1 works because a hand is on the mouse there, generating the motion that
+does. That would make the HDMI result an artefact of the test rather than of the
+panel. It is not proven, and it is the one thing here a synthetic pointer could
+not settle: this repo's rule is to automate the check rather than ask the user
+to click, and the check that remains needs a hand on the mouse.
+
 
 ---
 

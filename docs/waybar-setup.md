@@ -27,12 +27,34 @@ Per account, in the managed block:
 plus the module ids appended to `modules-center`. The widget id you style is
 `#custom-cc-<slug>` — the module name with the slash turned into a dash.
 
-The click opens the same picker `ccs <slug>` opens in a terminal. CCAS used to
-emit `menu`, `menu-file` and `menu-actions` here instead, pointing at a
+The click opens the CCAS panel — a GTK4 layer surface, one window, built fresh
+each time. Clicking the same widget again closes it, as do Escape and a click
+anywhere outside it. `ccs <slug>` typed in a terminal opens the fzf list
+instead, because a TTY and an ssh session cannot run GTK.
+
+CCAS used to emit `menu`, `menu-file` and `menu-actions` here, pointing at a
 generated `menu.xml` per account; it no longer does. Waybar parses `menu-file`
 once when the module is built, so keeping that menu current meant reloading the
 whole bar every time a Claude session appeared — see
-`docs/superpowers/specs/2026-07-25-fuzzel-only-menu-design.md`.
+`docs/superpowers/specs/2026-07-25-fuzzel-only-menu-design.md` and
+`docs/superpowers/specs/2026-07-26-gtk4-panel-design.md`.
+
+## Styling the panel
+
+CCAS does not own the panel's look any more than it owns `style.css`.
+`install.sh` copies `assets/menu.css` to `~/.config/ccas/menu.css` once and
+never overwrites it; edit it and reopen the panel to see the change — nothing
+needs reinstalling. The handles are `.ccas-scrim` (the full-output surface
+behind the panel, dim it or make it `transparent`), `.ccas-panel`, and one class
+per part: `.ccas-header`, `.ccas-chip`, `.ccas-usage-bar`, `.ccas-verb`,
+`#ccas-search`, `.ccas-panes`, `.ccas-project-row`, `.ccas-session-row`,
+`.ccas-toggles`, `.ccas-swatch`, `.ccas-manage`, `.ccas-close`.
+
+Unlike the bar, the panel is its own process and does not inherit Waybar's
+FontAwesome-first font stack, so the glyph rule below does not apply to it.
+
+`CCAS_PANEL_OUTPUT` pins the panel to a connector (`HDMI-A-1`). Unset, it opens
+on the output the pointer is on.
 
 ## The font stack matters
 

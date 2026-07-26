@@ -23,6 +23,11 @@ MISSING_DEPS = ("ccs: the panel needs PyGObject, GTK4 and gtk4-layer-shell — "
 # that moves has to move inside this.
 WIDTH, HEIGHT = 900, 620
 
+# How long the pointer probe stays up. Measured, not guessed: 40 ms is reliably
+# too early and 80 ms reliably works, so this is the shortest answer with room
+# either side. wl_pointer.enter arrives a frame or two after the surface maps.
+PROBE_MS = 120
+
 # GDK keyvals, spelled out rather than imported: naming them costs one comment
 # and keeps the constants readable where they are used.
 KEY_ESCAPE = 0xff1b
@@ -56,7 +61,7 @@ def _load_css(display) -> None:
         display, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
 
 
-def _setup_layer(window, LayerShell) -> None:
+def _setup_layer(window, LayerShell, output=None) -> None:
     """Make the window a full-output overlay that owns the keyboard.
 
     Three things, each of them a reported bug:
@@ -73,7 +78,7 @@ def _setup_layer(window, LayerShell) -> None:
       own bindings before forwarding, so this does not lock the compositor out.
     """
     LayerShell.init_for_window(window)
-    _pin_to_output(window, LayerShell)
+    _pin_to_output(window, LayerShell, output)
     LayerShell.set_layer(window, LayerShell.Layer.OVERLAY)
     for edge in (LayerShell.Edge.TOP, LayerShell.Edge.BOTTOM,
                  LayerShell.Edge.LEFT, LayerShell.Edge.RIGHT):
@@ -82,19 +87,21 @@ def _setup_layer(window, LayerShell) -> None:
     LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.EXCLUSIVE)
 
 
-def _pin_to_output(window, LayerShell) -> None:
-    """Put the panel on the output it was asked for, else the one in use.
+def _pin_to_output(window, LayerShell, output=None) -> None:
+    """Put the panel on a connector, in order of how much each answer is worth.
 
-    CCAS_PANEL_OUTPUT is the user pinning it and wins. Failing that, the output
-    the pointer is on: sway focuses it, so it is the monitor whose bar was just
-    clicked. Reported on the real system — clicked left, opened right — because
-    a layer surface with no monitor set goes wherever the compositor likes.
+    CCAS_PANEL_OUTPUT is the user pinning it and wins. Then `output`, which is
+    the monitor the pointer was actually found on (see `_pointer_output`). Then
+    the focused output, which is a guess: with `focus_follows_mouse no` — the
+    user's setting — it names the monitor holding the focused *window*, which is
+    reliably the wrong one. Reported twice, the second time because that guess
+    was the whole answer.
 
     Naming a connector that is not currently connected is not an error: the
     monitor list changes when a cable does, and a panel that refuses to open is
     worse than one on the wrong screen.
     """
-    wanted = paths.panel_output() or panel.current_output()
+    wanted = paths.panel_output() or output or panel.current_output()
     if not wanted:
         return
     monitors = window.get_display().get_monitors()
@@ -135,60 +142,133 @@ def show(state: dict):
     app = Gtk.Application(application_id="dev.ccas.panel")
 
     def on_activate(_app):
-        window = Gtk.ApplicationWindow(application=app)
-        window.add_css_class("ccas-scrim")
-
-        _setup_layer(window, LayerShell)
-        _load_tints(window.get_display(), state)
-        _load_css(window.get_display())
-
-        keys = Gtk.EventControllerKey()
-
-        def on_key(_c, keyval, _code, _mods):
-            if keyval == KEY_ESCAPE:
-                window.close()
-                return True
-            return False
-
-        # On the window, in CAPTURE: Escape has to close the panel from wherever
-        # the focus happens to be, including inside the search entry, which would
-        # otherwise eat it to clear itself.
-        keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        keys.connect("key-pressed", on_key)
-        window.add_controller(keys)
-
-        # The panel proper, floating on a surface the size of the output.
-        frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        frame.add_css_class("ccas-panel")
-        frame.set_size_request(WIDTH, HEIGHT)
-        frame.set_halign(Gtk.Align.CENTER)
-        frame.set_valign(Gtk.Align.START)
-        frame.set_margin_top(8)
-        frame.append(build_body(state, chosen, window))
-
-        scrim = Gtk.Box()
-        scrim.set_hexpand(True)
-        scrim.set_vexpand(True)
-        scrim.append(frame)
-
-        click = Gtk.GestureClick()
-        click.set_button(0)  # any button: closing is not a left-click gesture
-
-        def on_scrim_click(_g, _n, x, y):
-            ok, rect = frame.compute_bounds(scrim)
-            if not ok or not _inside(rect, x, y):
-                window.close()
-
-        click.connect("pressed", on_scrim_click)
-        scrim.add_controller(click)
-
-        window.set_child(scrim)
-        window.present()
+        from gi.repository import GLib
+        _pointer_output(app, Gtk, GLib, LayerShell, state,
+                        lambda connector: _open(app, Gtk, LayerShell,
+                                                state, chosen, connector))
 
     app.connect("activate", on_activate)
     # No arguments: ccs has already parsed its own, and GTK would reject them.
     app.run([])
     return chosen["action"]
+
+
+def _pointer_output(app, Gtk, GLib, LayerShell, state, then) -> None:
+    """Find the monitor the pointer is on, then call `then(connector)`.
+
+    Wayland tells a client nothing about where the pointer is until it is over
+    one of that client's surfaces, and sway's IPC has no cursor position at all
+    — `get_outputs` reports which output holds the *focused window*, which with
+    `focus_follows_mouse no` is not where the user just clicked. So the question
+    is asked the only way the protocol allows: put a surface on every monitor and
+    see which one the pointer is already inside.
+
+    Exclusive zone -1 on the probes, deliberately: they have to cover the bar
+    too, because the bar is exactly where the pointer is one moment after its
+    widget was clicked. They are transparent, live for one frame, and the real
+    panel is built before they are dropped so the application never runs out of
+    windows and quits.
+    """
+    display = Gdk_display(Gtk)
+    # Before the first present(): a probe that paints is a flash on every open.
+    _load_base(display)
+    monitors = display.get_monitors()
+    found = {"connector": None}
+    probes = []
+
+    for i in range(monitors.get_n_items()):
+        monitor = monitors.get_item(i)
+        probe = Gtk.ApplicationWindow(application=app)
+        probe.add_css_class("ccas-probe")
+        # A child that fills it: the controller has to sit on something the
+        # pointer can be picked against.
+        filler = Gtk.Box()
+        filler.set_hexpand(True)
+        filler.set_vexpand(True)
+        probe.set_child(filler)
+        LayerShell.init_for_window(probe)
+        LayerShell.set_monitor(probe, monitor)
+        LayerShell.set_layer(probe, LayerShell.Layer.OVERLAY)
+        for edge in (LayerShell.Edge.TOP, LayerShell.Edge.BOTTOM,
+                     LayerShell.Edge.LEFT, LayerShell.Edge.RIGHT):
+            LayerShell.set_anchor(probe, edge, True)
+        LayerShell.set_exclusive_zone(probe, -1)
+        LayerShell.set_keyboard_mode(probe, LayerShell.KeyboardMode.NONE)
+        motion = Gtk.EventControllerMotion()
+        motion.connect("enter", lambda _c, _x, _y, m=monitor:
+                       found.update(connector=m.get_connector()))
+        filler.add_controller(motion)
+        probe.present()
+        probes.append(probe)
+
+    def settle():
+        then(found["connector"])
+        for probe in probes:
+            probe.destroy()
+        return False
+
+    # One tick, not zero: the pointer enter arrives with the first frame the
+    # compositor sends after the surface maps, not during present().
+    GLib.timeout_add(PROBE_MS, settle)
+
+
+def Gdk_display(Gtk):
+    """The default display. A function so the import stays inside show()'s try."""
+    from gi.repository import Gdk
+    return Gdk.Display.get_default()
+
+
+def _open(app, Gtk, LayerShell, state, chosen, connector) -> None:
+    """Build the panel proper on `connector`."""
+    window = Gtk.ApplicationWindow(application=app)
+    window.add_css_class("ccas-scrim")
+
+    _setup_layer(window, LayerShell, connector)
+    _load_tints(window.get_display(), state)
+    _load_css(window.get_display())
+
+    keys = Gtk.EventControllerKey()
+
+    def on_key(_c, keyval, _code, _mods):
+        if keyval == KEY_ESCAPE:
+            window.close()
+            return True
+        return False
+
+    # On the window, in CAPTURE: Escape has to close the panel from wherever the
+    # focus happens to be, including inside the search entry, which would
+    # otherwise eat it to clear itself.
+    keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+    keys.connect("key-pressed", on_key)
+    window.add_controller(keys)
+
+    # The panel proper, floating on a surface the size of the output.
+    frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    frame.add_css_class("ccas-panel")
+    frame.set_size_request(WIDTH, HEIGHT)
+    frame.set_halign(Gtk.Align.CENTER)
+    frame.set_valign(Gtk.Align.START)
+    frame.set_margin_top(8)
+    frame.append(build_body(state, chosen, window))
+
+    scrim = Gtk.Box()
+    scrim.set_hexpand(True)
+    scrim.set_vexpand(True)
+    scrim.append(frame)
+
+    click = Gtk.GestureClick()
+    click.set_button(0)  # any button: closing is not a left-click gesture
+
+    def on_scrim_click(_g, _n, x, y):
+        ok, rect = frame.compute_bounds(scrim)
+        if not ok or not _inside(rect, x, y):
+            window.close()
+
+    click.connect("pressed", on_scrim_click)
+    scrim.add_controller(click)
+
+    window.set_child(scrim)
+    window.present()
 
 
 def _inside(rect, x, y) -> bool:
@@ -225,6 +305,28 @@ def _tint(color: str) -> str:
     return "ccas-tint-" + color.lstrip("#").lower()
 
 
+# Nearly invisible, and deliberately not `transparent`. A GTK4 window that
+# paints nothing gets no input region, and a layer surface with no input region
+# receives no pointer events at all — measured 2026-07-26, and it is what made
+# the first pointer probe come back empty every time. The same trap sits under
+# the scrim: `background: transparent` in menu.css would silently disable
+# closing on a click outside the panel, and let that click through to whatever
+# is beneath. 0.01 alpha is under a quarter of one 8-bit step, so neither
+# surface is visible; menu.css paints the scrim properly on top of this.
+INVISIBLE = "rgba(0, 0, 0, 0.01)"
+BASE_CSS = (f"window.ccas-scrim {{ background: {INVISIBLE}; }}\n"
+            f"window.ccas-probe {{ background: {INVISIBLE}; }}")
+
+
+def _load_base(display) -> None:
+    """The rules that must be in place before the first surface maps."""
+    from gi.repository import Gtk
+    provider = Gtk.CssProvider()
+    provider.load_from_string(BASE_CSS)
+    Gtk.StyleContext.add_provider_for_display(
+        display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+
 def _load_tints(display, state) -> None:
     """One provider for every colour the panel needs, at APPLICATION priority.
 
@@ -235,7 +337,7 @@ def _load_tints(display, state) -> None:
     colors = {c for _name, c in paths.PALETTE}
     colors |= {row["color"] for row in state["usage"] if row["color"]}
     colors |= {a["color"] for a in state["accounts"]}
-    css = "window.ccas-scrim { background: transparent; }\n" + "\n".join(
+    css = "\n".join(
         f".{_tint(c)} {{ background: {c}; }}\n"
         f"progressbar.{_tint(c)} {{ background: transparent; }}\n"
         f"progressbar.{_tint(c)} progress {{ background: {c}; }}"

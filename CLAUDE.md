@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~254 tests, under a second). They are the specification —
+1. `python -m pytest` (~330 tests, under a second). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -26,7 +26,9 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
 | `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
 | `usage.py` | the per-account usage reading: recording it, both source shapes, the three states, and how each is said. |
-| `pickers.py` | fzf vs fuzzel, and `is_gui()`. |
+| `pickers.py` | the terminal front-ends (fzf, `input()`), and `is_gui()`. |
+| `panel.py` | the GTK panel's state: `build_state`, `filter_state`, the open-panel lock, which output. No GTK. |
+| `panel_ui.py` | the panel's widget tree. The only module that touches GTK, and it decides nothing. |
 | `launch.py` | resolving a launch request into a cwd and argv. |
 | `doctor.py` | the read-only audit. |
 | `cli.py` | argument dispatch and the command bodies. |
@@ -75,7 +77,8 @@ behind the `--gui` strip.
 **Tests must never touch real state.** Every path goes through `ccas/paths.py`
 and every one of them is env-overridable (`CCAS_HOME`, `CCAS_ACCOUNTS_ROOT`,
 `CCAS_CLAUDE_JSON`, `CCAS_TRASH`, `CCAS_WAYBAR_CONFIG`, `CCAS_BASHRC`,
-`CCAS_CCS_BIN`, `CCAS_CLAUDE_BIN`). `test_relink_never_touches_mtimes_in_claude_home`
+`CCAS_CCS_BIN`, `CCAS_CLAUDE_BIN`, `CCAS_MENU_CSS`, `CCAS_PANEL_OUTPUT`,
+`CCAS_PANEL_LOCK`). `test_relink_never_touches_mtimes_in_claude_home`
 is the canary. `CCAS_NO_RELOAD=1` suppresses signalling the live bar.
 
 **`ccs doctor` never writes.** It exists to police the invariants above, so a
@@ -109,10 +112,11 @@ Established by the Task 0 spike (`docs/superpowers/spike-waybar-menu.md`);
 - A `GtkMenu` does not scroll usefully: 219 items filled a 1440 px screen.
 
 CCAS no longer uses `menu-file` at all: the bar's click runs `ccs --gui <slug>`,
-the same picker `ccs <slug>` opens in a terminal, generated fresh per click. The
-facts above are why — a menu you cannot invalidate has to be invalidated by
-rebuilding the bar, and that is what blinked the bar every time a new session
-appeared. See `docs/superpowers/specs/2026-07-25-fuzzel-only-menu-design.md`.
+which opens the GTK panel, built fresh per click. The facts above are why — a
+menu you cannot invalidate has to be invalidated by rebuilding the bar, and that
+is what blinked the bar every time a new session appeared. The two steps out of
+`menu-file` are `docs/superpowers/specs/2026-07-25-fuzzel-only-menu-design.md`
+and `docs/superpowers/specs/2026-07-26-gtk4-panel-design.md`.
 
 So the only thing that still reloads is a change to the **set of modules**
 (`cmd_add`, `cmd_rm`), because that rewrites `config.jsonc`, which Waybar reads
@@ -200,27 +204,58 @@ and must use fzf. Two tests pin the pair
 `test_passthrough_does_not_force_gui_mode`), because this exact mistake was made
 once already, back when the bashrc function was the terminal path.
 
-**`cmd_mode_menu`'s launch verbs are the one thing that differs by door**, and
-they must stay that way. It scopes them to `os.getcwd()` — the user's directory
-from a terminal, *Waybar's* from a click — so `gui` gets the GtkMenu's
-directory-free `New session` / `Resume last session` / `Resume from history…`
-with `cwd=None`, and the terminal keeps `New here (…)` and its siblings.
-Everything below the verbs is identical from both. Do not collapse the two lists
-back into one to tidy it up: `docs/why.md` has what shipped when they were one,
-and `resolve()` ignoring cwd under `gui` is what made the labels lie rather than
-merely mislead.
+**The two doors differ in their toolkit, not in their verbs.** `cmd_mode_menu`
+sends `gui` to `cmd_panel` and keeps the fzf list for a terminal, because a TTY
+and an ssh session cannot run GTK. They used to differ in their *launch verbs*
+as well — the bar click had no meaningful cwd, so directory-free labels were the
+only honest ones. The panel's project pane supplies a real directory, so that
+rule is retired; `docs/why.md` has both halves of it.
 
-## fuzzel
+**The three manage verbs open a terminal.** Rename wants free text, remove a
+confirmation, add an interactive login, and the panel closes the moment a button
+is clicked — so `cli._in_terminal()` spawns kitty running the same `ccs manage …`
+the user could have typed. A bar click has no stdin, and an `input()` there
+blocks forever against a console nobody can see.
 
-- Exits instantly (rc=1) on **empty stdin**, whatever `--lines` says. A prompt
-  with no rows can never be typed into; give it at least one row.
-- **Echoes unmatched input verbatim**, which is how free-text prompts work here
-  — and why `--only-match` is load-bearing on any prompt where stray text would
-  be read as consent.
-- No markup mode and no live-input hook: dmenu rows are fixed once stdin closes.
-  Nothing can react to keystrokes. Colour comes from `--message-color` etc.,
-  per-window, not per-row.
-- Default width is 30 columns and it truncates silently. Compute a width.
+## The panel
+
+`ccs --gui <slug>` opens one GTK4 layer surface and returns one
+`panel.Action`; `cli.dispatch_panel` turns that into a command that already
+existed. Four things about it are load-bearing and were each a bug first:
+
+- **`gtk4-layer-shell` must be `CDLL`-loaded RTLD_GLOBAL before `import gi`**,
+  or every surface silently degrades to an ordinary window.
+- **`gi` is imported inside `show()`**, never at module scope: `ccs statusline`
+  runs in every prompt of every session and must not need PyGObject. Two tests
+  pin the boundary.
+- **The surface covers its whole output** (all four edges, exclusive zone 0) so
+  that a click beside the panel is delivered to CCAS and goes no further —
+  Wayland gives a press to exactly one surface, so dismissing the panel cannot
+  also pause a video. Exclusive zone 0 keeps Waybar reachable, which is what
+  makes the widget a toggle.
+- **Keyboard mode is EXCLUSIVE**, so Escape closes it whether or not it was ever
+  clicked, and the Escape handler is on the window in the CAPTURE phase because
+  `GtkSearchEntry` eats Escape to clear itself.
+
+The open panel writes its pid and slug to `paths.panel_lock()`; `cmd_panel`
+closes whatever is open first, and stops there if the slug matches. `SIGTERM`
+does not run a finally block, so the sender clears the lock, and a lock naming a
+dead pid reads as nothing being open.
+
+Which output it opens on: `CCAS_PANEL_OUTPUT` wins, then the **pointer probe**,
+then `panel.current_output()`, then the compositor. The probe is the real answer
+and `_pointer_output()` is worth reading before touching it: sway's IPC has no
+cursor position, and its `focused` output is the one holding the focused
+*window*, which under the user's `focus_follows_mouse no` is reliably not where
+they clicked. So a transparent layer surface is mapped on every monitor and the
+one that receives `wl_pointer.enter` names the output — the same trick fuzzel
+uses. **A GTK4 window that paints nothing gets no input region**, so both the
+probe and the scrim carry a 0.01-alpha background rather than `transparent`;
+that is not cosmetic, it is what makes them receive a pointer at all.
+
+`assets/menu.css` is the stylesheet. `install.sh` copies it to
+`~/.config/ccas/menu.css` once and never overwrites it: it is the user's the
+moment it exists, the same stance CCAS takes toward `style.css`.
 
 ## Working style
 
@@ -233,9 +268,9 @@ merely mislead.
   `DP-1` is x 0–2560.
 - **Clicking something yourself: `swaymsg seat - cursor move`, never `cursor
   set`.** `set` teleports the pointer — the cursor lands on the target and
-  `grim -c` proves it, but no motion event reaches a layer surface, so fuzzel
-  keeps highlighting the row it started on and the click that follows lands on
-  the wrong one. A relative `move` of a pixel or two delivers real motion; then
+  `grim -c` proves it, but no motion event reaches a layer surface, so it keeps
+  highlighting the row it started on and the click that follows lands on the
+  wrong one. A relative `move` of a pixel or two delivers real motion; then
   `cursor press button1` / `release button1` selects. Beware `move -1 0`: the
   leading `-` is read as a swaymsg option. Locate the window by its **selection
   bar** — the longest horizontal run of the highlight colour — rather than by
@@ -276,17 +311,18 @@ The fake `claude` needs two cases: `auth login` writes
 `{"loggedIn":true,"email":"…"}`.
 
 `script` is load-bearing. `pickers.is_gui()` is `not sys.stdin.isatty()`, so a
-pipe or `</dev/null` takes the **fuzzel** path and the run dies with no prompt.
-A pty makes it the terminal path. Then audit the result with `ccs doctor` — that
+pipe or `</dev/null` is read as a bar click and takes the **GTK** path, where
+there is nothing to type into. A pty makes it the terminal path. Then audit the result with `ccs doctor` — that
 is how the missing-`menu.xml` bug in `cmd_add` was found, back when `cmd_add`
 still generated files.
 
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~254 tests, under a second
+cd ~/ccas && python -m pytest    # ~330 tests, under a second
 ./install.sh                     # idempotent; re-run after any code change
-ccs                              # pick account → mode; Add is on the picker, Rename/Remove under Manage…
+ccs                              # terminal: pick account → mode (fzf)
+ccs --gui <slug>                 # the bar's click: the GTK panel. A second one closes it.
 ccs list                         # accounts
 ccs doctor                       # audit the four places that drift; rc 1 if any failed
 ccs config                       # rewrite the managed block in config.jsonc and reload
@@ -313,8 +349,8 @@ nothing here is a guess any more.
   EventBox-backed and GTK's active state is a button concept. The rule in
   `style.css` is inert — harmless, but do not spend time tuning it.
 - **The click reaches the picker.** Pressing the module spawns
-  `fuzzel --dmenu --prompt <nickname> …`, so `on-click` works end to end on the
-  live bar, not just in the generated config.
+  the panel, so `on-click` works end to end on the live bar, not just in the
+  generated config.
 
 Never verify this sort of thing by asking the user to click things — automate
 it. `grim` plus ink-extent maths, `pango-view --markup` for glyph metrics with

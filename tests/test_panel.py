@@ -618,3 +618,27 @@ def test_a_click_is_outside_the_panel_or_it_is_not():
     assert panel_ui._inside(rect, 100, 50)
     assert not panel_ui._inside(rect, 99, 80)
     assert not panel_ui._inside(rect, 150, 151)
+
+
+def test_the_output_is_asked_for_explicitly_when_known(monkeypatch):
+    """The pointer's monitor is discovered by probing, not by asking sway —
+    `focus_follows_mouse no` means the focused output is the one holding the
+    focused *window*, which is exactly the wrong answer."""
+    from ccas import panel_ui
+    monkeypatch.delenv("CCAS_PANEL_OUTPUT", raising=False)
+    monkeypatch.setattr(panel_ui.panel, "current_output",
+                        lambda: pytest.fail("a known output must not be second-guessed"))
+    shell = FakeLayerShell()
+    panel_ui._pin_to_output(FakeWindow(["DP-1", "HDMI-A-1"]), shell, "HDMI-A-1")
+    assert shell.monitor.get_connector() == "HDMI-A-1"
+
+
+def test_the_focused_output_is_the_last_resort(monkeypatch):
+    """When the probe finds nothing — another compositor, or a pointer nothing
+    could see — the focused output is still better than no answer at all."""
+    from ccas import panel_ui
+    monkeypatch.delenv("CCAS_PANEL_OUTPUT", raising=False)
+    monkeypatch.setattr(panel_ui.panel, "current_output", lambda: "DP-1")
+    shell = FakeLayerShell()
+    panel_ui._pin_to_output(FakeWindow(["DP-1", "HDMI-A-1"]), shell, None)
+    assert shell.monitor.get_connector() == "DP-1"
