@@ -115,6 +115,64 @@ clock gave the label a third run to sit beside. `grim -o HDMI-A-1`, thresholded
 above the `#313244` bar background, put the glyph and the clock on ink rows 9–28
 alike — so `150%`/`-800` holds at the bar's real DPI, not only at pango-view's.
 
+## The custom display mode
+
+Four of the five display modes are exactly what they are named — `icon only` is
+an icon and nothing else. Anything more than that is the fifth, `custom`, whose
+label you write yourself as a format string of tokens. Everything outside a
+token is copied through literally, so spaces, separators and stray text are all
+yours.
+
+```bash
+ccs display vsed custom
+ccs format vsed '%icon %name %5hused %5htimeleft'
+ccs format vsed                       # show it, and any per-token colours
+ccs format --tokens                   # every token there is
+```
+
+| token | renders |
+|---|---|
+| `%icon` | the account glyph `✻`, sized and raised as always, in the account's colour |
+| `%name` | the nickname (`display_name`'s first choice) |
+| `%email` | the account email |
+| `%index` | the account's position in the registry |
+| `%5h` | the 5-hour window the way the old bar said it — the smart form |
+| `%5hused` | percent of the 5-hour window used, `≥` when the figure is a lower bound |
+| `%5hquotaleft` | percent of it remaining |
+| `%5htimeleft` | how long until it resets, e.g. `1h32m` |
+| `%5hreset` | the wall-clock reset time |
+| `%7d…` | the same five, for the 7-day window |
+
+An unknown token is **not** rejected — it renders as its own literal text on the
+bar, which is visible and explains itself where a silent refusal would not.
+`ccs format` warns when you set one and `ccs doctor` keeps naming it.
+
+### Colour
+
+Each token picks its own colour by default: the usage tokens follow the same
+ramp `usage.color()` has always used, the icon takes the account colour, and
+text is plain. Override one token at a time:
+
+```bash
+ccs format vsed --color %5h dim       # `auto`, `dim`, or a #rrggbb
+ccs format vsed --color %5h auto      # back to the default
+```
+
+`auto` deletes the entry rather than storing a value — absent means auto, so
+`format_colors` only ever holds deviations. The panel has the same control: with
+the mode set to `custom`, a **Colour of** row appears under Widget
+customisation with the format's own tokens in a dropdown.
+
+### Getting the old bar back
+
+Before this mode existed, every display mode carried a hardcoded usage clock.
+That is now `custom` with the default format, which is exactly what the old
+`nickname` mode printed:
+
+```bash
+ccs display vsed custom      # %icon %name %5h is the default format
+```
+
 ## Spacing, hover and press
 
 Add to `~/.config/waybar/style.css`, one selector pair per account slug:

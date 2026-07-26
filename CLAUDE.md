@@ -25,6 +25,7 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `waybar.py` | the managed block in `config.jsonc`, stripping the legacy one from `~/.bashrc`, plus reload/signal. |
 | `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
 | `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
+| `format.py` | the `custom` display mode: the token table, `tokens_in`, `unknown_tokens`, and `render()`. Pure — no I/O and no GTK, because `ccs statusline` reaches it. |
 | `usage.py` | the per-account usage reading: recording it, both source shapes, the three states, and how each is said. |
 | `pickers.py` | the terminal front-ends (fzf, `input()`), and `is_gui()`. |
 | `panel.py` | the GTK panel's state: `build_state`, `filter_state`, the open-panel lock, which output. No GTK. |
@@ -337,6 +338,9 @@ ccs doctor                       # audit the four places that drift; rc 1 if any
 ccs config                       # rewrite the managed block in config.jsonc and reload
 ccs headless [<slug>]            # show / toggle which account runs `ccs -p`
 ccs dangerous [<slug>]           # show / toggle --dangerously-skip-permissions per account
+ccs format <slug> ['<fmt>']      # show / set the custom mode's format string
+ccs format --tokens              # every token, with what it renders
+ccs format <slug> --color %5h dim   # one token's colour: auto, dim, or #rrggbb
 ccs usage [<slug>]               # both quota windows, their age and their source
 ccs statusline [<delegate> …]    # the recording hook; wired by hand in ~/.claude/settings.json
 ccs -p "…" / ccs -c / ccs -r     # real claude under the runner account

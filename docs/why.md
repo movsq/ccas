@@ -595,6 +595,41 @@ without an asterisk.
 
 ---
 
+## "Icon only" was an icon and a clock
+
+The four display modes were named for what they showed, and none of them was
+telling the truth: `label.render()` appended the usage reading to every one of
+them, so the mode called "icon only" put a glyph and a percentage on the bar.
+There was no way to ask for an icon on its own, and no way to ask for the
+percentage without the reset time, or the reset time without the percentage —
+the clock was one string, decided in `label.py`, the same for everybody.
+
+The fix was to make the names honest and move the choice out of the code. The
+clock came out of all four built-ins, and a fifth mode, `custom`, took a format
+string of tokens (`ccas/format.py`). Nothing was lost: `%icon %name %5h` is the
+default format and renders byte for byte what the old `nickname` mode did, which
+is what `test_the_default_format_reproduces_the_old_bar` pins.
+
+Two decisions inside it are worth keeping:
+
+**An unknown token renders literally.** `%5hh` puts the text `%5hh` on the bar
+rather than being rejected at the prompt. A visible wrong answer explains itself
+and the fix is one more `ccs format` away; a refusal at the prompt leaves the
+user guessing which of their tokens was the bad one. `ccs doctor` names it on
+every run so it cannot be forgotten, and — like everything else in doctor — it
+reports rather than repairing, because rewriting the format there would erase
+the typo the check exists to show.
+
+**`custom` is appended to `DISPLAY_MODES`, never inserted.** Both `ccs display`
+and the panel dropdown address a mode by its index in that list, so inserting
+one at the front would silently repoint every account's existing selection.
+
+The panel's switch row was also split at this point. It had been one flat line
+of checkboxes plus a dropdown, which was fine at three items and unreadable once
+the token colour row arrived. Now the two things that change how the account
+*runs* — headless runner, skip permissions — sit above a rule, and everything
+that changes how its widget *looks* sits below it under a caption.
+
 ## Backups
 
 Backups of the pre-CCAS originals:
