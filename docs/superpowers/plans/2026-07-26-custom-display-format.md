@@ -760,16 +760,16 @@ def test_custom_is_a_display_mode():
 
 
 def test_a_new_account_carries_the_default_format():
-    reg = registry.blank()
-    registry.add(reg, "work", "w@example.com")
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
     account = registry.find(reg, "work")
     assert account["format"] == fmt.DEFAULT_FORMAT
     assert account["format_colors"] == {}
 
 
 def test_set_field_validates_the_format():
-    reg = registry.blank()
-    registry.add(reg, "work", "w@example.com")
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
     registry.set_field(reg, "work", "format", "%icon %5hused")
     assert registry.find(reg, "work")["format"] == "%icon %5hused"
     with pytest.raises(ValueError):
@@ -780,27 +780,26 @@ def test_an_unknown_token_is_stored_not_rejected():
     """Rejecting would mean that retiring a token in a later version turns a
     stored format into a hard error with nothing on the bar. Rendering it
     literally turns the same event into visible, self-explaining text."""
-    reg = registry.blank()
-    registry.add(reg, "work", "w@example.com")
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
     registry.set_field(reg, "work", "format", "%name %bogus")
     assert registry.find(reg, "work")["format"] == "%name %bogus"
 
 
 def test_set_field_validates_the_colours():
-    reg = registry.blank()
-    registry.add(reg, "work", "w@example.com")
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
     registry.set_field(reg, "work", "format_colors", {"%name": "#f9e2af"})
     for bad in ({"%name": "red"}, {"%name": "' x='y"}, "not a dict"):
         with pytest.raises(ValueError):
             registry.set_field(reg, "work", "format_colors", bad)
 ```
 
-Match the existing file's helper names — if it builds registries with a fixture
-rather than `registry.blank()`/`registry.add()`, use that instead. Check with:
-
-```bash
-cd ~/ccas && sed -n 1,40p tests/test_registry.py
-```
+`tests/test_registry.py` has an autouse `_isolate` fixture that points
+`CCAS_ACCOUNTS_ROOT` at a `tmp_path` and reloads both modules, so
+`registry.load()` on an empty root returns `{"default": None, "accounts": []}` —
+that is the blank registry, and `registry.add(reg, slug, email, nickname)` takes
+four arguments.
 
 - [ ] **Step 2: Run test to verify it fails**
 
