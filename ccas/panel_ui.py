@@ -8,6 +8,7 @@ test_cli_imports_with_pygobject_unavailable pins that.
 Everything here renders a panel.build_state() dict and returns a panel.Action.
 It decides nothing: no registry write, no launch, no filtering of its own.
 """
+import os
 import shutil
 import subprocess
 import sys
@@ -23,10 +24,19 @@ MISSING_DEPS = ("ccs: the panel needs PyGObject, GTK4 and gtk4-layer-shell — "
 # that moves has to move inside this.
 WIDTH, HEIGHT = 900, 620
 
-# How long the pointer probe stays up. Measured, not guessed: 40 ms is reliably
-# too early and 80 ms reliably works, so this is the shortest answer with room
-# either side. wl_pointer.enter arrives a frame or two after the surface maps.
+# How long the pointer probe waits for an answer it may never get. The enter
+# event resolves it the moment it arrives — about 5 ms after the probes map —
+# so this is now only the fallback for the case where the pointer is on no probe
+# at all: an idle output, which never sends wl_pointer.enter and once read as a
+# panel that would not open.
 PROBE_MS = 120
+
+# GSK's renderer for the panel's first surface. The default here is vulkan and
+# initialising it costs ~180 ms before anything is on screen; cairo costs ~2 ms
+# (measured 2026-07-26). The panel is a static widget tree on one small surface
+# over a transparent scrim — there is nothing for a GPU renderer to be faster
+# at, and the whole cost is paid on a window that lives for a few seconds.
+RENDERER = "cairo"
 
 # GDK keyvals, spelled out rather than imported: naming them costs one comment
 # and keeps the constants readable where they are used.
@@ -130,6 +140,12 @@ def show(state: dict):
         import ctypes
         ctypes.CDLL("libgtk4-layer-shell.so.0", mode=ctypes.RTLD_GLOBAL)
 
+        # Also before gi, and for the same reason as the line above: GSK reads
+        # this when it makes the first renderer, which is inside the first
+        # present(). setdefault — someone who set it is debugging their own
+        # graphics stack and outranks us.
+        os.environ.setdefault("GSK_RENDERER", RENDERER)
+
         import gi
         gi.require_version("Gtk", "4.0")
         gi.require_version("Gtk4LayerShell", "1.0")
@@ -153,6 +169,30 @@ def show(state: dict):
     return chosen["action"]
 
 
+def _once(then):
+    """A `then` that runs for the first answer and ignores the rest.
+
+    The probe has two ways to finish and both of them fire: the pointer's enter
+    event, and the timeout behind it. Whichever is first is the answer.
+    """
+    done = []
+
+    def resolve(connector):
+        if done:
+            return
+        done.append(connector)
+        then(connector)
+
+    return resolve
+
+
+def _skip_probe() -> bool:
+    """Is there nothing worth probing for? CCAS_PANEL_OUTPUT wins over the
+    pointer in _pin_to_output, so probing would spend PROBE_MS on an answer that
+    is discarded — on exactly the path an agent drives the panel from."""
+    return bool(paths.panel_output())
+
+
 def _pointer_output(app, Gtk, GLib, LayerShell, state, then) -> None:
     """Find the monitor the pointer is on, then call `then(connector)`.
 
@@ -172,9 +212,27 @@ def _pointer_output(app, Gtk, GLib, LayerShell, state, then) -> None:
     display = Gdk_display(Gtk)
     # Before the first present(): a probe that paints is a flash on every open.
     _load_base(display)
+    if _skip_probe():
+        then(None)
+        return
     monitors = display.get_monitors()
-    found = {"connector": None}
     probes = []
+
+    def finish(connector):
+        then(connector)
+        # Out of the event handler before the probes go: `finish` runs from
+        # inside a probe's own motion controller, and destroying the widget the
+        # event is being dispatched to is a tear-down under the dispatcher's
+        # feet. The real panel is presented first either way, so the application
+        # never runs out of windows and quits.
+        def drop():
+            for probe in probes:
+                probe.destroy()
+            return False
+
+        GLib.idle_add(drop)
+
+    resolve = _once(finish)
 
     for i in range(monitors.get_n_items()):
         monitor = monitors.get_item(i)
@@ -196,19 +254,17 @@ def _pointer_output(app, Gtk, GLib, LayerShell, state, then) -> None:
         LayerShell.set_keyboard_mode(probe, LayerShell.KeyboardMode.NONE)
         motion = Gtk.EventControllerMotion()
         motion.connect("enter", lambda _c, _x, _y, m=monitor:
-                       found.update(connector=m.get_connector()))
+                       resolve(m.get_connector()))
         filler.add_controller(motion)
         probe.present()
         probes.append(probe)
 
     def settle():
-        then(found["connector"])
-        for probe in probes:
-            probe.destroy()
+        resolve(None)
         return False
 
-    # One tick, not zero: the pointer enter arrives with the first frame the
-    # compositor sends after the surface maps, not during present().
+    # The fallback, for a pointer that is on none of the probes. When there is
+    # one, `enter` has already answered long before this fires.
     GLib.timeout_add(PROBE_MS, settle)
 
 

@@ -658,3 +658,38 @@ than a new one. Blank or Ctrl-D leaves it alone.
 The one pause in it is on an unknown token only. The panel's terminal closes on
 return, so a warning printed there is a warning nobody reads — and pausing a run
 the user typed themselves would be noise.
+
+## The panel's 360 ms of nothing after the click
+
+Two costs, measured 2026-07-26 by timestamping every stage from process start to
+the panel's `present()`. Neither was in the widget tree, which is where the time
+looked like it was going.
+
+**The pointer probe waited out its timeout.** `PROBE_MS` is 120, and the code
+called `then()` from the timeout — but `wl_pointer.enter` arrives about 5 ms
+after the probes map, so 115 of those milliseconds were spent sitting on an
+answer that was already in hand. The probe now resolves on the first `enter`,
+and the timeout is what it should always have been: the fallback for a pointer
+that is over none of the probes. Whichever fires first wins, via `_once`.
+
+Destroying the probes moved to a `GLib.idle_add` at the same time. `finish` now
+runs from inside a probe's own motion controller, and tearing down the widget
+whose event is being dispatched is a different bug waiting to happen.
+
+**GSK's default renderer costs 180 ms on the first surface.** The first
+`present()` of the process took 135–180 ms while every subsequent one took 4.
+That is renderer initialisation, not layout: `GSK_RENDERER=cairo` measured 2 ms
+for the same window, `gl` 75, `vulkan` (the default here) 180. The panel is a
+static widget tree on one 900×620 surface over a transparent scrim — there is
+nothing for a GPU renderer to be faster at, and the whole init is paid on a
+window that lives a few seconds. `show()` sets `GSK_RENDERER` with `setdefault`,
+next to the RTLD_GLOBAL load and for the same reason: after `import gi` is too
+late.
+
+Click to panel went from ~360 ms to ~148 ms. What is left is Python starting
+(8), importing ccas (32), `build_state` (14), importing gi and GTK (63), and the
+window itself (30) — no single one worth chasing.
+
+`CCAS_PANEL_OUTPUT` now skips the probe outright rather than probing and letting
+`_pin_to_output` discard the answer. That is the path an agent drives the panel
+from, and it was already documented as skipping it.

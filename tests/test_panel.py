@@ -608,6 +608,67 @@ def test_an_output_that_is_not_connected_is_not_an_error(monkeypatch):
     assert shell.monitor is None
 
 
+def test_the_probe_answers_on_the_first_enter_rather_than_on_the_timeout():
+    """The pointer enter arrives about 5 ms after the probes map; PROBE_MS is
+    120. Waiting the whole timeout out spent that difference on every open, and
+    it was the single largest part of the click-to-panel delay (measured
+    2026-07-26: 360 ms total, 120 of it here). The timeout is now the fallback
+    for the case it was written for — no pointer on any probe at all."""
+    from ccas import panel_ui
+    seen = []
+    resolve = panel_ui._once(seen.append)
+    resolve("DP-1")          # the enter event
+    resolve(None)            # the timeout, firing later anyway
+    assert seen == ["DP-1"]
+
+
+def test_the_probe_still_answers_when_no_pointer_is_found():
+    """An idle output sends no wl_pointer.enter — the case that made the probe a
+    timeout in the first place. None means 'let _pin_to_output decide'."""
+    from ccas import panel_ui
+    seen = []
+    panel_ui._once(seen.append)(None)
+    assert seen == [None]
+
+
+def test_a_pinned_output_skips_the_probe_entirely(monkeypatch):
+    """CCAS_PANEL_OUTPUT wins in _pin_to_output regardless, so probing for an
+    answer that is about to be discarded is 120 ms of pure delay — and it is the
+    path agents drive the panel from."""
+    from ccas import panel_ui
+    monkeypatch.setenv("CCAS_PANEL_OUTPUT", "HDMI-A-1")
+    assert panel_ui._skip_probe() is True
+    monkeypatch.delenv("CCAS_PANEL_OUTPUT")
+    assert panel_ui._skip_probe() is False
+
+
+def test_the_panel_picks_the_cairo_renderer_before_gtk_is_imported():
+    """GSK's default renderer here is vulkan, and initialising it costs 180 ms
+    on the panel's first surface — measured against cairo's 2 ms, on a widget
+    tree that never animates. Set after `import gi` it would be too late, so it
+    sits with the RTLD_GLOBAL load, ahead of it."""
+    import ast
+    import pathlib
+    tree = ast.parse(pathlib.Path("ccas/panel_ui.py").read_text())
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "show")
+    body = ast.dump(fn)
+    assert "GSK_RENDERER" in body
+    assert body.index("GSK_RENDERER") < body.index("'gi'")
+
+
+def test_an_explicit_renderer_is_the_users_to_choose(monkeypatch):
+    """setdefault, not assignment: GSK_RENDERER in the environment is someone
+    debugging their own graphics stack, and we are not the ones to overrule it."""
+    import sys as _sys
+    from ccas import panel_ui
+    monkeypatch.setenv("GSK_RENDERER", "vulkan")
+    monkeypatch.setitem(_sys.modules, "gi", None)
+    monkeypatch.setattr(panel_ui.shutil, "which", lambda _n: None)
+    panel_ui.show({"slug": "one"})
+    assert panel_ui.os.environ["GSK_RENDERER"] == "vulkan"
+
+
 def test_a_click_is_outside_the_panel_or_it_is_not():
     """The scrim covers the output, so 'outside' is a hit test rather than a
     surface boundary the compositor can answer for us."""
