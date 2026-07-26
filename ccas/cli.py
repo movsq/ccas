@@ -5,8 +5,8 @@ import subprocess
 import sys
 import time
 
-from . import (accounts, doctor, history, label, launch, panel, panel_ui, paths,
-               pickers, registry, usage, waybar)
+from . import (accounts, doctor, format as fmt, history, label, launch, panel,
+               panel_ui, paths, pickers, registry, usage, waybar)
 
 
 # `claude <args>` normally resolves an account, because almost everything it can
@@ -141,6 +141,49 @@ def _mutate(slug: str, field: str, value) -> int:
         return 1
     _refresh(reg, registry.find(reg, slug))
     return 0
+
+
+def cmd_format(rest) -> int:
+    """`ccs format` — the terminal door to the custom mode's format string.
+
+    The panel sets per-token colour but never the format itself: it is built
+    fresh per click and its model is one click, one Action, then close. Free
+    text belongs where there is a prompt, which is here.
+    """
+    if rest and rest[0] == "--tokens":
+        for token in fmt.TOKENS:
+            print(token)
+        return 0
+    if not rest:
+        return 1
+    slug, rest = rest[0], rest[1:]
+    reg = registry.load()
+    account = registry.find(reg, slug)
+    if account is None:
+        return 1
+
+    if not rest:
+        print(account.get("format") or fmt.DEFAULT_FORMAT)
+        for token, color in sorted((account.get("format_colors") or {}).items()):
+            print(f"  {token}  {color}")
+        return 0
+
+    if rest[0] == "--color":
+        if len(rest) < 3 or not fmt.valid_color(rest[2]):
+            return 1
+        colors = dict(account.get("format_colors") or {})
+        if rest[2] == fmt.AUTO:
+            # Absent means auto, so the dict only ever holds deviations.
+            colors.pop(rest[1], None)
+        else:
+            colors[rest[1]] = rest[2]
+        return _mutate(slug, "format_colors", colors)
+
+    # Warned about, not rejected: an unknown token renders as its own name on
+    # the bar, which is visible and self-explaining where a refusal is not.
+    for token in fmt.unknown_tokens(rest[0]):
+        print(f"warning: unknown token {token}")
+    return _mutate(slug, "format", rest[0])
 
 
 def dispatch_panel(action):
@@ -580,6 +623,8 @@ def main(argv) -> int:
         return _mutate(rest[0], "color", int(rest[1])) if len(rest) > 1 else 1
     if command == "display":
         return _mutate(rest[0], "display", rest[1]) if len(rest) > 1 else 1
+    if command == "format":
+        return cmd_format(rest)
     if command == "hide":
         if len(rest) < 2:
             return 1

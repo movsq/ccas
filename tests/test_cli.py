@@ -5,6 +5,7 @@ import json
 import types
 import pytest
 
+import ccas.format as fmt
 import ccas.paths as paths
 import ccas.registry as registry
 import ccas.cli as cli
@@ -1343,3 +1344,60 @@ def test_a_terminal_opened_from_the_panel_is_not_a_child_session(monkeypatch):
     seen = _spawns(monkeypatch)
     cli.dispatch_panel(cli.panel.Action("rename", "one", None))
     assert "CLAUDE_CODE_CHILD_SESSION" not in seen[0][1]["env"]
+
+
+# ── ccs format ────────────────────────────────────────────────────────────────
+
+def test_format_shows_the_current_format(capsys):
+    make_account()
+    assert cli.main(["format", "work"]) == 0
+    assert fmt.DEFAULT_FORMAT in capsys.readouterr().out
+
+
+def test_format_sets_it():
+    make_account()
+    assert cli.main(["format", "work", "%icon %5hused"]) == 0
+    assert registry.find(registry.load(), "work")["format"] == "%icon %5hused"
+
+
+def test_format_warns_about_an_unknown_token_but_still_sets_it(capsys):
+    make_account()
+    assert cli.main(["format", "work", "%name %bogus"]) == 0
+    assert "%bogus" in capsys.readouterr().out
+    assert registry.find(registry.load(), "work")["format"] == "%name %bogus"
+
+
+def test_format_sets_one_tokens_colour():
+    make_account()
+    assert cli.main(["format", "work", "--color", "%name", "dim"]) == 0
+    assert registry.find(registry.load(), "work")["format_colors"] == {"%name": "dim"}
+
+
+def test_setting_a_colour_to_auto_deletes_the_key():
+    """Absent means auto, so the dict only ever holds deviations — an untouched
+    account carries no colour state at all."""
+    make_account()
+    cli.main(["format", "work", "--color", "%name", "dim"])
+    cli.main(["format", "work", "--color", "%name", "auto"])
+    assert registry.find(registry.load(), "work")["format_colors"] == {}
+
+
+def test_format_rejects_a_bad_colour():
+    make_account()
+    assert cli.main(["format", "work", "--color", "%name", "red"]) == 1
+
+
+def test_format_tokens_lists_them(capsys):
+    assert cli.main(["format", "--tokens"]) == 0
+    out = capsys.readouterr().out
+    for token in ("%icon", "%name", "%5hreset", "%7dquotaleft", "%5h"):
+        assert token in out
+
+
+def test_the_passthrough_still_wins_over_the_new_command(monkeypatch):
+    """`ccs -p "format the disk"` is claude's. The two passthrough branches must
+    stay ahead of every command name, including this one."""
+    seen = []
+    monkeypatch.setattr(cli, "cmd_tty", lambda args, gui: seen.append(args) or 0)
+    cli.main(["-p", "format"])
+    assert seen == [["-p", "format"]]

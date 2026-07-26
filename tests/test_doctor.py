@@ -261,3 +261,19 @@ def test_doctor_says_nothing_is_wrong_when_the_panel_can_open(monkeypatch):
     monkeypatch.setattr(doctor, "_panel_import_error", lambda: None)
     row = next(c for c in doctor.run(healthy()) if "panel" in c.label)
     assert row.ok and row.detail == ""
+
+
+def test_doctor_reports_an_unknown_token():
+    reg = healthy()
+    registry.set_field(reg, "work", "format", "%name %bogus")
+    registry.save(reg)
+    bad = [c for c in failures(registry.load()) if "%bogus" in (c.detail or "")]
+    assert bad, "an unknown token must be reported"
+    assert "ccs format" in bad[0].detail
+
+
+def test_a_known_format_is_not_reported():
+    reg = healthy()
+    registry.set_field(reg, "work", "format", "%icon %name %5htimeleft")
+    registry.save(reg)
+    assert failures(registry.load()) == []

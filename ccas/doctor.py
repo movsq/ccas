@@ -14,7 +14,7 @@ import os
 import re
 from collections import namedtuple
 
-from . import label, paths, registry, waybar
+from . import format, label, paths, registry, waybar
 
 Check = namedtuple("Check", "ok label detail")
 
@@ -73,6 +73,15 @@ def _account_checks(account: dict) -> list:
     ]))
     checks = [Check(not detail, f"{name}: symlinks resolve",
                     f"{directory}: {detail}; run `ccs relink`" if detail else "")]
+
+    # Reported, never repaired: rewriting the format here would mask the very
+    # typo the check exists to name.
+    unknown = format.unknown_tokens(account.get("format") or "")
+    checks.append(Check(
+        not unknown, f"{name}: format tokens are known",
+        "" if not unknown else
+        f"unknown: {' '.join(unknown)} — they render literally on the bar; "
+        f"fix with: ccs format {slug} '…'"))
 
     return checks
 
