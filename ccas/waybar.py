@@ -1,8 +1,12 @@
-"""Managed blocks in Waybar's config and the user's bashrc.
+"""The managed block in Waybar's config, and the removal of the legacy one.
 
 config.jsonc carries // comments, so json.load cannot parse it. Everything here
 is text manipulation bounded by the sentinels; a parse-and-reserialise would
 destroy the user's comments and formatting.
+
+~/.bashrc is no longer managed, only cleaned: CCAS used to install a `claude()`
+shell function there and `strip_bashrc()` takes it back out. `ccs -p …` replaced
+it, because a function that shadows the user's binary only reaches new shells.
 """
 import json
 import os

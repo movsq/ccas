@@ -478,18 +478,17 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
                   else f"{label.MARK_OFF} Skip permissions (dangerous)")
     hide_row = (f"{label.MARK_ON if account and account['hide_icon'] else label.MARK_OFF}"
                 " Hide icon")
-    # The launch verbs are the one part of this screen that is not the same from
-    # both doors. A terminal has a cwd the user chose and scoping to it is the
-    # point; a bar click has Waybar's cwd — `~`, wherever the compositor started
-    # it — which is nobody's "here". So the bar gets the GtkMenu's three verbs,
-    # which never mentioned a directory, and `resolve()` (which already ignores
-    # cwd under gui) is told so by being handed None.
-    scope = None if gui else cwd
-    launch_rows = (["New session", "Resume last session", "Resume from history…"]
-                   if gui else
-                   [f"New here  ({short})", f"Resume last in  {short}",
-                    f"History in  {short}…", "All projects…"])
-    # The Waybar menu's grouping: launch verbs, appearance, runner toggles, manage.
+    # Everything below this point is the terminal door alone — the bar's click
+    # returned above. So the launch verbs name a directory and scope to it,
+    # which is the whole reason a terminal is worth keeping: the cwd is one the
+    # user chose. There used to be a second, directory-free set here for the bar,
+    # because Waybar's cwd is `~`, wherever the compositor started it, and no
+    # honest label could be written from it. The panel supplies a real directory,
+    # so that set is gone rather than unreachable.
+    scope = cwd
+    launch_rows = [f"New here  ({short})", f"Resume last in  {short}",
+                   f"History in  {short}…", "All projects…"]
+    # The old menu's grouping: launch verbs, appearance, runner toggles, manage.
     options = [*launch_rows,
                "Display as…", hide_row, "Color…",
                headless_row, danger_row, "Manage…"]
