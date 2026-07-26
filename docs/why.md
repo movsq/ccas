@@ -639,3 +639,22 @@ Backups of the pre-CCAS originals:
 An account slug can carry a suffix from the de-duplicator: `vo-se-15th` is what
 `vo.se` became when that account was removed and re-added while testing Manage.
 Slugs are permanent once written, so the suffix stays.
+
+## "Edit format…" opened a terminal that closed instantly
+
+The panel's button spawned `ccs format <slug>` — and with no format argument
+that command *shows* the format and returns 0. kitty appeared and vanished in
+the same frame, so the button read as broken rather than as a command that had
+already finished.
+
+The panel deliberately cannot ask for free text (one click, one Action, then
+close), so the terminal is the right door; it just had nothing to ask. `ccs
+format <slug> --edit` is the interactive half: the token table rendered against
+*this* account first — the tokens are not guessable, and it doubles as the only
+preview of a colour already set — then a readline prompt seeded with the current
+format, because a format string is far more often a small edit to a long line
+than a new one. Blank or Ctrl-D leaves it alone.
+
+The one pause in it is on an unknown token only. The panel's terminal closes on
+return, so a warning printed there is a warning nobody reads — and pausing a run
+the user typed themselves would be noise.

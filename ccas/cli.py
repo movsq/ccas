@@ -1,5 +1,6 @@
 """Argument dispatch."""
 import json
+import re
 import os
 import subprocess
 import sys
@@ -168,6 +169,9 @@ def cmd_format(rest) -> int:
             print(f"  {token}  {color}")
         return 0
 
+    if rest[0] == "--edit":
+        return _format_edit(reg, slug, account)
+
     if rest[0] == "--color":
         if len(rest) < 3 or not fmt.valid_color(rest[2]):
             return 1
@@ -184,6 +188,44 @@ def cmd_format(rest) -> int:
     for token in fmt.unknown_tokens(rest[0]):
         print(f"warning: unknown token {token}")
     return _mutate(slug, "format", rest[0])
+
+
+_MARKUP = re.compile(r"<[^>]+>")
+
+
+def _format_edit(reg, slug: str, account: dict) -> int:
+    """The interactive half of `ccs format` — what the panel's button opens.
+
+    It used to open `ccs format <slug>`, which prints the format and returns, so
+    the terminal closed the instant it appeared and the button read as broken.
+    Free text needs a prompt, and a prompt needs the token table beside it: the
+    tokens are not guessable, so each one is shown rendered against *this*
+    account, which is also the only preview of a colour that is already set.
+    """
+    current = account.get("format") or fmt.DEFAULT_FORMAT
+    index, seen = registry.index_of(reg, slug), usage.read(slug)
+    print(f"tokens — as they render for {label.display_name(account)}:")
+    for token in fmt.TOKENS:
+        shown = _MARKUP.sub("", fmt.render(account, index, seen,
+                                           format_override=token))
+        print(f"  {token:<14} {shown or '(empty — nothing recorded yet)'}")
+    print("  %%             a literal %")
+    print()
+
+    typed = pickers.prompt_edit("format:", current)
+    if typed is None:
+        print("unchanged.")
+        return 0
+    unknown = fmt.unknown_tokens(typed)
+    for token in unknown:
+        print(f"warning: unknown token {token}")
+    rc = _mutate(slug, "format", typed)
+    if unknown and rc == 0:
+        # This terminal is spawned by the panel and closes on return, so a
+        # warning printed here is a warning nobody reads. Only on a warning:
+        # pausing a run the user typed themselves would be noise.
+        pickers.prompt("(unknown tokens render as their own name — enter to close)")
+    return rc
 
 
 def dispatch_panel(action):
@@ -234,7 +276,7 @@ def dispatch_panel(action):
     # "format" is deliberately not a branch: the panel cannot prompt for free
     # text, so the button spawns a terminal running the command instead.
     if kind == "edit_format":
-        return _in_terminal(["format", slug])
+        return _in_terminal(["format", slug, "--edit"])
     if kind == "add":
         return _in_terminal(["add"])
     if kind in ("rename", "remove"):

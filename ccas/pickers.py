@@ -78,6 +78,37 @@ def confirm_create(display_path: str) -> bool:
     return answer in ("y", "yes")
 
 
+def prompt_edit(message: str, initial: str):
+    """Free text with `initial` already typed into the line, or None to cancel.
+
+    readline is what makes it an *edit* rather than a retype: a format string is
+    a small change to a long line far more often than it is a new one. The hook
+    fires once — readline calls it on the first redisplay and we clear it there,
+    so a second prompt in the same process does not inherit the seed.
+
+    Absent readline (it is stdlib but optional at build time) the seed is only
+    shown, which degrades to a retype rather than to a traceback.
+    """
+    try:
+        import readline
+    except ImportError:
+        readline = None
+    if readline is not None:
+        def seed():
+            readline.insert_text(initial)
+            readline.redisplay()
+            readline.set_pre_input_hook(None)
+        readline.set_pre_input_hook(seed)
+    try:
+        text = input(f"{message} ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+    finally:
+        if readline is not None:
+            readline.set_pre_input_hook(None)
+    return text or None
+
+
 def prompt(message: str):
     try:
         return input(f"{message} ").strip() or None

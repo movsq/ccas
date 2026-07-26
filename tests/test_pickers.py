@@ -143,3 +143,20 @@ def test_is_gui_still_answers_which_door_was_used(monkeypatch):
     monkeypatch.setattr(pickers.sys, "stdin",
                         type("S", (), {"isatty": lambda _s: False})())
     assert pickers.is_gui() is True
+
+
+def test_prompt_edit_returns_the_typed_text(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda *_: "  %icon %name  ")
+    assert pickers.prompt_edit("format:", "%name") == "%icon %name"
+
+
+def test_prompt_edit_reads_a_blank_line_as_cancel(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda *_: "   ")
+    assert pickers.prompt_edit("format:", "%name") is None
+
+
+def test_prompt_edit_reads_ctrl_d_as_cancel(monkeypatch):
+    def eof(*_):
+        raise EOFError
+    monkeypatch.setattr("builtins.input", eof)
+    assert pickers.prompt_edit("format:", "%name") is None

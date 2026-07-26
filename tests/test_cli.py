@@ -1437,4 +1437,47 @@ def test_the_format_button_opens_a_terminal(monkeypatch):
     seen = []
     monkeypatch.setattr(cli, "_in_terminal", lambda args: seen.append(args) or 0)
     cli.dispatch_panel(panel.Action("edit_format", "work", None))
-    assert seen == [["format", "work"]]
+    assert seen == [["format", "work", "--edit"]]
+
+
+def test_format_edit_prompts_for_a_new_format(monkeypatch):
+    """The panel's button lands here: a bare `ccs format <slug>` printed and
+    exited, so the terminal it opened closed before anything could be typed."""
+    make_account()
+    monkeypatch.setattr(cli.pickers, "prompt_edit", lambda *_: "%icon %5hleft")
+    assert cli.main(["format", "work", "--edit"]) == 0
+    assert registry.find(registry.load(), "work")["format"] == "%icon %5hleft"
+
+
+def test_format_edit_seeds_the_prompt_with_the_current_format(monkeypatch):
+    make_account()
+    cli.main(["format", "work", "%name"])
+    seen = []
+    monkeypatch.setattr(cli.pickers, "prompt_edit",
+                        lambda message, initial: seen.append(initial) or None)
+    cli.main(["format", "work", "--edit"])
+    assert seen == ["%name"]
+
+
+def test_format_edit_lists_the_tokens_first(monkeypatch, capsys):
+    """Free text against a token table nobody can see is a guess."""
+    make_account()
+    monkeypatch.setattr(cli.pickers, "prompt_edit", lambda *_: None)
+    cli.main(["format", "work", "--edit"])
+    assert "%5h" in capsys.readouterr().out
+
+
+def test_format_edit_cancelled_leaves_the_format_alone(monkeypatch):
+    make_account()
+    cli.main(["format", "work", "%name"])
+    monkeypatch.setattr(cli.pickers, "prompt_edit", lambda *_: None)
+    assert cli.main(["format", "work", "--edit"]) == 0
+    assert registry.find(registry.load(), "work")["format"] == "%name"
+
+
+def test_format_edit_warns_about_an_unknown_token(monkeypatch, capsys):
+    make_account()
+    monkeypatch.setattr(cli.pickers, "prompt_edit", lambda *_: "%name %bogus")
+    monkeypatch.setattr(cli.pickers, "prompt", lambda *_: None)
+    assert cli.main(["format", "work", "--edit"]) == 0
+    assert "%bogus" in capsys.readouterr().out
