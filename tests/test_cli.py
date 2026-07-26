@@ -1049,8 +1049,15 @@ def test_statusline_signals_the_bar_only_when_the_reading_changed(monkeypatch, t
 
 
 def test_render_puts_the_recorded_reading_on_the_bar(monkeypatch):
-    """The 30 s tick is what keeps the clock on screen when no signal fired."""
+    """The 30 s tick is what keeps the clock on screen when no signal fired.
+
+    In the custom mode, which is now the only one that carries usage at all —
+    the four built-ins are exactly what they are named.
+    """
     make_account()
+    reg = registry.load()
+    registry.set_field(reg, "work", "display", "custom")
+    registry.save(reg)
     payload = json.dumps({"rate_limits": {"five_hour": {
         "used_percentage": 94.0, "resets_at": time.time() + 3600}}})
     _feed(monkeypatch, payload, paths.account_dir("work"))

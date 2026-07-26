@@ -189,3 +189,15 @@ def test_valid_color():
     assert not fmt.valid_color("red")
     assert not fmt.valid_color("#f9e2a")
     assert not fmt.valid_color("' foreground='x")   # no attribute injection
+
+
+def test_the_default_format_reproduces_the_old_bar():
+    """The migration canary, spelled out rather than compared against
+    label.render — which no longer produces this, by design. Stripping the clock
+    from the built-in modes is only safe because '%icon %name %5h' puts back
+    exactly what they used to show."""
+    r = reading()
+    clock = usage.reset_clock(int(IN_2H20))
+    assert fmt.render(account(), 1, r, NOW) == \
+        f"{ICON} <span size='110%'>work</span> " \
+        f"<span size='110%' color='{usage.YELLOW}'>{clock}</span>"

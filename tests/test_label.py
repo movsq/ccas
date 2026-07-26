@@ -1,5 +1,4 @@
 import ccas.label as label
-import ccas.usage as usage
 
 
 def account(**kw):
@@ -101,40 +100,31 @@ def test_the_state_marks_are_the_vetted_codepoints():
     assert label.MARK_OFF == "○"
 
 
-# ── the usage token ───────────────────────────────────────────────────────────
+# ── usage, and where it went ──────────────────────────────────────────────────
 
-def reading(percent=94.0, resets_at=2000):
-    return {"fetched_at": 0.0, "source": "statusline",
-            "five_hour": {"percent": percent, "resets_at": resets_at},
-            "seven_day": None}
+def test_the_built_in_modes_no_longer_carry_a_usage_token():
+    """The bug this feature exists for: "icon only" was an icon and a clock, and
+    no mode could ask for the icon alone. Usage now lives in "custom" only.
 
-
-def test_every_display_mode_carries_the_usage_token():
-    """CCAS is an account chooser and the question it answers is a quota
-    question, so usage is the bar's subject — including in `icon only`."""
-    for mode in ("nickname", "index", "claude code", "icon only"):
-        rendered = label.render(account(display=mode), 1, reading(), now=1000.0)
-        assert usage.reset_clock(2000) in rendered
-        assert rendered.startswith("<span size='150%'")
-
-
-def test_the_token_follows_the_name_rather_than_replacing_it():
-    rendered = label.render(account(), 1, reading(), now=1000.0)
-    assert rendered.endswith(
-        f"<span size='110%'>work</span> "
-        f"<span size='110%' color='{usage.PEACH}'>{usage.reset_clock(2000)}</span>")
-
-
-def test_a_cleared_nickname_still_leaves_room_for_the_token():
-    rendered = label.render(account(nickname=""), 1, reading(), now=1000.0)
-    assert rendered == (
-        "<span size='150%' rise='-800' color='#f38ba8'>✻</span> "
-        f"<span size='110%' color='{usage.PEACH}'>{usage.reset_clock(2000)}</span>")
+    Four tests were deliberately removed here, all of them asserting the old
+    combined label: that every mode carried the token, that the token followed
+    the name, that a cleared nickname still left room for it, and that a
+    rolled-over reading rendered as no reading. The first three are now wrong by
+    design; the facts under the last two — the collapse rule and an open window
+    showing no clock — moved to tests/test_format.py, which is where the only
+    code that can still produce them lives.
+    """
+    r = {"fetched_at": 0, "source": "statusline",
+         "five_hour": {"percent": 62.0, "resets_at": 1_800_008_400},
+         "seven_day": None}
+    now = 1_800_000_000.0
+    icon = "<span size='150%' rise='-800' color='#f38ba8'>✻</span>"
+    assert label.render(account(display="icon only"), 1, r, now) == icon
+    assert label.render(account(), 1, r, now) == f"{icon} <span size='110%'>work</span>"
+    assert label.render(account(display="index"), 3, r, now) == f"{icon} <span size='110%'>3</span>"
 
 
-def test_no_reading_renders_the_bar_exactly_as_before():
-    """Open and absent are both "nothing to warn about", and the label is a
-    warning device. The difference between them is said in words elsewhere."""
-    assert label.render(account(), 1, None, now=1000.0) == label.render(account(), 1)
-    rolled_over = label.render(account(), 1, reading(), now=999999.0)
-    assert rolled_over == label.render(account(), 1)
+def test_custom_delegates_to_the_format_module():
+    import ccas.format as fmt
+    a = account(display="custom", format="%name %email")
+    assert label.render(a, 1) == fmt.render(a, 1)

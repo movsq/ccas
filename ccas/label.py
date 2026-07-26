@@ -2,9 +2,6 @@
 from xml.sax.saxutils import escape
 
 from . import paths
-# The function, not the module: `usage` is what the reading is called at every
-# call site, and the parameter should be able to keep that name.
-from .usage import bar as usage_bar
 
 ICON_SIZE = "150%"
 # The glyph sits high in the font, so at x-large it reads as floating above the
@@ -35,25 +32,29 @@ def display_name(account: dict) -> str:
 
 
 def render(account: dict, index: int, usage=None, now=None) -> str:
-    """The bar label: the glyph, whatever the display mode asks for, and — when
-    the 5-hour window is bounded — the clock it clears at, coloured by pressure.
+    """The bar label: the glyph and whatever the display mode asks for.
 
-    `usage` is a reading from usage.read(); None renders the bar as it was
-    before the feature existed, which is also what an open window renders as.
+    The four built-in modes are exactly what they are named — "icon only" is an
+    icon, and nothing else. Usage lives in the "custom" mode's tokens, which is
+    the only place it can be asked for, moved, coloured or left out.
+
+    `usage` is a reading from usage.read(), passed through to that mode.
     """
+    if account["display"] == "custom":
+        # Imported here, not at module scope: format.py imports this module's
+        # measured metrics, and a top-level import either way is a cycle.
+        from . import format as fmt
+        return fmt.render(account, index, usage, now)
+
     color = paths.PALETTE[account["color"]][1]
     if account["hide_icon"]:
         icon = f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' alpha='1'>{paths.GLYPH}</span>"
     else:
         icon = f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' color='{color}'>{paths.GLYPH}</span>"
 
-    token = usage_bar(usage, now)
-    token = (f"<span size='{TEXT_SIZE}' {token[1]}>{pango_escape(token[0])}</span>"
-             if token else "")
-
     mode = account["display"]
     if mode == "icon only":
-        return f"{icon} {token}" if token else icon
+        return icon
     if mode == "index":
         text = str(index)
     elif mode == "claude code":
@@ -65,9 +66,8 @@ def render(account: dict, index: int, usage=None, now=None) -> str:
         # the account chooser, where a blank row would be unpickable.
         text = account.get("nickname") or ""
     if text:
-        return " ".join(filter(None, [
-            icon, f"<span size='{TEXT_SIZE}'>{pango_escape(text)}</span>", token]))
-    return f"{icon} {token}" if token else icon
+        return f"{icon} <span size='{TEXT_SIZE}'>{pango_escape(text)}</span>"
+    return icon
 
 
 def check_invisible_warning(account: dict) -> bool:
