@@ -5,7 +5,8 @@ import re
 import tempfile
 import unicodedata
 
-from . import paths
+# No cycle: format imports label and paths, neither of which imports registry.
+from . import format, paths
 
 
 def slugify(text: str) -> str:
@@ -77,6 +78,8 @@ def add(reg: dict, slug: str, email: str, nickname):
         "color": color,
         "display": "nickname",
         "hide_icon": False,
+        "format": format.DEFAULT_FORMAT,
+        "format_colors": {},
         "headless": False,
         "dangerous": False,
         "warned_invisible": False,
@@ -122,4 +125,13 @@ def set_field(reg: dict, slug: str, field: str, value) -> None:
         raise ValueError(f"invalid display mode: {value}")
     if field == "color" and not (0 <= int(value) < len(paths.PALETTE)):
         raise ValueError(f"invalid colour index: {value}")
+    # An unknown *token* is deliberately not checked: retiring a token in a later
+    # version would turn a stored format into a hard error with nothing on the
+    # bar, where rendering it literally is visible and self-explaining.
+    if field == "format" and not isinstance(value, str):
+        raise ValueError(f"format must be a string: {value!r}")
+    if field == "format_colors":
+        if not isinstance(value, dict) or \
+                not all(format.valid_color(v) for v in value.values()):
+            raise ValueError(f"invalid format colours: {value!r}")
     account[field] = value

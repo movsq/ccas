@@ -2,6 +2,7 @@ import json
 import importlib
 import pytest
 
+import ccas.format as fmt
 import ccas.paths as paths
 import ccas.registry as registry
 
@@ -171,3 +172,46 @@ def test_dangerous_is_not_exclusive():
     registry.set_field(reg, "a", "dangerous", True)
     registry.set_field(reg, "b", "dangerous", True)
     assert [a["dangerous"] for a in reg["accounts"]] == [True, True]
+
+
+# ── the custom display mode and its two fields ────────────────────────────────
+
+def test_custom_is_a_display_mode():
+    assert "custom" in paths.DISPLAY_MODES
+    assert paths.DISPLAY_MODES[-1] == "custom"   # appended, so no index moved
+
+
+def test_a_new_account_carries_the_default_format():
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
+    account = registry.find(reg, "work")
+    assert account["format"] == fmt.DEFAULT_FORMAT
+    assert account["format_colors"] == {}
+
+
+def test_set_field_validates_the_format():
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
+    registry.set_field(reg, "work", "format", "%icon %5hused")
+    assert registry.find(reg, "work")["format"] == "%icon %5hused"
+    with pytest.raises(ValueError):
+        registry.set_field(reg, "work", "format", 7)
+
+
+def test_an_unknown_token_is_stored_not_rejected():
+    """Rejecting would mean that retiring a token in a later version turns a
+    stored format into a hard error with nothing on the bar. Rendering it
+    literally turns the same event into visible, self-explaining text."""
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
+    registry.set_field(reg, "work", "format", "%name %bogus")
+    assert registry.find(reg, "work")["format"] == "%name %bogus"
+
+
+def test_set_field_validates_the_colours():
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
+    registry.set_field(reg, "work", "format_colors", {"%name": "#f9e2af"})
+    for bad in ({"%name": "red"}, {"%name": "' x='y"}, "not a dict"):
+        with pytest.raises(ValueError):
+            registry.set_field(reg, "work", "format_colors", bad)

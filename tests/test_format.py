@@ -201,3 +201,11 @@ def test_the_default_format_reproduces_the_old_bar():
     assert fmt.render(account(), 1, r, NOW) == \
         f"{ICON} <span size='110%'>work</span> " \
         f"<span size='110%' color='{usage.YELLOW}'>{clock}</span>"
+
+
+def test_an_account_predating_the_feature_still_renders():
+    """Accounts written before the two fields existed are read, not migrated —
+    render defaults both with .get, so nothing has to rewrite accounts.json."""
+    a = account()
+    del a["format"], a["format_colors"]
+    assert fmt.render(a, 1) == fmt.render(account(), 1)
