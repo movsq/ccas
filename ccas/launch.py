@@ -54,15 +54,15 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd, dangerous: bool = False):
             dirs = history.project_dirs(sessions)
             if cwd and cwd not in dirs:
                 dirs.insert(0, cwd)
-            choice = pickers.choose("project", [history.abbreviate(d) for d in dirs], gui)
+            choice = pickers.choose("project", [history.abbreviate(d) for d in dirs])
             if choice is None:
                 return None
-            # The picker lists abbreviated paths and fuzzel echoes unmatched
-            # input verbatim, so what comes back may be a ~ path the user typed
+            # The picker lists abbreviated paths and fzf echoes the query when
+            # nothing matches, so what comes back may be a ~ path the user typed
             # for a project that does not exist yet.
             target = os.path.expanduser(choice)
         if not os.path.isdir(target):
-            if not pickers.confirm_create(history.abbreviate(target), gui):
+            if not pickers.confirm_create(history.abbreviate(target)):
                 return None
         return target, _claude(dangerous=dangerous)
 
@@ -91,7 +91,7 @@ def resolve(slug: str, mode: str, arg, gui: bool, cwd, dangerous: bool = False):
         if not rows:
             return None
         labels = [r[0] for r in rows]
-        choice = pickers.choose("resume", labels, gui)
+        choice = pickers.choose("resume", labels)
         if choice is None:
             return None
         for label, uuid, session_cwd in rows:

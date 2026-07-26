@@ -1,7 +1,24 @@
-import importlib
+"""The terminal door's front-ends. There is no other kind here any more.
+
+The fuzzel half of every function below was retired with Task 12 — the GTK
+panel is the GUI door and the only one. What went with it were fuzzel's
+workarounds rather than anything the user could see: a placeholder row, because
+fuzzel exits instantly on empty stdin; --only-match, because it echoes unmatched
+input verbatim and stray text would have read as consent; a computed --width,
+because its default 30 columns truncated a project path silently.
+"""
+import pathlib
 import pytest
 
 import ccas.pickers as pickers
+
+
+def test_pickers_no_longer_shells_out_to_fuzzel():
+    """A surviving fuzzel branch would be a second, unstyled front door that
+    nothing routes to but everything would have to keep working."""
+    source = pathlib.Path("ccas/pickers.py").read_text()
+    assert "subprocess.run" in source, "the fzf half is still the real thing"
+    assert '"fuzzel"' not in source
 
 
 def test_choose_returns_none_when_cancelled(monkeypatch):
@@ -9,7 +26,7 @@ def test_choose_returns_none_when_cancelled(monkeypatch):
         returncode = 1
         stdout = ""
     monkeypatch.setattr(pickers.subprocess, "run", lambda *a, **k: Result())
-    assert pickers.choose("pick", ["a", "b"], gui=True) is None
+    assert pickers.choose("pick", ["a", "b"]) is None
 
 
 def test_choose_returns_the_selected_row(monkeypatch):
@@ -25,175 +42,67 @@ def test_choose_returns_the_selected_row(monkeypatch):
         return Result()
 
     monkeypatch.setattr(pickers.subprocess, "run", fake_run)
-    assert pickers.choose("pick", ["first", "second"], gui=True) == "second"
-    assert "fuzzel" in seen["cmd"][0]
+    assert pickers.choose("pick", ["first", "second"]) == "second"
+    assert "fzf" in seen["cmd"][0]
     assert seen["input"] == "first\nsecond"
-
-
-def test_choose_uses_fzf_in_tty_mode(monkeypatch):
-    class Result:
-        returncode = 0
-        stdout = "first\n"
-    captured = {}
-
-    def fake_run(cmd, **kwargs):
-        captured["cmd"] = cmd
-        return Result()
-
-    monkeypatch.setattr(pickers.subprocess, "run", fake_run)
-    pickers.choose("pick", ["first"], gui=False)
-    assert "fzf" in captured["cmd"][0]
 
 
 def test_choose_with_no_rows_returns_none(monkeypatch):
     monkeypatch.setattr(pickers.subprocess, "run",
                         lambda *a, **k: pytest.fail("must not spawn a picker"))
-    assert pickers.choose("pick", [], gui=True) is None
+    assert pickers.choose("pick", []) is None
 
 
-def test_prompt_gives_fuzzel_a_row_so_it_stays_open(monkeypatch):
-    """fuzzel exits instantly on empty stdin, so a free-text prompt with no
-    rows can never be typed into — that was the placeholder's silent 'blink'."""
-    seen = {}
-
-    class Result:
-        returncode = 0
-        stdout = "typed name\n"
-
-    def fake_run(cmd, **kwargs):
-        seen["input"] = kwargs.get("input")
-        return Result()
-
-    monkeypatch.setattr(pickers.subprocess, "run", fake_run)
-    assert pickers.prompt("nickname:", gui=True) == "typed name"
-    assert seen["input"], "fuzzel must be given at least one row"
-
-
-def test_prompt_treats_the_hint_row_as_no_answer(monkeypatch):
-    class Result:
-        returncode = 0
-        stdout = pickers.HINT + "\n"
-
-    monkeypatch.setattr(pickers.subprocess, "run", lambda *a, **k: Result())
-    assert pickers.prompt("nickname:", gui=True) is None
+def test_prompt_reads_a_line(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _p: "  typed name ")
+    assert pickers.prompt("nickname:") == "typed name"
 
 
 def test_prompt_returns_none_when_cancelled(monkeypatch):
-    class Result:
-        returncode = 1
-        stdout = ""
+    def interrupted(_p):
+        raise KeyboardInterrupt
 
-    monkeypatch.setattr(pickers.subprocess, "run", lambda *a, **k: Result())
-    assert pickers.prompt("nickname:", gui=True) is None
+    monkeypatch.setattr("builtins.input", interrupted)
+    assert pickers.prompt("nickname:") is None
+    monkeypatch.setattr("builtins.input", lambda _p: "")
+    assert pickers.prompt("nickname:") is None
 
 
 def test_prompt_or_clear_separates_cancel_from_clear(monkeypatch):
-    """Three outcomes a plain prompt() cannot express: text, clear, cancel."""
-    seen = {}
+    """Three outcomes a plain prompt() cannot express: text, clear, cancel.
 
-    class Result:
-        returncode = 0
-        stdout = "new name\n"
-
-    def fake_run(cmd, **kwargs):
-        seen["input"] = kwargs.get("input")
-        return Result()
-
-    monkeypatch.setattr(pickers.subprocess, "run", fake_run)
-    assert pickers.prompt_or_clear("nickname:", "clear it", gui=True) == "new name"
-    assert seen["input"] == "clear it", "the clear row must be selectable"
-
-    Result.stdout = "clear it\n"
-    assert pickers.prompt_or_clear("nickname:", "clear it", gui=True) is None
-
-    Result.returncode, Result.stdout = 1, ""
-    assert pickers.prompt_or_clear("nickname:", "clear it", gui=True) is pickers.CANCEL
-
-
-def test_prompt_or_clear_treats_empty_output_as_cancel(monkeypatch):
-    class Result:
-        returncode = 0
-        stdout = "\n"
-
-    monkeypatch.setattr(pickers.subprocess, "run", lambda *a, **k: Result())
-    assert pickers.prompt_or_clear("nickname:", "clear it", gui=True) is pickers.CANCEL
-
-
-def test_prompt_or_clear_on_the_terminal(monkeypatch):
+    Esc used to be indistinguishable from clearing, so backing out of a rename
+    wiped the nickname it was backing out of.
+    """
     monkeypatch.setattr("builtins.input", lambda _p: "  bob ")
-    assert pickers.prompt_or_clear("nickname:", "clear it", gui=False) == "bob"
+    assert pickers.prompt_or_clear("nickname:", "clear it") == "bob"
     monkeypatch.setattr("builtins.input", lambda _p: "-")
-    assert pickers.prompt_or_clear("nickname:", "clear it", gui=False) is None
+    assert pickers.prompt_or_clear("nickname:", "clear it") is None
     monkeypatch.setattr("builtins.input", lambda _p: "")
-    assert pickers.prompt_or_clear("nickname:", "clear it", gui=False) is pickers.CANCEL
+    assert pickers.prompt_or_clear("nickname:", "clear it") is pickers.CANCEL
 
 
-def _confirm_run(monkeypatch, returncode, stdout):
-    seen = {}
+def test_prompt_or_clear_cancels_on_interruption(monkeypatch):
+    def eof(_p):
+        raise EOFError
 
-    class Result:
-        pass
-
-    Result.returncode, Result.stdout = returncode, stdout
-
-    def fake_run(cmd, **kwargs):
-        seen["cmd"] = cmd
-        seen["input"] = kwargs.get("input")
-        return Result()
-
-    monkeypatch.setattr(pickers.subprocess, "run", fake_run)
-    return seen
+    monkeypatch.setattr("builtins.input", eof)
+    assert pickers.prompt_or_clear("nickname:", "clear it") is pickers.CANCEL
 
 
-def test_confirm_create_accepts_the_first_row(monkeypatch):
-    seen = _confirm_run(monkeypatch, 0, "0\n")
-    assert pickers.confirm_create("~/code/new", gui=True) is True
-    assert seen["input"].split("\n")[0] == pickers.CREATE_ROW
-
-
-def test_confirm_create_shows_the_path_in_green_above_the_row(monkeypatch):
-    """The path is the thing being decided, so it gets the colour, not the row."""
-    seen = _confirm_run(monkeypatch, 0, "0\n")
-    pickers.confirm_create("~/code/new", gui=True)
-    cmd = seen["cmd"]
-    assert cmd[cmd.index("--mesg") + 1] == "~/code/new"
-    assert cmd[cmd.index("--message-color") + 1] == pickers.CREATE_COLOR
-
-
-def test_confirm_create_is_wide_enough_for_the_path(monkeypatch):
-    """Measured live: fuzzel's default 30 columns cut the row to 'create proje…'."""
-    long_path = "~/very/deeply/nested/place/for/a/brand/new/project"
-    seen = _confirm_run(monkeypatch, 0, "0\n")
-    pickers.confirm_create(long_path, gui=True)
-    cmd = seen["cmd"]
-    assert int(cmd[cmd.index("--width") + 1]) > len(long_path)
-
-
-def test_confirm_create_declines_on_the_cancel_row(monkeypatch):
-    _confirm_run(monkeypatch, 0, "1\n")
-    assert pickers.confirm_create("~/code/new", gui=True) is False
-
-
-def test_confirm_create_declines_when_dismissed(monkeypatch):
-    _confirm_run(monkeypatch, 1, "")
-    assert pickers.confirm_create("~/code/new", gui=True) is False
-
-
-def test_confirm_create_refuses_free_text(monkeypatch):
-    """Without --only-match fuzzel echoes typed text back, and any non-empty
-    stdout here would read as consent to create a directory."""
-    seen = _confirm_run(monkeypatch, 0, "0\n")
-    pickers.confirm_create("~/code/new", gui=True)
-    assert "--only-match" in seen["cmd"]
-
-
-def test_confirm_create_asks_on_the_terminal(monkeypatch):
-    monkeypatch.setattr(pickers.subprocess, "run",
-                        lambda *a, **k: pytest.fail("must not spawn fuzzel"))
+def test_confirm_create_asks_before_making_a_directory(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda _prompt: "y")
-    assert pickers.confirm_create("~/code/new", gui=False) is True
+    assert pickers.confirm_create("~/code/new") is True
     monkeypatch.setattr("builtins.input", lambda _prompt: "")
-    assert pickers.confirm_create("~/code/new", gui=False) is False
+    assert pickers.confirm_create("~/code/new") is False
+
+
+def test_confirm_create_declines_on_interruption(monkeypatch):
+    def interrupted(_p):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", interrupted)
+    assert pickers.confirm_create("~/code/new") is False
 
 
 def _capture(monkeypatch, stdout="first\n"):
@@ -211,22 +120,26 @@ def _capture(monkeypatch, stdout="first\n"):
 
 
 def test_a_note_is_shown_above_the_rows_and_cannot_be_picked(monkeypatch):
-    """What the retired GtkMenu did with an insensitive title row. Both
-    front-ends have a place for text that is not a choice — and both honour a
-    newline in it, so a second line costs nothing."""
+    """What the retired GtkMenu did with an insensitive title row. fzf's
+    --header honours a newline, so a second line costs nothing."""
     seen = _capture(monkeypatch)
-    pickers.choose("pick", ["first"], gui=True, note="5h ≥94%\n7d ≥91%")
-    assert seen["cmd"][seen["cmd"].index("--mesg") + 1] == "5h ≥94%\n7d ≥91%"
-
-    seen = _capture(monkeypatch)
-    pickers.choose("pick", ["first"], gui=False, note="5h ≥94%")
-    assert seen["cmd"][seen["cmd"].index("--header") + 1] == "5h ≥94%"
+    pickers.choose("pick", ["first"], note="5h ≥94%\n7d ≥91%")
+    assert seen["cmd"][seen["cmd"].index("--header") + 1] == "5h ≥94%\n7d ≥91%"
 
 
 def test_no_note_leaves_the_command_as_it_was(monkeypatch):
     seen = _capture(monkeypatch)
-    pickers.choose("pick", ["first"], gui=True)
-    assert "--mesg" not in seen["cmd"]
-    seen = _capture(monkeypatch)
-    pickers.choose("pick", ["first"], gui=False)
+    pickers.choose("pick", ["first"])
     assert "--header" not in seen["cmd"]
+
+
+def test_is_gui_still_answers_which_door_was_used(monkeypatch):
+    """It never chose a front end — it says whether there is a terminal on the
+    other end, and Waybar's inherited stdin is why that has to be a fallback
+    behind the explicit --gui flag."""
+    monkeypatch.setattr(pickers.sys, "stdin",
+                        type("S", (), {"isatty": lambda _s: True})())
+    assert pickers.is_gui() is False
+    monkeypatch.setattr(pickers.sys, "stdin",
+                        type("S", (), {"isatty": lambda _s: False})())
+    assert pickers.is_gui() is True

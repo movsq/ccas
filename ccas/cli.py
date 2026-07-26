@@ -20,7 +20,7 @@ NO_ACCOUNT_ARGS = {"--version", "-v", "--help", "-h",
 
 # The one row of the account picker that is not an account. ASCII '+' rather
 # than a glyph: the vetted-glyph rule is about Waybar's FontAwesome-first stack,
-# and this row is drawn by fzf or fuzzel, whose fonts nothing here has measured.
+# and this row is drawn by fzf, whose font nothing here has measured.
 ADD_ROW = "+  Add account…"
 
 # Not an exit code: a chip click reopens the panel on another account, and the
@@ -93,7 +93,7 @@ def _runner_slug(reg, args, gui):
     names = [label.display_name(a) for a in reg["accounts"]]
     # Asked even when there is only one account: the point is that the user knows
     # which one is answering `claude -p`, and it is a single question, once.
-    choice = pickers.choose("account for headless runs", names, gui)
+    choice = pickers.choose("account for headless runs", names)
     if choice is None:
         return None
     slug = next(a["slug"] for a in reg["accounts"] if label.display_name(a) == choice)
@@ -146,7 +146,7 @@ def _mutate(slug: str, field: str, value) -> int:
 def dispatch_panel(action):
     """Turn the panel's one Action into the command it names.
 
-    Every branch goes through the entry point the fuzzel menu already used, so
+    Every branch goes through the entry point the retired fuzzel menu used, so
     the panel gains no write path of its own: set_headless() keeps the runner
     exclusive, set_field() keeps display and colour validated, and accounts and
     launch keep the invariants they already hold. The widget tree decides
@@ -176,10 +176,30 @@ def dispatch_panel(action):
     if kind in ("display", "color"):
         return _mutate(slug, kind, value)
     if kind == "add":
-        return cmd_add(True)
+        return _in_terminal(["add"])
     if kind in ("rename", "remove"):
-        return cmd_manage(kind, slug, True)
+        return _in_terminal(["manage", kind, slug])
     raise ValueError(f"unknown panel action: {kind}")
+
+
+def _in_terminal(args) -> int:
+    """Run a ccs command in a terminal of its own.
+
+    The three manage verbs are the ones the panel can name but not ask about:
+    rename wants free text, remove wants a confirmation, add runs an interactive
+    login. The panel is gone by the time any of them starts — a button click
+    closes it — and a bar click has no stdin to prompt on, so an input() there
+    would block forever against a console nobody can see.
+
+    So they go to the same `ccs` the user could have typed, in a terminal where
+    the fzf and input() paths are real. That is also why the GUI branches of
+    pickers.py could be retired rather than reimplemented in GTK.
+    """
+    inner = " ".join(f"'{a}'" for a in [str(paths.ccs_bin()), *args])
+    return subprocess.run(
+        ["kitty", "--class", "ccas", "-e", "bash", "-lc", inner],
+        env=accounts.clean_env(), check=False,
+    ).returncode
 
 
 def cmd_render(slug: str) -> int:
@@ -287,7 +307,7 @@ def _free_slug(reg, base: str, taken=None) -> str:
 
 
 def cmd_add(gui: bool) -> int:
-    nickname = pickers.prompt("nickname (optional):", gui)
+    nickname = pickers.prompt("nickname (optional):")
     reg = registry.load()
     # A placeholder. The account directory *is* CLAUDE_CONFIG_DIR, so it has to
     # exist before `auth login` runs — and the email that should name it is not
@@ -348,7 +368,7 @@ def cmd_manage(action: str, slug, gui: bool) -> int:
     if action == "add":
         return cmd_add(gui)
     if action == "rename":
-        name = pickers.prompt_or_clear("new nickname:", "⌫  clear nickname", gui)
+        name = pickers.prompt_or_clear("new nickname:", "⌫  clear nickname")
         if name is pickers.CANCEL:
             return 0
         reg = registry.load()
@@ -358,7 +378,7 @@ def cmd_manage(action: str, slug, gui: bool) -> int:
         _refresh(reg, registry.find(reg, slug))
         return 0
     if action == "remove":
-        confirm = pickers.choose(f"remove {slug}?", ["no", "yes"], gui)
+        confirm = pickers.choose(f"remove {slug}?", ["no", "yes"])
         return cmd_rm(slug) if confirm == "yes" else 0
     return 1
 
@@ -378,12 +398,12 @@ def cmd_tty(args, gui=None) -> int:
         return subprocess.run(argv, env=accounts.env_for(slug),
                               check=False).returncode
     if not reg["accounts"]:
-        return cmd_add(gui)  # nothing to pick between, and fuzzel dies on an empty list
+        return cmd_add(gui)  # nothing to pick between
     # No shortcut for a single account any more: the list is no longer a
     # pointless one row, and skipping it hid Add from the user most likely to
     # want a second account.
     names = [label.display_name(a) for a in reg["accounts"]]
-    choice = pickers.choose("account", [*names, ADD_ROW], gui)
+    choice = pickers.choose("account", [*names, ADD_ROW])
     if choice is None:
         return 1
     if choice == ADD_ROW:  # before the lookup — it is not a display name
@@ -396,7 +416,7 @@ def _display_menu(reg, slug: str, gui: bool) -> int:
     account = registry.find(reg, slug)
     rows = [f"{label.MARK_ON if account['display'] == m else label.MARK_OFF} {m}"
             for m in paths.DISPLAY_MODES]
-    choice = pickers.choose("display as", rows, gui)
+    choice = pickers.choose("display as", rows)
     if choice is None:
         return 0
     return _mutate(slug, "display", choice.split(" ", 1)[1])
@@ -406,7 +426,7 @@ def _color_menu(reg, slug: str, gui: bool) -> int:
     account = registry.find(reg, slug)
     rows = [f"{label.MARK_ON if account['color'] == i else label.MARK_OFF} {name}"
             for i, (name, _hex) in enumerate(paths.PALETTE)]
-    choice = pickers.choose("color", rows, gui)
+    choice = pickers.choose("color", rows)
     if choice is None:
         return 0
     return _mutate(slug, "color", rows.index(choice))
@@ -477,7 +497,7 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     # prompted "mode" does not say which account it belongs to. Under it, where
     # the label has no room to be anything but a warning, usage in words: an
     # open window is the good state and must not read as missing data.
-    choice = pickers.choose(label.display_name(account), options, gui,
+    choice = pickers.choose(label.display_name(account), options,
                             note="\n".join(usage.lines(usage.read(slug))))
     if choice is None:
         return 1
@@ -516,7 +536,7 @@ def cmd_manage_menu(slug: str, gui: bool) -> int:
     account = registry.find(registry.load(), slug)
     rename = f"Rename {label.display_name(account) if account else slug}…"
     remove = f"Remove {slug}…"
-    choice = pickers.choose("manage", [rename, remove], gui)
+    choice = pickers.choose("manage", [rename, remove])
     if choice is None:
         return 1
     return cmd_manage("rename" if choice == rename else "remove", slug, gui)

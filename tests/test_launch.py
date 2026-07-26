@@ -101,7 +101,7 @@ def test_unknown_mode_raises(tmp_path):
 def test_new_in_a_missing_directory_asks_before_creating(tmp_path, monkeypatch):
     asked = {}
     monkeypatch.setattr(launch.pickers, "confirm_create",
-                        lambda path, gui: asked.setdefault("path", path) or True)
+                        lambda path: asked.setdefault("path", path) or True)
     target = tmp_path / "brand" / "new"
     workdir, _argv = launch.resolve("work", "new", str(target), True, None)
     assert workdir == str(target)
@@ -109,7 +109,7 @@ def test_new_in_a_missing_directory_asks_before_creating(tmp_path, monkeypatch):
 
 
 def test_new_in_a_missing_directory_is_abandoned_when_declined(tmp_path, monkeypatch):
-    monkeypatch.setattr(launch.pickers, "confirm_create", lambda path, gui: False)
+    monkeypatch.setattr(launch.pickers, "confirm_create", lambda path: False)
     assert launch.resolve("work", "new", str(tmp_path / "nope"), True, None) is None
 
 
@@ -129,7 +129,7 @@ def test_a_typed_tilde_path_is_expanded_before_the_existence_check(tmp_path, mon
 
 def test_run_creates_the_confirmed_directory(tmp_path, monkeypatch):
     monkeypatch.setattr(launch.accounts, "relink", lambda slug: None)
-    monkeypatch.setattr(launch.pickers, "confirm_create", lambda path, gui: True)
+    monkeypatch.setattr(launch.pickers, "confirm_create", lambda path: True)
     monkeypatch.setattr(launch.subprocess, "run",
                         lambda *a, **k: type("R", (), {"returncode": 0})())
     target = tmp_path / "brand" / "new"
@@ -150,7 +150,7 @@ def test_no_mode_carries_the_danger_flag_by_default(tmp_path, monkeypatch):
     """Opt-in, always: an account that never asked for it must launch clean."""
     seed(tmp_path, monkeypatch)
     monkeypatch.setattr(launch.pickers, "choose",
-                        lambda prompt, options, gui, note=None: options[0])
+                        lambda prompt, options, note=None: options[0])
     for mode, arg in (("new", str(tmp_path / "proj")), ("last", None),
                       ("search", None)):
         _workdir, argv = launch.resolve("work", mode, arg, True, None)
@@ -162,7 +162,7 @@ def test_every_mode_carries_the_danger_flag_when_set(tmp_path, monkeypatch):
     resuming a session skips permissions exactly like starting one."""
     seed(tmp_path, monkeypatch)
     monkeypatch.setattr(launch.pickers, "choose",
-                        lambda prompt, options, gui, note=None: options[0])
+                        lambda prompt, options, note=None: options[0])
     for mode, arg in (("new", str(tmp_path / "proj")), ("last", None),
                       ("search", None)):
         _workdir, argv = launch.resolve("work", mode, arg, True, None,

@@ -99,10 +99,20 @@ PARENT_SESSION_VARS = ("CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE",
                        "CLAUDE_CODE_ENTRYPOINT")
 
 
-def env_for(slug: str) -> dict:
+def clean_env() -> dict:
+    """This process's environment with the parent-session markers taken out.
+
+    What to hand anything CCAS starts that is not itself a Claude Code session
+    — a terminal, say. `env_for` is this plus an account.
+    """
     env = dict(os.environ)
     for name in PARENT_SESSION_VARS:
         env.pop(name, None)
+    return env
+
+
+def env_for(slug: str) -> dict:
+    env = clean_env()
     env["CLAUDE_CONFIG_DIR"] = str(paths.account_dir(slug))
     env["CCAS_INNER"] = "1"
     return env

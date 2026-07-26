@@ -17,7 +17,7 @@ PALETTE = [
 
 DISPLAY_MODES = ["nickname", "index", "claude code", "icon only"]
 
-# How many recent sessions the resume picker lists. fuzzel scrolls, so this is
+# How many recent sessions the resume picker lists. Both doors scroll, so this is
 # a bound on the scan, not on what fits on screen.
 HIST_SLOTS = 300
 
