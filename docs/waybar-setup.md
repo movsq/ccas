@@ -125,17 +125,22 @@ alike — so `150%`/`-800` holds at the bar's real DPI, not only at pango-view's
 There is one way a label is built: a format string of tokens, which you write
 yourself. Everything outside a token is copied through literally, so spaces,
 separators and stray text are all yours. The four named display modes this
-replaced were presets the string already expressed — "icon only" is `%icon`.
+replaced were presets the string already expressed — "icon only" is the empty
+string, since the glyph is drawn whether the format asks for it or not.
 
 ```bash
-ccs format vsed '%icon %name %5hused %5htimeleft'
+ccs format vsed '%name %5hused %5htimeleft'
 ccs format vsed                       # show it, and any per-token colours
 ccs format --tokens                   # every token there is
 ```
 
+The glyph `✻` is **not** a token. It is the widget's own mark, drawn ahead of
+whatever the format string says, in the account's colour, and the only thing
+that removes it is `ccs hide <slug> on`. `%icon` was a token once; it renders as
+its own four characters now, like any other name the table below does not hold.
+
 | token | renders |
 |---|---|
-| `%icon` | the account glyph `✻`, sized and raised as always, in the account's colour |
 | `%name` | the nickname (`display_name`'s first choice) |
 | `%email` | the account email |
 | `%index` | the account's position in the registry |
@@ -152,40 +157,41 @@ bar, which is visible and explains itself where a silent refusal would not.
 
 ### Colour
 
-Each token picks its own colour by default: the usage tokens follow the same
-ramp `usage.color()` has always used, the icon takes the account colour, and
-text is plain. Override one token at a time:
+A token's colour is a `#rrggbb` or nothing at all, and nothing means white —
+the same white for every token. Set one at a time:
 
 ```bash
-ccs format vsed --color %5h dim       # `auto`, `dim`, or a #rrggbb
-ccs format vsed --color %5h auto      # back to the default
+ccs format vsed --color %5h '#89b4fa'  # a hex, and only a hex
+ccs format vsed --color %5h -          # clear it: back to white
 ```
 
-`auto` deletes the entry rather than storing a value — absent means auto, so
-`format_colors` only ever holds deviations. The panel's Settings drawer has a
-**Colour of** row: a dropdown listing the widget itself and then every token in
-this account's format, with hue and saturation sliders under it. `auto` and
-`dim` are not offered there — dragging saturation to zero *is* dim, and auto is
-an undo the sliders cannot express — so those two stay a `ccs format --color`
-job.
+`-` deletes the entry rather than storing a value, so `format_colors` only ever
+holds deviations. The panel's Settings drawer has a **Color of** row: a chip per
+target — the icon first, then every token in this account's format — each with a
+2 px strip of its current colour, and hue and saturation sliders under them.
+Clicking a chip re-seeds the sliders and writes nothing; the write happens when
+a drag settles.
 
 ### Getting the old bar back
 
 Before the format string existed, every display mode carried a hardcoded usage
-clock. `%icon %name %5h` is exactly what the old `nickname` mode printed:
+clock. `%name %5h` is exactly what the old `nickname` mode printed — the glyph
+in front of it comes for free:
 
 ```bash
-ccs format vsed '%icon %name %5h'
+ccs format vsed '%name %5h'
 ```
 
-The default for a new account is `%icon %email %5hused` — the glyph, the address
-in grey, and the percentage of the 5-hour window used. The glyph and the
-percentage are on `account`, so they follow the widget's colour, which is
-randomly chosen when the account is added.
+The default for a new account is `%email %5hused` — the address in grey and the
+percentage of the 5-hour window used, with the glyph ahead of them. `%5hused` is
+written with the account's own randomly chosen colour, so glyph and percentage
+match from the first paint; they are two separate hexes from then on, and moving
+both is two drags.
 
-A token's colour is `account`, a `#rrggbb`, or nothing at all; nothing means
-white. There is no `auto` and no `dim`: `auto` made the answer depend on which
-token you asked about, and the saturation slider says what `dim` said.
+There is no `auto`, no `dim` and no `account`. `auto` made the answer depend on
+which token you asked about, the saturation slider says what `dim` said, and
+`account` made a colour setting that might reach the label and might reach
+nothing — see `why.md` for the ten minutes that cost.
 
 ## Spacing and hover
 

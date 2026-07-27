@@ -95,17 +95,28 @@ directly rather than through `paths.py`.
 **Nothing migrates.** One user, one installation, and the user re-adds their
 accounts rather than being carried across a rename. `registry.load()` defaults
 the keys every read path needs and does nothing else; a stored value that is no
-longer valid — a `format_colors` entry of `auto` or `dim` — reads as absent and
-renders `format.DEFAULT_COLOR`. When something is retired, delete it; do not
-grow a read path that understands both.
+longer valid — a `format_colors` entry of `auto`, `dim` or `account` — reads as
+absent and renders `format.DEFAULT_COLOR`. When something is retired, delete it;
+do not grow a read path that understands both. A stored *format string* naming a
+retired token is not rewritten either: `%icon` prints as its own four characters
+until someone runs `ccs format <slug> …`, which is visible and self-explaining
+where a silent rewrite is neither.
 
-**A token's colour is `account`, a hex, or nothing.** Nothing means
-`format.DEFAULT_COLOR`, white, and it means that for every token. `auto` used to
-make the answer depend on which token was asked — the usage ramp for the
-windowed ones, the account colour for the glyph — so the one thing a format
-string could not tell you was what it would look like. There is no usage ramp in
-the label any more; `usage.color()` still ramps inside `usage.bar()` and the
-panel's bars, which is where pressure is shown.
+**A token's colour is a hex, or nothing.** Nothing means `format.DEFAULT_COLOR`,
+white, and it means that for every token. `auto` made the answer depend on which
+token asked — the usage ramp for the windowed ones, the account colour for the
+glyph. `account` made it depend on whether *any* token asked: an account whose
+tokens all held literal hexes had a live, previewed, entirely inert widget-colour
+control, and the user spent ten minutes finding that out. There is no usage ramp
+in the label; `usage.color()` still ramps inside `usage.bar()` and the panel's
+bars, which is where pressure is shown.
+
+**The glyph is the widget's, not the format's.** `%icon` is not a token. The ✻ is
+drawn by `format.render()` ahead of the format string, in the account's colour,
+and `hide_icon` removes it outright — no `alpha='1'` spacer, which would reserve
+the glyph's width in exactly the labels that asked not to have one. One colour
+with one name: it paints the bar's glyph and the panel's account dot, and nothing
+can disagree with it.
 
 **`ccs doctor` never writes.** It exists to police the invariants above, so a
 repair inside it would mask the fault it is looking for — including a `relink`,

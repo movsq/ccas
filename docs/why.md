@@ -939,3 +939,55 @@ a registry entry means, living on the read path, and its whole job was to make
 Where the ramp still lives: `usage.color()`, inside `usage.bar()` and the
 panel's usage bars. Pressure is shown where the numbers are, not smuggled into
 the colour of a label the user picked a colour for.
+
+## A colour control that could not tell you whether it would be seen (2026-07-27)
+
+The panel's colour editor offered "the widget" as its first target, and the user
+dragged it for ten minutes before working out that nothing was broken. The hue
+slider moved, the saturation slider moved, the hex field kept up and the preview
+swatch painted the colour under the pointer. Every part of the control said it
+was working, and it was: the value it wrote was stored, correctly, where nothing
+read it.
+
+Their `vsed` account had a literal hex on every token in its format string. The
+account's own colour reached the label through `%icon`'s `account` value — and
+`%icon` had been given a hex of its own at some point, so the last path from the
+widget's colour to anything on the bar had closed. A setting with no reader is
+indistinguishable from a setting that works, right up until you look at the bar.
+
+That is the complaint `auto` earned, arriving through the other door. `auto` made
+a token's colour depend on *which* token asked; `account` made it depend on
+whether **any** token asked. Both are ways for a colour to be a promise about
+some other value rather than a colour, and neither can be read off the thing you
+are editing.
+
+`account` had also been only half-retired. Its chip was removed from the panel
+earlier the same day, on the user's request, while the value stayed legal in the
+registry and stayed what `registry.add()` wrote into every new account. A UI that
+stops offering what the data model keeps using is the worst of the two states:
+the value goes on being created and goes on mattering, and the only thing that
+disappeared is the way to see it.
+
+So a token's colour is a hex or it is nothing, and the glyph stopped being a
+token at the same time. `%icon` and "the widget" were two names for one colour —
+you could set them to different values, and only one of them was the bar. The ✻
+is drawn by `format.render()` ahead of the format string in the account's colour,
+which leaves one colour with one meaning: it paints the glyph on the bar and the
+dot in the panel's account list, and there is nothing left that could disagree
+with it. Moving it always moves something visible.
+
+The chips came out of the same complaint. A dropdown shows one target at a time,
+so "what colour is this token" was a click and a popup away for every token but
+one — and an over-broad `.ccas-color-editor dropdown label` rule greyed its
+value, which is exactly how GTK draws an insensitive widget, so the control also
+looked disabled. The row of chips shows every target's colour at once, in a 2 px
+strip under a name that stays at full contrast. The name is not painted in its
+own colour on purpose: at low saturation it would be unreadable, and at white it
+would be indistinguishable from unset.
+
+Nothing migrated. Both accounts held values that stopped being valid — a `dim`,
+an `account` — and they render white, which is what `registry.load()` already
+does with anything it does not recognise. The two stored format strings still
+named `%icon`, which is now an unknown token and prints as its own four
+characters; they were re-set by hand, as one command per account, rather than by
+teaching a read path to rewrite them.
