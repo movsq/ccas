@@ -14,11 +14,21 @@ ACCOUNTS="${CCAS_ACCOUNTS_ROOT:-$HOME/.cc-accounts}"
 mkdir -p "$BIN_DIR" "$SHARE" "$TRASH" "$ACCOUNTS"
 
 # Stage the package so the repo can move without breaking the install.
-if [ -d "$SHARE/ccas" ]; then
-  mv "$SHARE/ccas" "$TRASH/ccas-pkg-$(date +%Y%m%d-%H%M%S)-$$"
+#
+# Only when it actually differs: this script is re-run after every code change,
+# and a staged copy identical to the one replacing it is worth nothing — kept,
+# it made 99 trash entries in a day. Skipping the move is not a deletion, which
+# is why the check is here and not an `rm` below.
+#
+# __pycache__ is excluded from the copy rather than trashed after it, so it does
+# not count as a difference on the next run.
+if [ ! -d "$SHARE/ccas" ] || ! diff -r -q -x __pycache__ -x '*.pyc' \
+     "$SRC/ccas" "$SHARE/ccas" >/dev/null 2>&1; then
+  if [ -d "$SHARE/ccas" ]; then
+    mv "$SHARE/ccas" "$TRASH/ccas-pkg-$(date +%Y%m%d-%H%M%S)-$$"
+  fi
+  tar -C "$SRC" --exclude=__pycache__ --exclude='*.pyc' -cf - ccas | tar -C "$SHARE" -xf -
 fi
-cp -r "$SRC/ccas" "$SHARE/ccas"
-find "$SHARE/ccas" -name __pycache__ -type d -exec mv {} "$TRASH/" \; 2>/dev/null || true
 
 cat > "$BIN_DIR/ccs" <<EOF
 #!/usr/bin/env python3
@@ -47,10 +57,15 @@ fi
 SYSTEMD_DIR="${CCAS_SYSTEMD_DIR:-$HOME/.config/systemd/user}"
 mkdir -p "$SYSTEMD_DIR"
 for unit in ccas-poll.service ccas-poll.timer; do
+  rendered="$(sed "s|@CCS@|$BIN_DIR/ccs|g" "$SRC/assets/$unit")"
   if [ -e "$SYSTEMD_DIR/$unit" ]; then
+    # Same reasoning as the package above: an unchanged unit is not rewritten,
+    # so re-running the installer costs nothing. It is compared in memory rather
+    # than through a temp file, so there is never a scratch copy to delete.
+    [ "$rendered" = "$(cat "$SYSTEMD_DIR/$unit")" ] && continue
     mv "$SYSTEMD_DIR/$unit" "$TRASH/$unit-$(date +%Y%m%d-%H%M%S)-$$"
   fi
-  sed "s|@CCS@|$BIN_DIR/ccs|g" "$SRC/assets/$unit" > "$SYSTEMD_DIR/$unit"
+  printf '%s\n' "$rendered" > "$SYSTEMD_DIR/$unit"
 done
 if [ -z "${CCAS_SKIP_SYSTEMD:-}" ] && command -v systemctl >/dev/null 2>&1; then
   systemctl --user daemon-reload || true

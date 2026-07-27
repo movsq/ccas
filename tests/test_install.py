@@ -230,3 +230,40 @@ def test_uninstall_trashes_the_units(tmp_path):
                    capture_output=True)
     assert not (tmp_path / "systemd" / "ccas-poll.timer").exists()
     assert list((tmp_path / "trash").glob("ccas-poll.timer-*"))
+
+
+def test_an_unchanged_reinstall_leaves_no_trash(tmp_path):
+    """Ten installs in a day left 99 entries in the trash, all of them copies of
+    a package that had not changed. Nothing is deleted to fix that — the staged
+    copy is only trashed when it actually differs from the one replacing it."""
+    env = dict(os.environ)
+    env.update({
+        "CCAS_HOME": str(tmp_path / "claude"),
+        "CCAS_CLAUDE_JSON": str(tmp_path / "claude.json"),
+        "CCAS_ACCOUNTS_ROOT": str(tmp_path / "accts"),
+        "CCAS_TRASH": str(tmp_path / "trash"),
+        "CCAS_WAYBAR_CONFIG": str(tmp_path / "config.jsonc"),
+        "CCAS_BASHRC": str(tmp_path / "bashrc"),
+        "CCAS_BIN_DIR": str(tmp_path / "bin"),
+        "CCAS_SHARE_DIR": str(tmp_path / "share"),
+        "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
+        "CCAS_SKIP_SYSTEMD": "1",
+        "CCAS_SKIP_RELOAD": "1",
+    })
+    (tmp_path / "claude").mkdir()
+    (tmp_path / "config.jsonc").write_text('{\n    "modules-right": ["clock"]\n}\n')
+    trash = tmp_path / "trash"
+
+    for _ in range(3):
+        subprocess.run(["bash", str(ROOT / "install.sh")], env=env,
+                       capture_output=True, text=True, check=True)
+    assert sorted(p.name for p in trash.iterdir()) == [], \
+        "an install that changes nothing must leave nothing behind"
+
+    # A real change still gets its predecessor kept, exactly as before.
+    (tmp_path / "share" / "ccas" / "paths.py").write_text("# an older build\n")
+    (tmp_path / "systemd" / "ccas-poll.timer").write_text("# retimed by the user\n")
+    subprocess.run(["bash", str(ROOT / "install.sh")], env=env,
+                   capture_output=True, text=True, check=True)
+    kept = sorted(p.name.split("-2026")[0] for p in trash.iterdir())
+    assert kept == ["ccas-pkg", "ccas-poll.timer"], kept
