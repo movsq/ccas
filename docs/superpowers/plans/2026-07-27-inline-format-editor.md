@@ -781,14 +781,16 @@ un-installed change silently tests the old behaviour.
 - [ ] **Step 2: Put the new stylesheet where the panel will read it**
 
 `install.sh` copies `assets/menu.css` to `~/.config/ccas/menu.css` **once** and
-never again — it is the user's after that. Back up the live one, then copy:
+never again — it is the user's after that, so Task 4's rules do not reach the
+live panel on their own. Diff first; the two were identical when this plan was
+written, so there is normally nothing of theirs to lose. Back up only if they
+differ, and only then is it worth mentioning to the user.
 
 ```bash
-cp ~/.config/ccas/menu.css ~/.config/ccas/menu.css.bak-$(date +%s)
+diff ~/.config/ccas/menu.css ~/ccas/assets/menu.css \
+  || cp ~/.config/ccas/menu.css ~/.config/ccas/menu.css.bak-$(date +%s)
 cp ~/ccas/assets/menu.css ~/.config/ccas/menu.css
 ```
-
-Tell the user the backup's name at the end; they may have edited theirs.
 
 - [ ] **Step 3: Open the panel on the bar's output**
 
@@ -840,7 +842,7 @@ ps -eo pid,args | awk '/share\/ccas\/bin/ && !/awk/ {print $1}' \
 ```
 
 Leave `~/.config/ccas/menu.css` as the new one if the check passed — that is
-the point of copying it — and report the backup's path.
+the point of copying it.
 
 - [ ] **Step 7: Record anything reality contradicted**
 
