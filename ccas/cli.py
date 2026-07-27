@@ -153,7 +153,7 @@ def cmd_format(rest) -> int:
     """
     if rest and rest[0] == "--tokens":
         for token in fmt.TOKENS:
-            print(token)
+            print(f"{token:<14} {fmt.NAMES[token]}")
         return 0
     if not rest:
         return 1
@@ -210,7 +210,8 @@ def _format_edit(reg, slug: str, account: dict) -> int:
     for token in fmt.TOKENS:
         shown = _MARKUP.sub("", fmt.render(account, index, seen,
                                            format_override=token))
-        print(f"  {token:<14} {shown or '(empty — nothing recorded yet)'}")
+        print(f"  {token:<14} {fmt.NAMES[token]:<14} "
+              f"{shown or '(empty — nothing recorded yet)'}")
     print("  %%             a literal %")
     print()
 

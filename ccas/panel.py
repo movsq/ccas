@@ -163,7 +163,7 @@ def color_targets(account: dict) -> list:
         value = colors.get(token) or ""
         targets.append({
             "token": token,
-            "label": token,
+            "label": fmt.NAMES[token],
             "color": value if fmt.HEX.match(value) else fmt.DEFAULT_COLOR,
         })
     return targets

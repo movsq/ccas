@@ -859,3 +859,15 @@ def test_a_token_with_a_hex_seeds_the_sliders_with_it():
 def test_build_state_carries_the_targets(reg):
     state = panel.build_state("one")
     assert state["color_targets"][0]["token"] is None
+
+
+def test_color_targets_are_labelled_by_name_not_by_token():
+    """`%5hused` is what you type into a format string, not the name of the
+    thing being coloured; the chip row read as syntax. The token still travels
+    in the entry, so what gets written is unchanged."""
+    account = {"color": "#89b4fa", "format": "%email %5hused",
+               "format_colors": {}}
+    targets = panel.color_targets(account)
+    assert [t["label"] for t in targets] == \
+        ["icon", fmt.NAMES["%email"], fmt.NAMES["%5hused"]]
+    assert [t["token"] for t in targets] == [None, "%email", "%5hused"]

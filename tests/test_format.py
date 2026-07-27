@@ -333,3 +333,21 @@ def test_random_color_is_always_a_valid_colour_at_the_pinned_lightness():
     for value in seen:
         _hue, sat = fmt.hex_to_hs(value)
         assert 0.5 < sat <= 1.0
+
+
+def test_every_token_has_a_name():
+    """The chip row and the token tables are labelled from NAMES, so a token
+    added without an entry is a chip labelled KeyError. Pinned as a set, not a
+    loop, because a stale name is as wrong as a missing one."""
+    assert set(fmt.NAMES) == set(fmt.TOKENS)
+
+
+def test_the_two_smart_tokens_share_a_name():
+    """%5h and %7d are one behaviour under two spellings — usage.bar() picks
+    the window — so naming them apart would invent a difference."""
+    assert fmt.NAMES["%5h"] == fmt.NAMES["%7d"]
+
+
+def test_a_name_is_not_the_token():
+    """The whole point: the chip says what it colours, not what you type."""
+    assert not any(name.startswith("%") for name in fmt.NAMES.values())

@@ -1624,6 +1624,16 @@ def test_format_tokens_lists_them(capsys):
         assert token in out
 
 
+def test_format_tokens_names_them_too(capsys):
+    """It is the "what can I type" reference, and a bare list of tokens answers
+    half the question — the token is the spelling, the name is the meaning."""
+    cli.main(["format", "--tokens"])
+    out = capsys.readouterr().out
+    for line in out.splitlines():
+        token = line.split()[0]
+        assert fmt.NAMES[token] in line
+
+
 def test_the_passthrough_still_wins_over_the_new_command(monkeypatch):
     """`ccs -p "format the disk"` is claude's. The two passthrough branches must
     stay ahead of every command name, including this one."""
@@ -1694,6 +1704,16 @@ def test_format_edit_lists_the_tokens_first(monkeypatch, capsys):
     monkeypatch.setattr(cli.pickers, "prompt_edit", lambda *_: None)
     cli.main(["format", "work", "--edit"])
     assert "%5h" in capsys.readouterr().out
+
+
+def test_format_edit_names_each_token_beside_it(monkeypatch, capsys):
+    """The token stays — the prompt under the table wants it typed — but a
+    column saying what it is spares reading the render to find out."""
+    make_account()
+    monkeypatch.setattr(cli.pickers, "prompt_edit", lambda *_: None)
+    cli.main(["format", "work", "--edit"])
+    out = capsys.readouterr().out
+    assert f"%5hused{' ' * 8}{fmt.NAMES['%5hused']}" in out
 
 
 def test_format_edit_cancelled_leaves_the_format_alone(monkeypatch):

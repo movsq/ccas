@@ -207,6 +207,33 @@ TOKENS = {
 }
 
 
+# token -> what it is, for anything that shows a token to the user: the panel's
+# colour chips and the two token tables. A token is the spelling you type into a
+# format string, and the chip row labelled with one read as syntax rather than
+# as the parts of the label it colours.
+#
+# Its keys are TOKENS' keys — a test pins that, so a token cannot ship nameless.
+# %5h and %7d share a name because they share _smart: usage.bar() picks the
+# window, so naming them apart would invent a difference.
+NAMES = {
+    "%name": "nickname",
+    "%email": "email",
+    "%index": "index",
+
+    "%5hreset": "5h reset",
+    "%5htimeleft": "5h remaining",
+    "%5hused": "5h used",
+    "%5hquotaleft": "5h left",
+    "%5h": "usage clock",
+
+    "%7dreset": "7d reset",
+    "%7dtimeleft": "7d remaining",
+    "%7dused": "7d used",
+    "%7dquotaleft": "7d left",
+    "%7d": "usage clock",
+}
+
+
 # Longest first, so %5hused is never read as %5h followed by the text "used".
 def _pattern():
     names = sorted(TOKENS, key=len, reverse=True)
