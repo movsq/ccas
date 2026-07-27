@@ -28,7 +28,7 @@ Action = namedtuple("Action", "kind slug value")
 # next thing, which is the opposite of gathering the switches in one place.
 # cli.dispatch_panel runs them in place, through the same branches as before.
 STAYS_OPEN = frozenset({
-    "headless", "dangerous", "hide_icon", "color", "format_color",
+    "headless", "dangerous", "hide_icon", "color", "format_color", "format",
 })
 
 # Of those, the ones applied *without* rebuilding the settings subtree. A
@@ -36,7 +36,8 @@ STAYS_OPEN = frozenset({
 # the sliders emit while the pointer is still down, and tearing the scale out
 # from under a drag loses the grab — the knob stops following, and every move
 # after that is dropped. The editor is already showing what it just wrote, so
-# there is nothing for a rebuild to tell it.
+# there is nothing for a rebuild to tell it. `format` is not exempt: it changes
+# which tokens exist, so the chip row below it is now wrong.
 NO_REBUILD = frozenset({"color", "format_color"})
 
 WINDOW_LABELS ={"five_hour": "5h", "seven_day": "wk"}

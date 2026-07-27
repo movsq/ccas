@@ -1664,19 +1664,40 @@ def test_the_panel_rejects_a_bad_colour():
         panel.Action("format_color", "work", ("%name", "' x='y"))) == 1
 
 
-def test_the_panel_cannot_set_the_format_itself():
-    """Format… spawns a terminal instead — the panel is gone by the time it
-    starts, and a bar click has no stdin to prompt on."""
+def test_the_panel_sets_the_format_itself():
+    """It used to spawn a terminal: the panel was gone by the time the prompt
+    appeared, and the format was the last widget setting that left the panel to
+    be changed."""
     make_account()
-    with pytest.raises(ValueError):
-        cli.dispatch_panel(panel.Action("format", "work", "%name"))
+    assert cli.dispatch_panel(panel.Action("format", "work", "%name")) == 0
+    assert registry.find(registry.load(), "work")["format"] == "%name"
 
 
-def test_the_format_button_opens_a_terminal(monkeypatch):
+def test_the_format_action_signals_the_bar(monkeypatch):
+    """Through _mutate, so _refresh runs — the same path `ccs format` takes.
+    The panel gains no write path of its own."""
+    make_account()
     seen = []
-    monkeypatch.setattr(cli, "_in_terminal", lambda args: seen.append(args) or 0)
-    cli.dispatch_panel(panel.Action("edit_format", "work", None))
-    assert seen == [["format", "work", "--edit"]]
+    monkeypatch.setattr(cli, "_mutate",
+                        lambda *a: seen.append(a) or 0)
+    cli.dispatch_panel(panel.Action("format", "work", "%name %5hused"))
+    assert seen == [("work", "format", "%name %5hused")]
+
+
+def test_the_format_action_stores_an_unknown_token_as_typed():
+    """Warned about beside the entry, never rejected: it renders as its own
+    name on the bar, which is visible where a refusal is not."""
+    make_account()
+    assert cli.dispatch_panel(panel.Action("format", "work", "%bogus")) == 0
+    assert registry.find(registry.load(), "work")["format"] == "%bogus"
+
+
+def test_the_edit_format_action_is_gone():
+    """Nothing generates a terminal for the format any more. `ccs format
+    <slug> --edit` stays as the terminal door — a TTY and an ssh session
+    cannot run GTK — but it is reached by typing it."""
+    with pytest.raises(ValueError):
+        cli.dispatch_panel(panel.Action("edit_format", "work", None))
 
 
 def test_format_edit_prompts_for_a_new_format(monkeypatch):

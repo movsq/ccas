@@ -277,10 +277,11 @@ def dispatch_panel(action):
         colors = dict(account.get("format_colors") or {})
         colors[token] = color
         return _mutate(slug, "format_colors", colors)
-    # "format" is deliberately not a branch: the panel cannot prompt for free
-    # text, so the button spawns a terminal running the command instead.
-    if kind == "edit_format":
-        return _in_terminal(["format", slug, "--edit"])
+    if kind == "format":
+        # The panel's own entry, not a terminal: the format is a widget
+        # setting, and it is the last one that used to leave the panel to be
+        # changed. `ccs format <slug> --edit` is still the terminal door.
+        return _mutate(slug, "format", value)
     if kind == "add":
         return _in_terminal(["add"])
     if kind in ("rename", "remove"):

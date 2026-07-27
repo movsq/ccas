@@ -784,12 +784,11 @@ def test_a_setting_is_applied_without_shutting_the_panel():
     things, and reopening the panel per tick is not how that reads."""
     from ccas import panel
     for kind in ("headless", "dangerous", "hide_icon",
-                 "color", "format_color"):
+                 "color", "format_color", "format"):
         assert kind in panel.STAYS_OPEN
     # A launch, a switch and anything that spawns a terminal still end it: the
     # panel has handed the screen to something else.
-    for kind in ("new", "resume", "switch", "edit_format",
-                 "add", "rename", "remove"):
+    for kind in ("new", "resume", "switch", "add", "rename", "remove"):
         assert kind not in panel.STAYS_OPEN
 
 
@@ -938,3 +937,13 @@ def test_the_previewer_tolerates_an_unknown_slug(reg):
     markup, unknown = panel.format_previewer("gone")("%name")
     assert unknown == []
     assert isinstance(markup, str)
+
+
+def test_a_format_change_rebuilds_the_colour_chips():
+    """The chips are one per token in the format string, so the set of things
+    you can colour changed. Without the rebuild, adding %7dused leaves no way
+    to colour it until the panel is reopened. The sliders are exempt for the
+    opposite reason — a rebuild mid-drag loses the grab."""
+    assert "format" not in panel.NO_REBUILD
+    assert "color" in panel.NO_REBUILD
+    assert "format_color" in panel.NO_REBUILD
