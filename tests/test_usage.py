@@ -58,6 +58,65 @@ def test_a_payload_without_rate_limits_is_not_a_reading():
     assert usage.from_cache({}) is None
 
 
+def oauth(five=(3.0, "2026-07-27T02:39:59.757453+00:00"),
+          seven=(0.0, "2026-08-02T18:59:59.757477+00:00")):
+    """The /api/oauth/usage body, as measured on 2026-07-27."""
+    body = {}
+    if five:
+        body["five_hour"] = {"utilization": five[0], "resets_at": five[1],
+                             "limit_dollars": None}
+    if seven:
+        body["seven_day"] = {"utilization": seven[0], "resets_at": seven[1]}
+    body["seven_day_opus"] = None          # the real body carries several of these
+    return body
+
+
+def test_the_endpoint_is_a_third_shape_of_the_same_fact():
+    """The cache's shape without the cachedUsageUtilization wrapper: 0-100 under
+    `utilization`, an ISO 8601 resets_at. Only this module sees any of the three.
+    """
+    reading = usage.from_oauth(oauth(), now=1785104289.0)
+    assert reading["five_hour"] == {"percent": 3.0, "resets_at": 1785119999}
+    assert reading["seven_day"]["percent"] == 0.0
+    assert reading["source"] == "oauth"
+    assert reading["fetched_at"] == 1785104289.0
+
+
+def test_an_endpoint_window_may_be_independently_absent():
+    reading = usage.from_oauth(oauth(seven=None), now=1.0)
+    assert reading["five_hour"] is not None
+    assert reading["seven_day"] is None
+
+
+def test_an_endpoint_body_naming_neither_window_is_not_a_reading():
+    """A body of nulls must not erase a good reading — the same rule the hook
+    payload gets."""
+    assert usage.from_oauth({}, now=1.0) is None
+    assert usage.from_oauth({"seven_day_opus": None}, now=1.0) is None
+    assert usage.from_oauth(None, now=1.0) is None
+
+
+def test_record_reading_writes_only_a_change(monkeypatch, tmp_path):
+    """The rule the hook path already obeys, now reachable with an
+    already-normalised reading: the poll must not write four times an hour for
+    numbers that did not move."""
+    env(monkeypatch, tmp_path)
+    reading = usage.from_oauth(oauth(), now=100.0)
+    assert usage.record_reading("work", reading) is True
+    assert usage.record_reading("work", usage.from_oauth(oauth(), now=200.0)) is False
+    moved = usage.from_oauth(oauth(five=(9.0, "2026-07-27T02:39:59.757453+00:00")),
+                             now=300.0)
+    assert usage.record_reading("work", moved) is True
+    assert usage.load("work")["five_hour"]["percent"] == 9.0
+
+
+def test_record_reading_ignores_a_non_reading(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    usage.record_reading("work", usage.from_oauth(oauth(), now=100.0))
+    assert usage.record_reading("work", None) is False
+    assert usage.load("work") is not None
+
+
 # ── classification ────────────────────────────────────────────────────────────
 
 def test_a_future_reset_bounds_the_percentage():

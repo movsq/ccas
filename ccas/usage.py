@@ -11,8 +11,8 @@ from it decide everything here:
   makes a stale reading still worth showing: past means the window rolled over,
   future means the recorded percentage is a valid lower bound.
 
-Two sources, two shapes, one normalised reading; nothing outside this module
-parses either.
+Three sources, three shapes, one normalised reading; nothing outside this module
+parses any of them.
 """
 import json
 import os
@@ -46,7 +46,7 @@ ABSENT, OPEN, BOUNDED = "absent", "open", "bounded"
 State = namedtuple("State", "kind percent resets_at")
 
 
-# ── the two input shapes ──────────────────────────────────────────────────────
+# ── the three input shapes ────────────────────────────────────────────────────
 
 def _window(percent, resets_at):
     if percent is None or resets_at is None:
@@ -88,6 +88,22 @@ def from_cache(blob: dict):
     return _reading("cache", cached.get("fetchedAtMs", 0) / 1000, {
         key: _window(util.get(key, {}).get("utilization"),
                      _epoch(util.get(key, {}).get("resets_at")))
+        for key in WINDOWS})
+
+
+def from_oauth(payload: dict, now: float):
+    """The `/api/oauth/usage` body — the third shape of the same fact.
+
+    Same spelling as the cache (0-100 under `utilization`, an ISO 8601
+    `resets_at`) without the `cachedUsageUtilization` wrapper, because this is
+    what Claude Code stores *into* that key. The real body also carries
+    `seven_day_opus` and friends as nulls; naming neither of the two windows we
+    read makes it a non-reading, not an empty one.
+    """
+    payload = payload or {}
+    return _reading("oauth", now, {
+        key: _window((payload.get(key) or {}).get("utilization"),
+                     _epoch((payload.get(key) or {}).get("resets_at")))
         for key in WINDOWS})
 
 
@@ -140,6 +156,22 @@ def load(slug: str):
         return None
 
 
+def record_reading(slug: str, reading) -> bool:
+    """Write an already-normalised reading if it says something new.
+
+    The half of `record` that does not care which source produced the reading —
+    the poll reaches the same write-on-change rule as the hook, and with it the
+    signal that rides on a write.
+    """
+    if reading is None:
+        return False  # a payload with no windows must not erase a good one
+    if _same(load(slug), reading):
+        return False
+    _atomic_write(paths.account_dir(slug) / paths.USAGE_FILE,
+                  json.dumps(reading, indent=2) + "\n")
+    return True
+
+
 def record(slug: str, payload: dict, now=None) -> bool:
     """Write the hook's payload if it says something new. True when it wrote.
 
@@ -151,14 +183,7 @@ def record(slug: str, payload: dict, now=None) -> bool:
     two and the only one obtainable without a write per tick.
     """
     now = time.time() if now is None else now
-    reading = from_statusline(payload, now)
-    if reading is None:
-        return False  # a payload with no rate_limits must not erase a good one
-    if _same(load(slug), reading):
-        return False
-    _atomic_write(paths.account_dir(slug) / paths.USAGE_FILE,
-                  json.dumps(reading, indent=2) + "\n")
-    return True
+    return record_reading(slug, from_statusline(payload, now))
 
 
 def read(slug: str):
