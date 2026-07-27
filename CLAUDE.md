@@ -397,6 +397,16 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   the panel is never launched and reads as a panel that will not open. It cost
   half a dozen rounds of that once. Kill a pid from `pgrep`, or pick a pattern
   the command line cannot contain.
+- **Diff the widgets, never the whole bar.** `grim -g "2560,0 1920x24"` and a
+  pixel compare answers CHANGED every single time, because the clock and the
+  stopwatch beside it tick on their own — so it says "the label repainted" just
+  as loudly when nothing repainted at all. It nearly passed a fix that had not
+  been shown to work. The two account widgets sit at global x 3420–3640 with the
+  bar 22 px tall (`grim -g "3420,0 220x22"`), which holds nothing that changes
+  by itself; re-derive it from `ccs render` output widths if a module is added.
+  Sampling a background colour at a fixed pixel is better still — the hover
+  check is `(53,53,53)` unhovered against `(73,73,73)` under the pointer, and
+  neither number moves on its own.
 - **Clicking something yourself: `swaymsg seat - cursor move`, never `cursor
   set`.** `set` teleports the pointer — the cursor lands on the target and
   `grim -c` proves it, but no motion event reaches a layer surface, so it keeps
