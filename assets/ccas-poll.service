@@ -1,0 +1,8 @@
+# Installed by CCAS's install.sh. @CCS@ is substituted with the ccs path.
+[Unit]
+Description=CCAS — record each Claude account's usage limits
+Documentation=https://github.com/movsq/ccas
+
+[Service]
+Type=oneshot
+ExecStart=@CCS@ poll

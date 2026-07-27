@@ -41,6 +41,8 @@ def test_install_is_idempotent_in_a_sandbox(tmp_path):
         "CCAS_BASHRC": str(tmp_path / "bashrc"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
+        "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
+        "CCAS_SKIP_SYSTEMD": "1",
         "CCAS_SKIP_RELOAD": "1",
     })
     (tmp_path / "claude").mkdir()
@@ -67,6 +69,8 @@ def test_install_emits_the_placeholder_and_leaves_bare_claude_alone(tmp_path):
         "CCAS_BASHRC": str(tmp_path / "bashrc"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
+        "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
+        "CCAS_SKIP_SYSTEMD": "1",
         "CCAS_SKIP_RELOAD": "1",
     })
     (tmp_path / "claude").mkdir()
@@ -92,6 +96,8 @@ def test_uninstall_restores_both_files_byte_for_byte(tmp_path):
         "CCAS_BASHRC": str(tmp_path / "bashrc"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
+        "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
+        "CCAS_SKIP_SYSTEMD": "1",
         "CCAS_SKIP_RELOAD": "1",
         "CCAS_NO_RELOAD": "1",
     })
@@ -121,6 +127,8 @@ def test_uninstall_purge_moves_accounts_to_trash_intact(tmp_path):
         "CCAS_BASHRC": str(tmp_path / "bashrc"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
+        "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
+        "CCAS_SKIP_SYSTEMD": "1",
         "CCAS_SKIP_RELOAD": "1",
         "CCAS_NO_RELOAD": "1",
     })
@@ -151,6 +159,11 @@ def _sandbox_env(tmp_path):
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
         "CCAS_MENU_CSS": str(tmp_path / "menu.css"),
+        # Both, always: without them install.sh writes units into the real
+        # ~/.config/systemd/user and `systemctl --user enable --now` starts a
+        # timer against the user's real accounts. A test may not do that.
+        "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
+        "CCAS_SKIP_SYSTEMD": "1",
         "CCAS_SKIP_RELOAD": "1",
     })
     (tmp_path / "claude").mkdir()
@@ -176,3 +189,44 @@ def test_install_never_overwrites_an_edited_stylesheet(tmp_path):
     subprocess.run(["bash", str(ROOT / "install.sh")], env=env, check=True,
                    capture_output=True, text=True)
     assert (tmp_path / "menu.css").read_text() == "/* mine */\n"
+
+
+def test_install_writes_the_poll_units(tmp_path):
+    """The timer is how the user controls the cadence — systemctl, not a CCAS
+    setting. It must land installed, with the absolute ccs path baked in."""
+    env = _sandbox_env(tmp_path)
+
+    proc = subprocess.run(["bash", str(ROOT / "install.sh")], env=env,
+                          capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+
+    service = (tmp_path / "systemd" / "ccas-poll.service").read_text()
+    timer = (tmp_path / "systemd" / "ccas-poll.timer").read_text()
+    assert f"ExecStart={tmp_path}/bin/ccs poll" in service
+    assert "@CCS@" not in service, "the placeholder must be substituted"
+    assert "OnUnitActiveSec=5min" in timer
+    assert "WantedBy=timers.target" in timer
+
+
+def test_reinstall_trashes_the_previous_unit_rather_than_overwriting(tmp_path):
+    """Never delete — the global rule, and these are files a user may have
+    edited to retime the poll."""
+    env = _sandbox_env(tmp_path)
+    (tmp_path / "systemd").mkdir()
+    (tmp_path / "systemd" / "ccas-poll.timer").write_text("# mine\n")
+
+    subprocess.run(["bash", str(ROOT / "install.sh")], env=env, check=True,
+                   capture_output=True)
+    trashed = list((tmp_path / "trash").glob("ccas-poll.timer-*"))
+    assert trashed and trashed[0].read_text() == "# mine\n"
+
+
+def test_uninstall_trashes_the_units(tmp_path):
+    env = _sandbox_env(tmp_path)
+    env["CCAS_NO_RELOAD"] = "1"
+    subprocess.run(["bash", str(ROOT / "install.sh")], env=env, check=True,
+                   capture_output=True)
+    subprocess.run(["bash", str(ROOT / "uninstall.sh")], env=env, check=True,
+                   capture_output=True)
+    assert not (tmp_path / "systemd" / "ccas-poll.timer").exists()
+    assert list((tmp_path / "trash").glob("ccas-poll.timer-*"))

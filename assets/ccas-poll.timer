@@ -1,0 +1,16 @@
+# Installed by CCAS's install.sh.
+#
+# This file is where the cadence lives — there is deliberately no CCAS setting
+# for it. Retime with `systemctl --user edit ccas-poll.timer`, stop it with
+# `systemctl --user stop ccas-poll.timer`, read failures with
+# `journalctl --user -u ccas-poll`.
+[Unit]
+Description=Poll each Claude account's usage limits every five minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

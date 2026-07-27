@@ -41,6 +41,22 @@ if [ ! -e "$MENU_CSS" ]; then
   cp "$SRC/assets/menu.css" "$MENU_CSS"
 fi
 
+# The poll timer. Unlike menu.css these are CCAS's files and are rewritten on
+# every install — but never overwritten in place: a user who retimed the poll
+# gets their version back out of the trash.
+SYSTEMD_DIR="${CCAS_SYSTEMD_DIR:-$HOME/.config/systemd/user}"
+mkdir -p "$SYSTEMD_DIR"
+for unit in ccas-poll.service ccas-poll.timer; do
+  if [ -e "$SYSTEMD_DIR/$unit" ]; then
+    mv "$SYSTEMD_DIR/$unit" "$TRASH/$unit-$(date +%Y%m%d-%H%M%S)-$$"
+  fi
+  sed "s|@CCS@|$BIN_DIR/ccs|g" "$SRC/assets/$unit" > "$SYSTEMD_DIR/$unit"
+done
+if [ -z "${CCAS_SKIP_SYSTEMD:-}" ] && command -v systemctl >/dev/null 2>&1; then
+  systemctl --user daemon-reload || true
+  systemctl --user enable --now ccas-poll.timer || true
+fi
+
 # Re-link every existing account so entries added by a Claude Code update get
 # shared rather than stranded inside one account directory.
 "$BIN_DIR/ccs" relink || true
@@ -53,3 +69,4 @@ fi
 
 echo "ccas installed to $BIN_DIR/ccs"
 echo "Run 'ccs add' to add your first account, or click the dim ✻ in Waybar."
+echo "Usage poll: systemctl --user status ccas-poll.timer"

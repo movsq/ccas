@@ -34,6 +34,16 @@ if [ "${1:-}" = "--purge" ] && [ -d "$ACCOUNTS" ]; then
   echo "Account data moved to $TRASH (not deleted)."
 fi
 
+SYSTEMD_DIR="${CCAS_SYSTEMD_DIR:-$HOME/.config/systemd/user}"
+if [ -z "${CCAS_SKIP_SYSTEMD:-}" ] && command -v systemctl >/dev/null 2>&1; then
+  systemctl --user disable --now ccas-poll.timer 2>/dev/null || true
+fi
+for unit in ccas-poll.service ccas-poll.timer; do
+  if [ -e "$SYSTEMD_DIR/$unit" ]; then
+    mv "$SYSTEMD_DIR/$unit" "$TRASH/$unit-$STAMP"
+  fi
+done
+
 if [ -z "${CCAS_NO_RELOAD:-}" ]; then
   killall -SIGUSR2 waybar 2>/dev/null || true
 fi
