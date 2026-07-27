@@ -31,6 +31,14 @@ STAYS_OPEN = frozenset({
     "headless", "dangerous", "hide_icon", "color", "format_color",
 })
 
+# Of those, the ones applied *without* rebuilding the settings subtree. A
+# checkbox is clicked once and the rebuild is what reads the new state back;
+# the sliders emit while the pointer is still down, and tearing the scale out
+# from under a drag loses the grab — the knob stops following, and every move
+# after that is dropped. The editor is already showing what it just wrote, so
+# there is nothing for a rebuild to tell it.
+NO_REBUILD = frozenset({"color", "format_color"})
+
 WINDOW_LABELS ={"five_hour": "5h", "seven_day": "wk"}
 
 UNTITLED = "(untitled)"

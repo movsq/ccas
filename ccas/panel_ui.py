@@ -596,9 +596,10 @@ def build_body(state, chosen, window, apply=None):
             if filling_toggles["on"]:
                 return
             apply(action)
-            # Out of the signal handler before the widget that emitted it is
-            # destroyed, and after the registry write the refresh reads back.
-            GLib.idle_add(refresh_toggles)
+            if action.kind not in panel.NO_REBUILD:
+                # Out of the signal handler before the widget that emitted it is
+                # destroyed, and after the registry write the refresh reads back.
+                GLib.idle_add(refresh_toggles)
             return
         chosen["action"] = action
         window.close()
@@ -909,7 +910,7 @@ def _build_color_editor(state, pick, ui_state):
     box.add_css_class("ccas-color-editor")
 
     top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-    top.append(Gtk.Label(label="Colour of", xalign=0))
+    top.append(Gtk.Label(label="Color of", xalign=0))
     picker = Gtk.DropDown.new_from_strings([t["label"] for t in targets])
     top.append(picker)
 
@@ -929,21 +930,11 @@ def _build_color_editor(state, pick, ui_state):
     preview.get_style_context().add_provider(
         provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
 
-    chips = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    # ACCOUNT alone. `dim` was a second way to say what the saturation slider
-    # already says — drag it to zero and the token greys out — and `auto` was a
-    # reset the sliders cannot express, so a button that undid the thing beside
-    # it. Both remain on `ccs format --color`, which is where a format string is
-    # edited anyway.
-    for name in (fmt.ACCOUNT,):
-        chip = Gtk.Button(label=name)
-        # Its own class, not the header's .ccas-chip: they are the same shape
-        # but the account chip is a row and this is a button the size of a
-        # swatch, and sharing the name had the two rules overriding each other.
-        chip.add_css_class("ccas-color-chip")
-        chip.connect("clicked", lambda _b, v=name: _commit(v))
-        chips.append(chip)
-    top.append(chips)
+    # No `account` button. It was the last of the three named values, and a
+    # button that pins a token to the widget's colour sits next to two sliders
+    # that set a colour — two answers to one question, in one row. `account` is
+    # still what a new account's glyph and percentage are written with, and
+    # still what `ccs format --color` takes; what the panel offers is a colour.
     top.append(preview)
     box.append(top)
 
@@ -964,10 +955,23 @@ def _build_color_editor(state, pick, ui_state):
     def current_hex():
         return fmt.hs_to_hex(hue.get_value(), sat.get_value())
 
+    # Before paint(), which fills it. The escape hatch for a colour the sliders
+    # cannot reach: they hold lightness at format.LIGHTNESS, and a colour is any
+    # hex. It carried a "#rrggbb" placeholder and nothing else, which said what
+    # to type but never what was there — so the one field showing an exact value
+    # was the one field that never showed the current one.
+    entry = Gtk.Entry(max_length=7, width_chars=8)
+    entry.add_css_class("ccas-hex")
+
     def paint(value):
         # The bar's own background, so an uncommitted preview is still honest
         # about what the label will look like once it lands.
         provider.load_from_string(f".ccas-preview {{ background: {value}; }}")
+        # Not while it has the focus: that is the user part-way through typing
+        # a colour, and overwriting it under the caret is the same mistake as
+        # committing mid-drag.
+        if not entry.has_focus():
+            entry.set_text(value)
 
     def repaint(*_a):
         paint(current_hex())
@@ -990,7 +994,6 @@ def _build_color_editor(state, pick, ui_state):
         hue.set_value(h)
         sat.set_value(s)
         settling["seeding"] = False
-        chips.set_visible(target()["chips"])
         # The stored colour, not current_hex(): the sliders pin lightness at
         # LIGHTNESS and this one may not be there yet. Nothing shifts merely
         # because the editor opened — the first drag is what snaps it.
@@ -1026,9 +1029,6 @@ def _build_color_editor(state, pick, ui_state):
 
     picker.connect("notify::selected", on_target)
 
-    entry = Gtk.Entry(placeholder_text="#rrggbb", max_length=7, width_chars=8)
-    # The escape hatch for a colour the sliders cannot reach: they hold
-    # lightness at format.LIGHTNESS, and format_colors accepts any hex.
     entry.connect("activate", lambda e: _commit(e.get_text()))
     top.append(entry)
 
