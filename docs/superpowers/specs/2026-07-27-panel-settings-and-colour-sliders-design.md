@@ -1,6 +1,6 @@
 # One format, one colour editor, one Settings drawer
 
-Status: **designed 2026-07-27**, not yet built. Supersedes the display-mode half
+Status: **shipped 2026-07-27**. Supersedes the display-mode half
 of `2026-07-26-custom-display-format-design.md`; the format string and its
 tokens survive unchanged, the four modes around it do not.
 

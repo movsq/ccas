@@ -620,9 +620,12 @@ every run so it cannot be forgotten, and — like everything else in doctor — 
 reports rather than repairing, because rewriting the format there would erase
 the typo the check exists to show.
 
-**`custom` is appended to `DISPLAY_MODES`, never inserted.** Both `ccs display`
-and the panel dropdown address a mode by its index in that list, so inserting
+**`custom` was appended to `DISPLAY_MODES`, never inserted.** Both `ccs display`
+and the panel dropdown addressed a mode by its index in that list, so inserting
 one at the front would silently repoint every account's existing selection.
+The modes are retired now — the format string is the only way a label is built,
+and "icon only" is the string `%icon` — but the hazard is worth keeping: any
+list a stored value indexes into is a list you can only append to.
 
 The panel's switch row was also split at this point. It had been one flat line
 of checkboxes plus a dropdown, which was fine at three items and unreadable once
@@ -843,3 +846,45 @@ line catches the watcher's own shell — the `pkill -f` lesson in a new shape.
 Reading `/proc/<waybar>/task/*/children` is fast enough, but the children are
 caught between fork and exec, so every one of them reads as `waybar` and none
 can be told from the module it belongs to.
+
+## The colour editor's two GTK4 surprises
+
+Both found by driving the panel on 2026-07-27, and both were things the design
+had reasoned out and got wrong.
+
+**A per-widget `Gtk.CssProvider` at `PRIORITY_APPLICATION` loses to `menu.css`.**
+The preview swatch cannot use `_tint()` — a colour halfway through a drag is in
+neither set `_load_tints()` built its classes from, so the class would not exist
+— and it therefore carries its own provider, updated per motion. Added at
+`STYLE_PROVIDER_PRIORITY_APPLICATION` it did nothing visible: `_load_css()`
+installs the user's `menu.css` at `PRIORITY_USER`, which outranks it, so the
+swatch kept painting the `.ccas-preview { background: #353535 }` fallback
+whatever the sliders said. Sampled off a `grim` capture as `(53,53,53)` when the
+account's colour was `#f5c2e7`. It goes on at `PRIORITY_USER + 1`.
+
+The same swatch paints the *stored* colour on load, not `hs_to_hex()` of the
+decomposed sliders. The sliders pin lightness at `format.LIGHTNESS` and a stored
+colour may not be there yet — the palette's pink sits at 86% — so painting from
+them shifts the colour merely because the editor opened. The first drag is what
+snaps it, which is the whole reason `seed()` and `_commit()` are two functions.
+
+**A `GestureClick` on a `Gtk.Scale` kills the scale's drag.** `Gtk.Scale` has no
+"released" signal in GTK4, so the obvious way to commit on release is a gesture
+on the scale. Adding one claims the event sequence and denies the scale's own
+drag gesture: the press registers and the knob then never tracks the pointer at
+all. `Gtk.EventControllerLegacy` is not the way out either — its handler is
+passed a `None` event here, so `get_event_type()` raises straight into the log.
+
+So the commit is a settle timer instead: `value-changed` repaints the preview
+and rearms a `SETTLE_MS` timeout, and the write happens when the movement stops.
+That keeps the rule the release was there to serve — one write per drag, never
+one per motion event, with `waybar.signal()` riding on it — and gives keyboard
+adjustment the same single write for free. It needs no release event, which is
+the part GTK4 would not reliably give.
+
+**A synthetic pointer still cannot drag on an idle output.** The press reaches a
+layer surface on the unfocused monitor — the preview repainted, so `value-changed`
+fired — but motion delivered while the button is held does not move the knob.
+That is the `swaymsg cursor` limit already documented under Working style, in a
+new shape: a press is enough to verify a commit path end to end (click the
+trough at a new position and the value jumps), a drag is not.

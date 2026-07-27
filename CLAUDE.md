@@ -20,12 +20,12 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | module | what it owns |
 |---|---|
 | `paths.py` | every filesystem location, each `CCAS_*`-overridable. Nothing else may hardcode a path. |
-| `registry.py` | `accounts.json`: slugs, colours, display mode, `headless`, `default`. |
+| `registry.py` | `accounts.json`: slugs, colours (hex), `headless`, `default`, and the read-path migrations. |
 | `accounts.py` | the account directory: create, `relink` (the never-write-to-`~/.claude` guarantee), `rename`, trash, `env_for`. |
 | `waybar.py` | the managed block in `config.jsonc`, stripping the legacy one from `~/.bashrc`, plus reload/signal. |
 | `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
 | `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
-| `format.py` | the `custom` display mode: the token table, `tokens_in`, `unknown_tokens`, and `render()`. Pure — no I/O and no GTK, because `ccs statusline` reaches it. |
+| `format.py` | the format string — the only way a label is built: the token table, `tokens_in`, `unknown_tokens`, `render()`, and the hue/saturation maths. Pure — no I/O and no GTK, because `ccs statusline` reaches it. |
 | `usage.py` | the per-account usage reading: recording it, all three source shapes, the three states, and how each is said. |
 | `poll.py` | the session-free usage fetch: the credential read, the freshness gate, the request. Its fetcher is injected, so no test opens a socket. |
 | `pickers.py` | the terminal front-ends (fzf, `input()`), and `is_gui()`. |
@@ -407,9 +407,10 @@ ccs doctor                       # audit the four places that drift; rc 1 if any
 ccs config                       # rewrite the managed block in config.jsonc and reload
 ccs headless [<slug>]            # show / toggle which account runs `ccs -p`
 ccs dangerous [<slug>]           # show / toggle --dangerously-skip-permissions per account
-ccs format <slug> ['<fmt>']      # show / set the custom mode's format string
+ccs color <slug> <#rrggbb|n>     # the widget's colour; the palette index still works
+ccs format <slug> ['<fmt>']      # show / set the format string — the whole label
 ccs format --tokens              # every token, with what it renders
-ccs format <slug> --color %5h dim   # one token's colour: auto, dim, or #rrggbb
+ccs format <slug> --color %5h dim   # one token's colour: auto, dim, account, or #rrggbb
 ccs usage [<slug>]               # both quota windows, their age and their source
 ccs statusline [<delegate> …]    # the recording hook; wired by hand in ~/.claude/settings.json
 ccs poll [<slug>] [--force]      # fetch usage with no session running; what the systemd timer runs

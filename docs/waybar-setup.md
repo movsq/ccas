@@ -115,16 +115,14 @@ clock gave the label a third run to sit beside. `grim -o HDMI-A-1`, thresholded
 above the `#313244` bar background, put the glyph and the clock on ink rows 9–28
 alike — so `150%`/`-800` holds at the bar's real DPI, not only at pango-view's.
 
-## The custom display mode
+## The format string
 
-Four of the five display modes are exactly what they are named — `icon only` is
-an icon and nothing else. Anything more than that is the fifth, `custom`, whose
-label you write yourself as a format string of tokens. Everything outside a
-token is copied through literally, so spaces, separators and stray text are all
-yours.
+There is one way a label is built: a format string of tokens, which you write
+yourself. Everything outside a token is copied through literally, so spaces,
+separators and stray text are all yours. The four named display modes this
+replaced were presets the string already expressed — "icon only" is `%icon`.
 
 ```bash
-ccs display vsed custom
 ccs format vsed '%icon %name %5hused %5htimeleft'
 ccs format vsed                       # show it, and any per-token colours
 ccs format --tokens                   # every token there is
@@ -165,13 +163,16 @@ customisation with the format's own tokens in a dropdown.
 
 ### Getting the old bar back
 
-Before this mode existed, every display mode carried a hardcoded usage clock.
-That is now `custom` with the default format, which is exactly what the old
-`nickname` mode printed:
+Before the format string existed, every display mode carried a hardcoded usage
+clock. `%icon %name %5h` is exactly what the old `nickname` mode printed:
 
 ```bash
-ccs display vsed custom      # %icon %name %5h is the default format
+ccs format vsed '%icon %name %5h'
 ```
+
+The default for a new account is `%icon %5hreset %5hquotaleft` — the glyph, the
+reset time dim beside it, and the remaining percentage back in the widget's
+colour.
 
 ## Spacing, hover and press
 
@@ -209,9 +210,9 @@ Notes:
   concept, so a held button leaves the background at its hover value. The rule
   above is kept only so the intent is on the page; delete it if a dead selector
   bothers you, and do not spend time tuning its alpha.
-- Colour per account belongs in the label, not here — it comes from the
-  registry's palette index via `ccs color <slug> <n>`, so a CSS `color` rule
-  would fight it.
+- Colour per account belongs in the label, not here — it is a hex string in the
+  registry, set by `ccs color <slug> <#rrggbb>` or by the panel's hue and
+  saturation sliders, so a CSS `color` rule would fight it.
 
 ## Applying changes
 
