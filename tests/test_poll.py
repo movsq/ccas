@@ -210,3 +210,69 @@ def test_polling_never_touches_claude_home(monkeypatch, tmp_path):
     poll.poll(["work"], now=NOW, fetcher=answering(body()))
     assert {p.name: p.stat().st_mtime_ns for p in home.iterdir()} == before
     assert [p for p in home.iterdir() if p.is_symlink()] == []
+
+
+# ── the request ───────────────────────────────────────────────────────────────
+
+class FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def read(self):
+        return json.dumps(self._payload).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_fetch_asks_the_endpoint_claude_code_asks():
+    """URL, bearer token and timeout, exactly as measured from the 2.1.220
+    bundle. No anthropic-beta header and no special user-agent — the research
+    doc confirmed live that neither is needed."""
+    seen = {}
+
+    def opener(request, timeout=None):
+        seen["url"] = request.full_url
+        seen["auth"] = request.get_header("Authorization")
+        seen["timeout"] = timeout
+        return FakeResponse(body())
+
+    payload, error = poll.fetch("sk-tok", opener=opener)
+    assert seen["url"] == "https://api.anthropic.com/api/oauth/usage"
+    assert seen["auth"] == "Bearer sk-tok"
+    assert seen["timeout"] == poll.TIMEOUT
+    assert error == ""
+    assert payload["five_hour"]["utilization"] == 3.0
+
+
+def test_fetch_turns_an_http_error_into_a_reason():
+    import urllib.error
+
+    def opener(request, timeout=None):
+        raise urllib.error.HTTPError(poll.USAGE_URL, 401, "Unauthorized", {}, None)
+
+    payload, error = poll.fetch("sk-tok", opener=opener)
+    assert payload is None
+    assert "401" in error
+
+
+def test_fetch_turns_a_timeout_into_a_reason():
+    def opener(request, timeout=None):
+        raise TimeoutError("timed out")
+
+    payload, error = poll.fetch("sk-tok", opener=opener)
+    assert payload is None
+    assert error
+
+
+def test_fetch_survives_a_body_that_is_not_json():
+    class Garbage(FakeResponse):
+        def read(self):
+            return b"<html>nope"
+
+    payload, error = poll.fetch("sk-tok", opener=lambda r, timeout=None: Garbage(None))
+    assert payload is None
+    assert error

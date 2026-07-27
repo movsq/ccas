@@ -23,6 +23,8 @@ No signalling here. The caller owns the bar, the same way `cmd_statusline` does.
 """
 import json
 import time
+import urllib.error
+import urllib.request
 from collections import namedtuple
 
 from . import paths, usage
@@ -81,6 +83,26 @@ def age(seconds: float) -> str:
     if seconds < 5400:
         return f"{seconds // 60}m"
     return f"{seconds / 3600:.1f}h"
+
+
+def fetch(token: str, opener=None):
+    """`(payload, "")`, or `(None, reason)`. Never raises.
+
+    Everything that can go wrong here is the same event as far as the caller is
+    concerned — no fresh reading this time — so the reason is a string for the
+    user to read rather than an exception for the timer to trip over.
+    """
+    opener = urllib.request.urlopen if opener is None else opener
+    request = urllib.request.Request(USAGE_URL, headers={
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"})
+    try:
+        with opener(request, timeout=TIMEOUT) as response:
+            return json.loads(response.read().decode("utf-8", "replace")), ""
+    except urllib.error.HTTPError as exc:
+        return None, f"http {exc.code}"
+    except Exception as exc:  # noqa: BLE001 — see the docstring
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def poll_account(slug: str, now=None, fetcher=None, force=False) -> Outcome:
