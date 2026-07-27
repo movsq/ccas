@@ -178,7 +178,7 @@ def test_a_new_account_carries_the_default_format():
     registry.add(reg, "work", "w@example.com", None)
     account = registry.find(reg, "work")
     assert account["format"] == fmt.DEFAULT_FORMAT
-    assert account["format_colors"] == {}
+    assert account["format_colors"] == fmt.DEFAULT_FORMAT_COLORS
 
 
 def test_set_field_validates_the_format():
@@ -312,3 +312,12 @@ def test_set_field_rejects_display():
     registry.add(reg, "a", "a@x", None)
     with pytest.raises(ValueError):
         registry.set_field(reg, "a", "display", "custom")
+
+
+def test_add_writes_the_default_format_colours():
+    reg = {"default": None, "accounts": []}
+    a = registry.add(reg, "a", "a@x", None)
+    assert a["format"] == fmt.DEFAULT_FORMAT
+    assert a["format_colors"] == fmt.DEFAULT_FORMAT_COLORS
+    # A copy, not the shared constant: two accounts must not edit one dict.
+    assert a["format_colors"] is not fmt.DEFAULT_FORMAT_COLORS

@@ -92,7 +92,7 @@ def test_warning_never_fires_outside_the_combination():
 def test_icon_is_larger_than_the_bar_text():
     """The glyph is the thing you aim at; the nickname beside it stays at the
     bar's font size."""
-    out = label.render(account(), 1)
+    out = label.render(account(format="%icon %name"), 1)
     assert out.startswith(f"<span size='{label.ICON_SIZE}'")
     assert "work" in out.split("</span>")[1]
 

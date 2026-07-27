@@ -761,7 +761,6 @@ def test_build_state_carries_the_format_and_its_tokens(reg):
     state = panel.build_state("one")
     assert state["format"] == "%icon %name %icon %5h"
     assert state["format_tokens"] == ["%icon", "%name", "%5h"]
-    assert state["format_colors"] == {}
 
 
 def test_build_state_defaults_the_format_for_an_old_account(reg):

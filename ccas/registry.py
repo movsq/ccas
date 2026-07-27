@@ -101,7 +101,7 @@ def add(reg: dict, slug: str, email: str, nickname):
         "color": color,
         "hide_icon": False,
         "format": format.DEFAULT_FORMAT,
-        "format_colors": {},
+        "format_colors": dict(format.DEFAULT_FORMAT_COLORS),
         "headless": False,
         "dangerous": False,
         "warned_invisible": False,

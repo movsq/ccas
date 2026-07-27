@@ -191,14 +191,16 @@ def test_valid_color():
     assert not fmt.valid_color("' foreground='x")   # no attribute injection
 
 
-def test_the_default_format_reproduces_the_old_bar():
-    """The migration canary, spelled out rather than compared against
-    label.render — which no longer produces this, by design. Stripping the clock
-    from the built-in modes is only safe because '%icon %name %5h' puts back
-    exactly what they used to show."""
+def test_the_old_default_format_still_reproduces_the_old_bar():
+    """The migration canary. registry.OLD_DEFAULT_FORMAT is what add() wrote
+    before the modes were retired, and load() only replaces a format still
+    equal to it — so what it renders is what the migration is entitled to
+    throw away, and it has to be the label those modes used to show."""
+    from ccas import registry
     r = reading()
     clock = usage.reset_clock(int(IN_2H20))
-    assert fmt.render(account(), 1, r, NOW) == \
+    assert fmt.render(account(format=registry.OLD_DEFAULT_FORMAT,
+                              format_colors={}), 1, r, NOW) == \
         f"{ICON} <span size='110%'>work</span> " \
         f"<span size='110%' color='{usage.YELLOW}'>{clock}</span>"
 
@@ -269,3 +271,19 @@ def test_account_colours_the_icon_like_auto_does():
     a = account(color="#f38ba8", format="%icon")
     explicit = fmt.render(dict(a, format_colors={"%icon": "account"}), 1)
     assert explicit == fmt.render(a, 1)
+
+
+def test_the_default_format_is_glyph_reset_and_remaining():
+    assert fmt.DEFAULT_FORMAT == "%icon %5hreset %5hquotaleft"
+    assert fmt.DEFAULT_FORMAT_COLORS == {
+        "%5hreset": "dim", "%5hquotaleft": "account"}
+
+
+def test_the_default_renders_glyph_and_percent_in_the_widget_colour():
+    """The reset time recedes and the two coloured runs match, so changing the
+    widget's colour moves the whole label rather than half of it."""
+    a = account(color="#89b4fa", format=fmt.DEFAULT_FORMAT,
+                format_colors=dict(fmt.DEFAULT_FORMAT_COLORS))
+    out = fmt.render(a, 1, reading(five_pct=36.0), NOW)
+    assert out.count("color='#89b4fa'") == 2
+    assert f"alpha='{usage.DIM}'" in out

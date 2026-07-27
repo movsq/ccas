@@ -19,8 +19,11 @@ from .label import ICON_RISE, ICON_SIZE, TEXT_SIZE, pango_escape
 
 AUTO, DIM, ACCOUNT = "auto", "dim", "account"
 
-DEFAULT_FORMAT = "%icon %name %5h"
-DEFAULT_FORMAT_COLORS = {}
+DEFAULT_FORMAT = "%icon %5hreset %5hquotaleft"
+# The glyph and the remaining percentage in the widget's colour, the reset time
+# dim between them. ACCOUNT rather than a literal hex so the pair follows the
+# hue slider instead of drifting away from it the first time it moves.
+DEFAULT_FORMAT_COLORS = {"%5hreset": DIM, "%5hquotaleft": ACCOUNT}
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 

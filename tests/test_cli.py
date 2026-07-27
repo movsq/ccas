@@ -1542,7 +1542,7 @@ def test_format_warns_about_an_unknown_token_but_still_sets_it(capsys):
 def test_format_sets_one_tokens_colour():
     make_account()
     assert cli.main(["format", "work", "--color", "%name", "dim"]) == 0
-    assert registry.find(registry.load(), "work")["format_colors"] == {"%name": "dim"}
+    assert registry.find(registry.load(), "work")["format_colors"]["%name"] == "dim"
 
 
 def test_setting_a_colour_to_auto_deletes_the_key():
@@ -1551,7 +1551,7 @@ def test_setting_a_colour_to_auto_deletes_the_key():
     make_account()
     cli.main(["format", "work", "--color", "%name", "dim"])
     cli.main(["format", "work", "--color", "%name", "auto"])
-    assert registry.find(registry.load(), "work")["format_colors"] == {}
+    assert "%name" not in registry.find(registry.load(), "work")["format_colors"]
 
 
 def test_format_rejects_a_bad_colour():
@@ -1579,15 +1579,15 @@ def test_the_panel_sets_one_tokens_colour():
     make_account()
     assert cli.dispatch_panel(
         panel.Action("format_color", "work", ("%name", "#89b4fa"))) == 0
-    assert registry.find(registry.load(), "work")["format_colors"] \
-        == {"%name": "#89b4fa"}
+    assert registry.find(registry.load(), "work")["format_colors"]["%name"] \
+        == "#89b4fa"
 
 
 def test_the_panel_clears_a_colour_by_choosing_auto():
     make_account()
     cli.dispatch_panel(panel.Action("format_color", "work", ("%name", "dim")))
     cli.dispatch_panel(panel.Action("format_color", "work", ("%name", "auto")))
-    assert registry.find(registry.load(), "work")["format_colors"] == {}
+    assert "%name" not in registry.find(registry.load(), "work")["format_colors"]
 
 
 def test_the_panel_rejects_a_bad_colour():
