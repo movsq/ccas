@@ -767,9 +767,19 @@ def build_body(state, chosen, window, apply=None, ui_state=None, rebuild=None):
     stack.add_overlay(revealer)
     root.append(stack)
 
+    # Where the user was, from before this body existed. The panes are not
+    # per-account at all — history.scan() reads ~/.claude/projects and both
+    # accounts see the same list — so a switch that emptied the search and put
+    # the selection back at the top would be discarding work over a change that
+    # cannot have affected what was being looked for.
+    query = ui_state.get("query", "")
+    entry.set_text(query)
+    entry.set_position(-1)   # the caret after it, so typing carries on
+
     # `view` is the filtered state; `state` stays whole so a narrowed search can
     # widen again without a rescan.
-    view = {"state": state, "project": state["selected_project"]}
+    view = {"state": panel.filter_state(state, query),
+            "project": ui_state.get("project") or state["selected_project"]}
     # Guards: rebuilding a ListBox emits row-selected, which would recurse.
     filling = {"on": False}
 
@@ -801,10 +811,15 @@ def build_body(state, chosen, window, apply=None, ui_state=None, rebuild=None):
             for session in rows:
                 sessions_list.append(_session_row(session))
             # The latest-modified session, highlighted: the panes are in
-            # recency order, so that is row 0 by construction.
-            first = sessions_list.get_row_at_index(0)
-            if first is not None:
-                sessions_list.select_row(first)
+            # recency order, so that is row 0 by construction. A remembered one
+            # wins while it is still in the list — it is in another project's
+            # rows, or filtered out, as often as not.
+            wanted = ui_state.get("session")
+            index = next((i for i, s in enumerate(rows)
+                          if s["uuid"] == wanted), 0)
+            row = sessions_list.get_row_at_index(index)
+            if row is not None:
+                sessions_list.select_row(row)
         filling["on"] = False
         sync_verbs()
 
@@ -831,11 +846,31 @@ def build_body(state, chosen, window, apply=None, ui_state=None, rebuild=None):
             return
         projects = view["state"]["projects"]
         if 0 <= row.get_index() < len(projects):
-            view["project"] = projects[row.get_index()]["path"]
+            view["project"] = ui_state["project"] = \
+                projects[row.get_index()]["path"]
             fill_sessions()
 
+    def on_session(_box, row):
+        # The row, never selected_session()'s fallback. _retire() unselects the
+        # rows of the body being dropped and that is a row-selected of its own,
+        # so recording the *effective* session here — the top of the list, which
+        # is what an unselected pane resumes — would replace the one the user
+        # picked, in the moment before the new body reads it back.
+        rows = view["state"]["sessions"].get(view["project"], [])
+        if row is not None and 0 <= row.get_index() < len(rows):
+            ui_state["session"] = rows[row.get_index()]["uuid"]
+        sync_verbs()
+
     def on_search(_entry):
-        view["state"] = panel.filter_state(state, entry.get_text())
+        text = entry.get_text()
+        if text == ui_state.get("query", ""):
+            # The echo of seeding the entry above: GtkSearchEntry arms
+            # search-changed on a delay, so a restored query fires one about
+            # 150 ms into the new body — long after the selection was put back,
+            # and this refills both panes from the top.
+            return
+        ui_state["query"] = text
+        view["state"] = panel.filter_state(state, text)
         view["project"] = view["state"]["selected_project"]
         fill_projects()
 
@@ -846,7 +881,7 @@ def build_body(state, chosen, window, apply=None, ui_state=None, rebuild=None):
 
     projects_list.connect("row-selected", on_project)
     sessions_list.connect("row-activated", lambda _b, _r: resume_selected())
-    sessions_list.connect("row-selected", lambda _b, _r: sync_verbs())
+    sessions_list.connect("row-selected", on_session)
     entry.connect("search-changed", on_search)
 
     def on_entry_key(_c, keyval, _code, _mods):

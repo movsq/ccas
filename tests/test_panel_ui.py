@@ -431,3 +431,108 @@ def test_the_swapped_out_body_lets_go_of_its_rows(gtk, monkeypatch):
     panel_ui._body_swapper(frame, {"action": None}, gtk.Window(),
                            lambda _a: None, ui_state)("two")
     assert all(b.get_selected_row() is None for b in panel_ui._list_boxes(old))
+
+
+# ── what a switch keeps ───────────────────────────────────────────────────────
+
+def _search(frame):
+    return _walk(frame, lambda w: isinstance(w, Gtk.SearchEntry))[0]
+
+
+def _panes(frame):
+    """(projects, sessions). Two ListBoxes, in the order they are built."""
+    body = frame.get_first_child()
+    projects, sessions = panel_ui._list_boxes(body)
+    return projects, sessions
+
+
+def _selected(listbox, rows):
+    row = listbox.get_selected_row()
+    return None if row is None else rows[row.get_index()]
+
+
+def test_the_drawer_survives_a_switch(gtk, monkeypatch):
+    """The chips are in the header, which stays on screen while the drawer is
+    out — so switching account mid-edit is a reachable click, and having the
+    drawer slam shut is the complaint that put the settings in place rather
+    than behind a reopen."""
+    frame, _chosen, _applied, ui_state = _body(
+        gtk, monkeypatch, ui_state={"expanded": True, "target": 0})
+    panel_ui._body_swapper(frame, {"action": None}, gtk.Window(),
+                           lambda _a: None, ui_state)("two")
+    revealer = _walk(frame, lambda w: isinstance(w, Gtk.Revealer))[0]
+    assert revealer.get_reveal_child() is True
+
+
+def test_the_typed_query_survives_a_switch(gtk, monkeypatch):
+    """The panes are not per-account at all — history.scan() reads
+    ~/.claude/projects, so both accounts see the same list. A switch that
+    emptied the filter would be discarding work over a change that cannot have
+    affected what was being looked for."""
+    frame, _chosen, _applied, ui_state = _body(gtk, monkeypatch)
+    _search(frame).set_text("beta")
+    _settle(400)   # GtkSearchEntry emits search-changed on a delay
+    assert ui_state["query"] == "beta"
+    panel_ui._body_swapper(frame, {"action": None}, gtk.Window(),
+                           lambda _a: None, ui_state)("two")
+    assert _search(frame).get_text() == "beta"
+    projects, _sessions = _panes(frame)
+    assert projects.get_row_at_index(1) is None      # only p/beta is left
+
+
+def test_the_selected_project_survives_a_switch(gtk, monkeypatch):
+    """The left pane's selection is where the two verbs act, so losing it means
+    the buttons come back naming a project nobody chose."""
+    frame, _chosen, _applied, ui_state = _body(gtk, monkeypatch)
+    projects, _sessions = _panes(frame)
+    projects.select_row(projects.get_row_at_index(1))
+    assert ui_state["project"] == "/p/beta"
+    panel_ui._body_swapper(frame, {"action": None}, gtk.Window(),
+                           lambda _a: None, ui_state)("two")
+    projects, _sessions = _panes(frame)
+    assert _selected(projects, PROJECTS)["path"] == "/p/beta"
+
+
+def test_the_selected_session_survives_a_switch(gtk, monkeypatch):
+    """One keypress from resuming is the state the panel opens in; a switch
+    should not put the user back at the top of the list."""
+    frame, _chosen, _applied, ui_state = _body(gtk, monkeypatch)
+    _projects, sessions = _panes(frame)
+    sessions.select_row(sessions.get_row_at_index(1))
+    assert ui_state["session"] == "u2"
+    panel_ui._body_swapper(frame, {"action": None}, gtk.Window(),
+                           lambda _a: None, ui_state)("two")
+    _projects, sessions = _panes(frame)
+    assert _selected(sessions, SESSIONS["/p/alpha"])["uuid"] == "u2"
+
+
+def test_retiring_a_body_does_not_forget_the_selected_session(gtk, monkeypatch):
+    """_retire() unselects the rows of the body being dropped, and that is a
+    row-selected of its own. Recording the *effective* session there — the top
+    of the list, which is what an unselected pane resumes — would overwrite the
+    one the user picked with u1, in the moment before it is read back."""
+    frame, _chosen, _applied, ui_state = _body(gtk, monkeypatch)
+    _projects, sessions = _panes(frame)
+    sessions.select_row(sessions.get_row_at_index(1))
+    panel_ui._retire(frame.get_first_child())
+    assert ui_state["session"] == "u2"
+
+
+def test_the_restored_query_is_not_a_search_of_its_own(gtk, monkeypatch):
+    """GtkSearchEntry arms `search-changed` on a delay, so seeding the entry
+    with the remembered query fires one about 150 ms into the *new* body — and
+    a search is a new question, so on_search drops the selected project for the
+    top hit. It would land a moment after the switch, on nothing the user did.
+    The echo is recognised by the text being what was already remembered."""
+    frame, _chosen, _applied, ui_state = _body(gtk, monkeypatch)
+    _search(frame).set_text("p/")       # matches both projects
+    _settle(400)
+    projects, _sessions = _panes(frame)
+    projects.select_row(projects.get_row_at_index(1))
+    panel_ui._body_swapper(frame, {"action": None}, gtk.Window(),
+                           lambda _a: None, ui_state)("two")
+    projects, _sessions = _panes(frame)
+    assert _selected(projects, PROJECTS)["path"] == "/p/beta"
+    _settle(400)   # the delayed search-changed of the seeded entry lands here
+    projects, _sessions = _panes(frame)
+    assert _selected(projects, PROJECTS)["path"] == "/p/beta"
