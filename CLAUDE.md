@@ -425,11 +425,27 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   the panel then opens nowhere at all while its process sits there presenting
   frames. `(CCAS_PANEL_OUTPUT=HDMI-A-1 setsid ccs --gui <slug> >log 2>&1 &)`,
   sleep 3, then `grim`.
-- **`pkill -f` matches the shell you typed it in.** `pkill -f "ccs --gui"` kills
-  the bash running it, because that string is in its own `/proc/…/cmdline` — so
-  the panel is never launched and reads as a panel that will not open. It cost
-  half a dozen rounds of that once. Kill a pid from `pgrep`, or pick a pattern
-  the command line cannot contain.
+- **Any `-f` match against a full command line matches the shell you typed it
+  in.** `pkill -f "ccs --gui"` kills the bash running it, because that string is
+  in its own `/proc/…/cmdline` — so the panel is never launched and reads as a
+  panel that will not open. It cost half a dozen rounds of that once.
+  **`pgrep -f` is the same trap**, and "kill a pid from `pgrep`" is not the
+  escape it looks like: `for p in $(pgrep -f "gui vsed"); do kill $p; done` hands
+  back the enclosing shell's own pid and kills it, which is how this was walked
+  into again on 2026-07-27. The command exits 143/144 and everything chained
+  after it — the relaunch, the sleep, the `grim` — silently never runs.
+  The bracket trick does not save you either: a kill-then-relaunch one-liner
+  *contains the launch command*, so any pattern matching the target matches the
+  shell about to start it. Match on the process **name** first, so a bash cannot
+  be a candidate at all, then read each candidate's own cmdline:
+
+  ```bash
+  ps -eo pid,args | awk '/share\/ccas\/bin/ && !/awk/ {print $1}' \
+    | while read p; do kill "$p"; done
+  ```
+
+  Keep the pattern specific — matching every `ccs` also kills a `ccs format` the
+  user has open in another terminal.
 - **Diff the widgets, never the whole bar.** `grim -g "2560,0 1920x24"` and a
   pixel compare answers CHANGED every single time, because the clock and the
   stopwatch beside it tick on their own — so it says "the label repainted" just
