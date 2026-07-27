@@ -1012,9 +1012,11 @@ def _build_color_editor(state, pick, ui_state):
     def repaint(*_a):
         paint(current_hex())
 
-    def _commit(value=None):
+    def _commit(value=None, chosen=None):
         entry_value = current_hex() if value is None else value
-        chosen = target()
+        # Passed in by flush(), which commits a drag against the target that
+        # was selected while the sliders moved rather than the one just picked.
+        chosen = target() if chosen is None else chosen
         if chosen["token"] is None:
             pick(panel.Action("color", slug, entry_value))
         else:
@@ -1039,6 +1041,11 @@ def _build_color_editor(state, pick, ui_state):
         repaint()
         if settling["source"] is not None:
             GLib.source_remove(settling["source"])
+            # Cleared, not merely removed: seed() moves both scales, so without
+            # this the second one's value-changed removed the same id a second
+            # time. That was only a warning, but GLib recycles source ids and a
+            # stale one eventually names a timer belonging to someone else.
+            settling["source"] = None
         # Never while seed() is moving the sliders: that is a chip click
         # changing target, not the user choosing a colour.
         if not settling["seeding"]:
@@ -1059,14 +1066,34 @@ def _build_color_editor(state, pick, ui_state):
             else:
                 chip.remove_css_class("ccas-color-chip-on")
 
+    def flush():
+        """Commit a drag that has not settled yet, against the target it was
+        made on. Before ui_state moves, because that is what target() reads.
+
+        Picking another chip used to throw the drag away: seed() moves the
+        sliders, on_value cancels the pending timer, and the seeding flag then
+        stops it being rearmed — so a colour the user had finished choosing was
+        silently never written if they reached for another chip inside
+        SETTLE_MS. A chip is one click beside the slider, where the dropdown it
+        replaced was a popup and two, so the window is easy to hit now.
+        """
+        if settling["source"] is None:
+            return
+        GLib.source_remove(settling["source"])
+        settling["source"] = None
+        _commit(chosen=target())
+
     def choose(index):
         # Selection is a background, never a colour: the strip means "this is
         # the colour" and the background means "this is what you are editing".
         # One cue doing both jobs is unreadable.
         #
         # seed() only moves sliders and never commits, which is why picking a
-        # target writes nothing. That separation is why seed and _commit are
-        # two functions.
+        # target writes nothing of its own. flush() is the drag that was
+        # already the user's, not the click — that separation is why seed and
+        # _commit are two functions, and it is why flush takes an explicit
+        # target rather than reading the one being moved to.
+        flush()
         ui_state["target"] = index
         show_selection()
         seed()
