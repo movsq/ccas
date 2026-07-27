@@ -22,6 +22,7 @@ Two rules hold it up:
 No signalling here. The caller owns the bar, the same way `cmd_statusline` does.
 """
 import json
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -132,6 +133,24 @@ def poll_account(slug: str, now=None, fetcher=None, force=False) -> Outcome:
     if usage.record_reading(slug, reading):
         return Outcome(slug, OK, usage.column(reading, "five_hour", now))
     return Outcome(slug, UNCHANGED, "same numbers")
+
+
+TIMER = "ccas-poll.timer"
+
+
+def timer_state(runner=None) -> str:
+    """systemd's own word for the timer, or "unknown" if it cannot be asked.
+
+    A string rather than a bool: "inactive" and "failed" want different advice,
+    and a machine without systemd is neither.
+    """
+    runner = subprocess.run if runner is None else runner
+    try:
+        proc = runner(["systemctl", "--user", "is-active", TIMER],
+                      capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return (getattr(proc, "stdout", "") or "").strip() or "unknown"
 
 
 def poll(slugs, now=None, fetcher=None, force=False) -> list:

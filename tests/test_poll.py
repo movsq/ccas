@@ -276,3 +276,19 @@ def test_fetch_survives_a_body_that_is_not_json():
     payload, error = poll.fetch("sk-tok", opener=lambda r, timeout=None: Garbage(None))
     assert payload is None
     assert error
+
+
+# ── is the timer alive ────────────────────────────────────────────────────────
+
+def test_timer_state_reports_systemds_word():
+    class Proc:
+        stdout = "active\n"
+
+    assert poll.timer_state(runner=lambda *a, **kw: Proc()) == "active"
+
+
+def test_timer_state_is_unknown_when_systemd_cannot_be_asked():
+    def runner(*a, **kw):
+        raise FileNotFoundError("systemctl")
+
+    assert poll.timer_state(runner=runner) == "unknown"

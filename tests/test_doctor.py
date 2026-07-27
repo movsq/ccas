@@ -15,6 +15,7 @@ import ccas.registry as registry
 import ccas.accounts as accounts
 import ccas.waybar as waybar
 import ccas.doctor as doctor
+import ccas.label as label
 import ccas.cli as cli
 
 
@@ -44,6 +45,10 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_NO_RELOAD", "1")
     for module in (paths, registry, accounts, waybar, doctor, cli):
         importlib.reload(module)
+    # The timer check shells out to the real systemctl, which is the user's
+    # machine and not this sandbox. A healthy install is one where it runs, so
+    # that is the baseline; the tests that care override it.
+    monkeypatch.setattr(doctor.poll, "timer_state", lambda: "active")
     return tmp_path
 
 
@@ -277,3 +282,56 @@ def test_a_known_format_is_not_reported():
     registry.set_field(reg, "work", "format", "%icon %name %5htimeleft")
     registry.save(reg)
     assert failures(registry.load()) == []
+
+
+# ── the poll ──────────────────────────────────────────────────────────────────
+
+def _named(checks, label):
+    return next(c for c in checks if c.label == label)
+
+
+def test_doctor_fails_when_the_poll_timer_is_not_running(monkeypatch):
+    """A dead poller looks exactly like the staleness the feature removes, so it
+    has to be visible where drift is already policed."""
+    reg = healthy()
+    monkeypatch.setattr(doctor.poll, "timer_state", lambda: "inactive")
+    check = _named(doctor.run(reg), "usage: poll timer")
+    assert check.ok is False
+    assert "systemctl --user enable --now ccas-poll.timer" in check.detail
+
+
+def test_doctor_passes_when_the_poll_timer_is_active(monkeypatch):
+    reg = healthy()
+    monkeypatch.setattr(doctor.poll, "timer_state", lambda: "active")
+    assert _named(doctor.run(reg), "usage: poll timer").ok is True
+
+
+def test_doctor_reports_each_accounts_reading_age_and_token_horizon(monkeypatch):
+    """Informational, not a failure: an idle account past its token horizon is
+    expected, and the user needs to be able to see that is what happened."""
+    import time
+    reg = healthy()
+    slug = reg["accounts"][0]["slug"]
+    (paths.account_dir(slug) / ".credentials.json").write_text(json.dumps(
+        {"claudeAiOauth": {"accessToken": "t",
+                           "expiresAt": int((time.time() + 7200) * 1000)}}))
+    row = _named(doctor.run(reg), f"{label.display_name(reg['accounts'][0])}: "
+                                  "usage freshness")
+    assert row.ok is True
+    assert slug in row.detail
+    assert "token good for 2.0h" in row.detail
+    assert "nothing recorded yet" in row.detail
+
+
+def test_doctor_says_when_an_accounts_token_is_past_its_horizon(monkeypatch):
+    """CCAS never renews, so this is the expected quiet state, not a fault."""
+    import time
+    reg = healthy()
+    slug = reg["accounts"][0]["slug"]
+    (paths.account_dir(slug) / ".credentials.json").write_text(json.dumps(
+        {"claudeAiOauth": {"accessToken": "t",
+                           "expiresAt": int((time.time() - 3600) * 1000)}}))
+    row = _named(doctor.run(reg), f"{label.display_name(reg['accounts'][0])}: "
+                                  "usage freshness")
+    assert row.ok is True
+    assert "polling is quiet" in row.detail

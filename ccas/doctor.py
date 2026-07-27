@@ -12,9 +12,10 @@ looking for. Read, compare, report.
 import json
 import os
 import re
+import time
 from collections import namedtuple
 
-from . import format, label, paths, registry, waybar
+from . import format, label, paths, poll, registry, usage, waybar
 
 Check = namedtuple("Check", "ok label detail")
 
@@ -206,14 +207,51 @@ def _panel_dependencies() -> Check:
                  "gtk4-layer-shell")
 
 
+def _poll_timer() -> Check:
+    """Is the five-minute poll actually running?
+
+    Without it an idle account's numbers freeze at its last session, which is
+    indistinguishable from the feature not existing — so a dead timer has to be
+    reported here rather than discovered by mistrusting the bar.
+    """
+    state = poll.timer_state()
+    return Check(state == "active", "usage: poll timer",
+                 "" if state == "active" else
+                 f"systemctl says {state}; start it with: "
+                 "systemctl --user enable --now ccas-poll.timer")
+
+
+def _usage_freshness(account: dict) -> Check:
+    """How old this account's reading is, and how long its token can still be
+    polled with. Always passes: both facts are expected states, not faults. An
+    account past its token horizon is quiet by design — CCAS never renews."""
+    name = label.display_name(account)
+    now = time.time()
+    reading = usage.load(account["slug"])
+    age = (f"recorded {poll.age(now - reading['fetched_at'])} ago"
+           if reading else "nothing recorded yet")
+    credentials = poll.access_token(account["slug"])
+    if credentials is None:
+        token = "no readable token"
+    elif credentials[1] <= now:
+        token = f"token expired {poll.age(now - credentials[1])} ago — polling is quiet"
+    else:
+        token = f"token good for {poll.age(credentials[1] - now)}"
+    # Named by the nickname and identified by the slug in the detail, the same
+    # way `_account_checks` does it.
+    return Check(True, f"{name}: usage freshness",
+                 f"{account['slug']}: {age}; {token}")
+
+
 def run(reg: dict) -> list:
     checks = [_claude_home_has_no_symlinks(), *_binaries(),
-              _no_legacy_shell_function(), _statusline_hook(),
+              _no_legacy_shell_function(), _statusline_hook(), _poll_timer(),
               _panel_dependencies(),
               *_registry_checks(reg),
               *_waybar_matches(reg)]
     for account in reg["accounts"]:
         checks.extend(_account_checks(account))
+        checks.append(_usage_freshness(account))
     return checks
 
 
