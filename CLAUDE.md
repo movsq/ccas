@@ -355,9 +355,11 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   verify a commit path end to end — but **motion delivered while the button is
   held does not**, so a drag there proves nothing. Design the check around a
   click, not a drag.
-- **Verify on `HDMI-A-1`, never on `DP-1`.** `DP-1` is the monitor the user is
-  working on, and a panel or test window mapped there covers what they are
-  doing. Asked for directly, 2026-07-27.
+- **Never map a test window onto the output the user is working on.** Decide
+  where a surface will land *before* spawning it, pin it to an idle output, and
+  kill it once the capture is taken. Which output that is changes; ask or look
+  rather than assuming, and if the answer is derivable without a window at all,
+  derive it.
 - **Open the panel with `CCAS_PANEL_OUTPUT=<connector>` when you drive it
   yourself.** It skips the pointer probe, which is the previous rule's victim:
   the probe waits for `wl_pointer.enter`, an idle output never sends one, and
