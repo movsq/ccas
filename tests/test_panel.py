@@ -814,3 +814,48 @@ def test_build_state_has_no_display(reg):
 
 def test_stays_open_does_not_carry_display():
     assert "display" not in panel.STAYS_OPEN
+
+
+def test_color_targets_lead_with_the_widget():
+    account = {"color": "#89b4fa", "format": "%icon %name",
+               "format_colors": {}}
+    targets = panel.color_targets(account)
+    assert targets[0] == {"token": None, "label": "the widget",
+                          "color": "#89b4fa", "chips": False}
+
+
+def test_color_targets_then_follow_the_format_string():
+    """Left to right the way the label reads, de-duplicated, and only the
+    tokens this account actually uses — a target for a token that is not on the
+    bar is a setting that does nothing."""
+    account = {"color": "#89b4fa", "format": "%icon %name %icon",
+               "format_colors": {}}
+    assert [t["token"] for t in panel.color_targets(account)] == \
+        [None, "%icon", "%name"]
+
+
+def test_a_token_on_auto_seeds_the_sliders_with_the_account_colour():
+    """auto and account both resolve to the widget's colour, so the sliders
+    open where the eye already is rather than at an arbitrary red."""
+    account = {"color": "#f38ba8", "format": "%name",
+               "format_colors": {"%name": "auto"}}
+    assert panel.color_targets(account)[1]["color"] == "#f38ba8"
+
+
+def test_a_token_with_a_hex_seeds_the_sliders_with_it():
+    account = {"color": "#f38ba8", "format": "%name",
+               "format_colors": {"%name": "#123abc"}}
+    assert panel.color_targets(account)[1]["color"] == "#123abc"
+
+
+def test_a_token_on_dim_seeds_the_sliders_with_the_account_colour():
+    """dim is an alpha, not a hue — there is no colour in it to show, so the
+    sliders start from the widget's and the dim chip stays lit."""
+    account = {"color": "#f38ba8", "format": "%name",
+               "format_colors": {"%name": "dim"}}
+    assert panel.color_targets(account)[1]["color"] == "#f38ba8"
+
+
+def test_build_state_carries_the_targets(reg):
+    state = panel.build_state("one")
+    assert state["color_targets"][0]["token"] is None

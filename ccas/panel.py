@@ -132,6 +132,33 @@ def filter_state(state: dict, query: str) -> dict:
                                  else None)}
 
 
+def color_targets(account: dict) -> list:
+    """What the panel's one colour dropdown offers: the widget, then each token
+    in this account's format string.
+
+    A decision, so it lives here — panel_ui renders the list it is handed. The
+    widget leads because it is what the tokens on `auto` and `account` point at,
+    and it is the only entry that is always present.
+
+    `color` is what the sliders should open at. dim has no hue to show and auto
+    and account both resolve to the widget's, so all three seed from the widget
+    — the sliders start where the eye already is instead of at an arbitrary red.
+    """
+    own = account.get("color") or paths.PALETTE[0][1]
+    colors = account.get("format_colors") or {}
+    targets = [{"token": None, "label": "the widget", "color": own,
+                "chips": False}]
+    for token in fmt.tokens_in(account.get("format") or fmt.DEFAULT_FORMAT):
+        value = colors.get(token, fmt.AUTO)
+        targets.append({
+            "token": token,
+            "label": token,
+            "color": value if fmt.HEX.match(value or "") else own,
+            "chips": True,
+        })
+    return targets
+
+
 def build_state(slug: str, now=None) -> dict:
     """Everything the panel renders, as plain data.
 
@@ -153,6 +180,7 @@ def build_state(slug: str, now=None) -> dict:
         # list it is handed. Ordered and de-duplicated, so the dropdown reads
         # left to right the way the label does.
         "format_tokens": fmt.tokens_in(account.get("format") or fmt.DEFAULT_FORMAT),
+        "color_targets": color_targets(account),
         "hide_icon": bool(account.get("hide_icon")),
         "headless": bool(account.get("headless")),
         "dangerous": bool(account.get("dangerous")),
