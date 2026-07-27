@@ -57,7 +57,7 @@ first; the rejected alternatives there answer most "why not just…" questions.
   - `usage.record(slug, payload, now=None) -> bool` — unchanged signature and
     behaviour; now a thin wrapper over `record_reading`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_usage.py`, after the existing "the two input shapes" block:
 
@@ -121,12 +121,12 @@ def test_record_reading_ignores_a_non_reading(monkeypatch, tmp_path):
     assert usage.load("work") is not None
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `python -m pytest tests/test_usage.py -k "endpoint or record_reading" -v`
 Expected: FAIL — `AttributeError: module 'ccas.usage' has no attribute 'from_oauth'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `ccas/usage.py`, add after `from_cache`:
 
@@ -173,13 +173,13 @@ def record(slug: str, payload: dict, now=None) -> bool:
     return record_reading(slug, from_statusline(payload, now))
 ```
 
-- [ ] **Step 4: Run the whole suite**
+- [x] **Step 4: Run the whole suite**
 
 Run: `python -m pytest`
 Expected: PASS, including every pre-existing `record()` test — the split must
 not change hook behaviour.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ccas/usage.py tests/test_usage.py
@@ -217,7 +217,7 @@ injected. That boundary is what keeps the tests off the network.
   — `(payload, "")` on success, `(None, reason)` on failure. Task 3 supplies the
   default.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_poll.py`:
 
@@ -436,12 +436,12 @@ def test_polling_never_touches_claude_home(monkeypatch, tmp_path):
     assert [p for p in home.iterdir() if p.is_symlink()] == []
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `python -m pytest tests/test_poll.py -v`
 Expected: collection error — `ModuleNotFoundError: No module named 'ccas.poll'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create `ccas/poll.py`. Leave `fetch` out for now — Task 3 adds it — and let
 `poll_account` require its fetcher until then:
@@ -571,12 +571,12 @@ Note `poll_account` references `fetch` before Task 3 defines it — that name is
 only resolved when `fetcher` is None, which no test in this task does. Task 3
 adds the function.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `python -m pytest tests/test_poll.py -v && python -m pytest`
 Expected: all of `test_poll.py` PASS, whole suite green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ccas/poll.py tests/test_poll.py
@@ -600,7 +600,7 @@ written, and an account the hook is already keeping fresh is never fetched for."
 - Produces: `poll.fetch(token: str, opener=None) -> tuple[dict | None, str]`.
   `opener` has `urllib.request.urlopen`'s signature and defaults to it.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_poll.py`:
 
@@ -671,12 +671,12 @@ def test_fetch_survives_a_body_that_is_not_json():
     assert error
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `python -m pytest tests/test_poll.py -k fetch -v`
 Expected: FAIL — `AttributeError: module 'ccas.poll' has no attribute 'fetch'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `ccas/poll.py` — the import at the top with the others:
 
@@ -708,12 +708,12 @@ def fetch(token: str, opener=None):
         return None, f"{type(exc).__name__}: {exc}"
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `python -m pytest tests/test_poll.py -v && python -m pytest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ccas/poll.py tests/test_poll.py
@@ -736,7 +736,7 @@ back as a reason to print rather than something for the timer to trip over."
 - Produces: `cli.cmd_poll(args: list) -> int`, reachable as `ccs poll [<slug>]
   [--force]`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_cli.py`, following that file's existing fixture style:
 
@@ -801,12 +801,12 @@ If `test_cli.py` has no `env_with_accounts` helper, use whatever that file
 already uses to build a registry in `tmp_path` — read the top of the file and
 follow it rather than inventing a second convention.
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `python -m pytest tests/test_cli.py -k poll -v`
 Expected: FAIL — `AttributeError: module 'ccas.cli' has no attribute 'poll'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `ccas/cli.py`, add `poll` to the package import line, then add the command
 next to `cmd_usage`:
@@ -846,12 +846,12 @@ And in `main()`'s dispatch, beside the `usage` entry:
         return cmd_poll(rest)
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `python -m pytest tests/test_cli.py -k poll -v && python -m pytest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ccas/cli.py tests/test_cli.py
@@ -877,7 +877,7 @@ logged-out account must not cry wolf in the journal every five minutes."
   tests with `CCAS_SYSTEMD_DIR`; `CCAS_SKIP_SYSTEMD=1` suppresses the
   `systemctl` calls.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_install.py`:
 
@@ -938,12 +938,12 @@ If `test_install.py` has no `_sandbox_env` helper, extract the env dict from
 `test_install_is_idempotent_in_a_sandbox` into one and use it in all four tests
 — the same dict, built once.
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `python -m pytest tests/test_install.py -v`
 Expected: FAIL — the unit files are not written.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create `assets/ccas-poll.service`:
 
@@ -1019,14 +1019,14 @@ Also add the echo line at the end of `install.sh`, next to the existing ones:
 echo "Usage poll: systemctl --user status ccas-poll.timer"
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `python -m pytest tests/test_install.py -v && python -m pytest`
 Expected: PASS. Then confirm the sandbox left no real unit behind:
 `systemctl --user list-timers ccas-poll.timer` — nothing yet, because the tests
 set `CCAS_SKIP_SYSTEMD=1` and a scratch `CCAS_SYSTEMD_DIR`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add assets/ccas-poll.service assets/ccas-poll.timer install.sh uninstall.sh tests/test_install.py
@@ -1050,7 +1050,7 @@ goes to the trash rather than being overwritten — a user may have retimed it."
 - Produces: `poll.timer_state(runner=None) -> str` — systemd's word (`active`,
   `inactive`, `failed`) or `"unknown"` when systemd cannot be asked.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_poll.py`:
 
@@ -1111,12 +1111,12 @@ def _named(checks, label):
     return next(c for c in checks if c.label == label)
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `python -m pytest tests/test_doctor.py tests/test_poll.py -k "timer or freshness" -v`
 Expected: FAIL — no `timer_state`, and `StopIteration` from `_named`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `ccas/poll.py`, add `import subprocess` and:
 
@@ -1192,13 +1192,13 @@ Add `import time` to `doctor.py` if it is not already imported. Wire both into
 `poll.age` is already public (Task 2), because `doctor.py` reads it across the
 module boundary — nothing to rename here.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `python -m pytest`
 Expected: PASS. The doctor tests that assert on the full check list may need the
 new rows accounted for — if one breaks on a count, fix the count, not the rows.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ccas/doctor.py ccas/poll.py tests/test_doctor.py tests/test_poll.py
@@ -1220,7 +1220,7 @@ every test above stubbed the network on purpose.
 - Modify: `CLAUDE.md`, `README.md`, `docs/superpowers/specs/2026-07-27-usage-poll-design.md`
 - Possibly modify: `docs/why.md` (only if something below surprises you)
 
-- [ ] **Step 1: Install and run it by hand**
+- [x] **Step 1: Install and run it by hand**
 
 ```bash
 cd ~/ccas && ./install.sh
@@ -1231,7 +1231,7 @@ Expected: one line per account, both `ok` with a `5h …` detail. `ccs` runs the
 **installed** copy — if the output looks like the old code, the install did not
 take.
 
-- [ ] **Step 2: Check the invariant around your own command**
+- [x] **Step 2: Check the invariant around your own command**
 
 ```bash
 before=$(stat -c %Y ~/.claude/.credentials.json)
@@ -1250,7 +1250,7 @@ Expected: every credentials mtime unchanged, no symlinks. If `~/.claude`'s
 mtime moved, prove it was not ours before calling it a bug — a default-account
 Claude Code session refreshes that token on its own (`CLAUDE.md`).
 
-- [ ] **Step 3: Prove it fixes the thing it was built for**
+- [x] **Step 3: Prove it fixes the thing it was built for**
 
 The point of the feature is the account with no session running. Note the idle
 account's reading age, wait for the timer, and see it move without a session:
@@ -1265,13 +1265,13 @@ Expected: the idle account's "… ago" gets younger without any session having
 been started, and its source reads `oauth`. This is the whole feature; do not
 report it working on the strength of the unit tests.
 
-- [ ] **Step 4: Check the bar actually repainted**
+- [x] **Step 4: Check the bar actually repainted**
 
 `grim` plus PIL cropping, per `CLAUDE.md` — Waybar is on `HDMI-A-1`
 (x 2560–4480). Compare the widget before and after a poll that changed a number.
 Do not ask the user to look at it.
 
-- [ ] **Step 5: Confirm the failure path is quiet**
+- [x] **Step 5: Confirm the failure path is quiet**
 
 ```bash
 systemctl --user stop ccas-poll.timer
@@ -1280,7 +1280,7 @@ systemctl --user start ccas-poll.timer
 journalctl --user -u ccas-poll -n 20 --no-pager
 ```
 
-- [ ] **Step 6: Write it down**
+- [x] **Step 6: Write it down**
 
 - `CLAUDE.md`: add `poll.py` to the module table ("the session-free usage
   fetch: the credential read, the freshness gate, the request"), add `ccs poll`
@@ -1293,7 +1293,7 @@ journalctl --user -u ccas-poll -n 20 --no-pager
 - `docs/why.md`: **only** if something on the real system contradicted the plan.
   Not for routine changes and not for status.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A

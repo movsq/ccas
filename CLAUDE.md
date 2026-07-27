@@ -26,7 +26,8 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
 | `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
 | `format.py` | the `custom` display mode: the token table, `tokens_in`, `unknown_tokens`, and `render()`. Pure — no I/O and no GTK, because `ccs statusline` reaches it. |
-| `usage.py` | the per-account usage reading: recording it, both source shapes, the three states, and how each is said. |
+| `usage.py` | the per-account usage reading: recording it, all three source shapes, the three states, and how each is said. |
+| `poll.py` | the session-free usage fetch: the credential read, the freshness gate, the request. Its fetcher is injected, so no test opens a socket. |
 | `pickers.py` | the terminal front-ends (fzf, `input()`), and `is_gui()`. |
 | `panel.py` | the GTK panel's state: `build_state`, `filter_state`, the open-panel lock, which output. No GTK. |
 | `panel_ui.py` | the panel's widget tree. The only module that touches GTK, and it decides nothing. |
@@ -80,7 +81,10 @@ and every one of them is env-overridable (`CCAS_HOME`, `CCAS_ACCOUNTS_ROOT`,
 `CCAS_CLAUDE_JSON`, `CCAS_TRASH`, `CCAS_WAYBAR_CONFIG`, `CCAS_BASHRC`,
 `CCAS_CCS_BIN`, `CCAS_CLAUDE_BIN`, `CCAS_MENU_CSS`, `CCAS_PANEL_OUTPUT`,
 `CCAS_PANEL_LOCK`). `test_relink_never_touches_mtimes_in_claude_home`
-is the canary. `CCAS_NO_RELOAD=1` suppresses signalling the live bar.
+is the canary. `CCAS_NO_RELOAD=1` suppresses signalling the live bar, and
+`CCAS_SYSTEMD_DIR` plus `CCAS_SKIP_SYSTEMD=1` keep `install.sh` from writing and
+enabling a real systemd unit — both are needed, and the shell reads them
+directly rather than through `paths.py`.
 
 **`ccs doctor` never writes.** It exists to police the invariants above, so a
 repair inside it would mask the fault it is looking for — including a `relink`,
@@ -193,6 +197,36 @@ The display is the **reset time, not the percentage**: `resets_at` is an absolut
 anchor, so past means the window rolled over and future makes the recorded
 percentage a lower bound (`≥`). That is also why there is no staleness cutoff
 anywhere — for the 5-hour window, stale and rolled-over are the same test.
+
+**The hook serves the account in use; the timer serves the idle one.** The hook
+only fires inside a session, so the moment the last one closes that account's
+numbers freeze — measured 2026-07-27, one account's reading was six seconds old
+while the other's was five hours. So `poll.py` asks
+`GET /api/oauth/usage` — the endpoint Claude Code itself asks — and a systemd
+user timer runs `ccs poll` every five minutes. Four rules there:
+
+- **The cadence lives in the unit and nowhere else.** No CCAS setting to drift
+  out of sync with systemd; `systemctl --user edit ccas-poll.timer` retimes it.
+  `install.sh` writes both units and trashes any existing one first.
+- **Never write `.credentials.json`, and never refresh a token.** Read the
+  access token, use it, treat expiry as "no fetch" — never as "renew". A
+  rotation risks that account's login and can invalidate the token a live
+  session is holding. The horizon that buys is about eight hours, after which
+  the account goes quiet until it is next used. That is a degradation, not a
+  hole: an account idle that long has rolled its 5-hour window over, which
+  `usage.state()` reports from the timestamp alone.
+- **`due()` skips an account the hook is already keeping fresh**, so a live
+  session is never polled for and the request is spent on the idle account.
+- **The signal still rides on the write.** `record_reading` is the half of
+  `record` that takes an already-normalised reading, so the poll reaches the
+  same write-only-on-change rule the hook obeys — which also means an idle
+  account whose numbers have not moved is correctly *not* repainted.
+
+A poller that quietly died looks exactly like the staleness it exists to remove,
+so `ccs doctor` reports the timer's state and each account's reading age and
+token horizon. Tests must set `CCAS_SYSTEMD_DIR` and `CCAS_SKIP_SYSTEMD=1`
+around anything that runs `install.sh`, and stub `poll.timer_state` — otherwise
+they enable a real unit and shell out to the user's real systemctl.
 
 ## GUI vs terminal
 
@@ -379,6 +413,7 @@ ccs format --tokens              # every token, with what it renders
 ccs format <slug> --color %5h dim   # one token's colour: auto, dim, or #rrggbb
 ccs usage [<slug>]               # both quota windows, their age and their source
 ccs statusline [<delegate> …]    # the recording hook; wired by hand in ~/.claude/settings.json
+ccs poll [<slug>] [--force]      # fetch usage with no session running; what the systemd timer runs
 ccs -p "…" / ccs -c / ccs -r     # real claude under the runner account
 ccs -- mcp list                  # claude's own subcommands need the --
 ./uninstall.sh [--purge]         # strip managed blocks; --purge also trashes ~/.cc-accounts

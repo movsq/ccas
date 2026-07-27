@@ -89,6 +89,7 @@ has no stdin to ask on.
 | `ccs dangerous [<slug>]` | Show or toggle `--dangerously-skip-permissions` per account. |
 | `ccs usage [<slug>]` | Both quota windows, their age and their source. |
 | `ccs statusline [<delegate>…]` | The recording hook. Wired by hand in `~/.claude/settings.json`. |
+| `ccs poll [<slug>] [--force]` | Fetch each account's usage without a session. What the systemd timer runs. |
 | `ccs relink [<slug>]` | Self-healing symlink pass. All accounts if the slug is omitted. |
 | `ccs render <slug>` | Print the Waybar label. Nothing else — this runs every 30 s, per account. |
 | `ccs config` | Rewrite the managed block and reload Waybar. |
@@ -133,10 +134,31 @@ delegate, its stdout is passed through verbatim and its exit code becomes ours.
 Every recording failure is swallowed, because a statusline that raises is
 visible in every prompt of every session.
 
+The hook only fires inside a session, so it serves the account you are working
+in and nothing else — close the last session and that account's numbers freeze.
+A systemd user timer therefore runs `ccs poll` every five minutes, which asks
+the endpoint Claude Code itself asks using the token already in the account's
+credentials file. The cadence lives in the unit and nowhere else:
+
+```bash
+systemctl --user status ccas-poll.timer   # is it running
+systemctl --user edit ccas-poll.timer     # retime it
+systemctl --user stop ccas-poll.timer     # stop it
+journalctl --user -u ccas-poll            # why a poll failed
+```
+
+CCAS **reads** that credentials file and never writes it — refreshing a token
+risks the account's login and can invalidate the one a live session holds. So
+polling keeps an account fresh only while its access token is valid, about eight
+hours. Past that the account goes quiet until it is next used, which is honest
+rather than broken: an account idle that long has rolled its 5-hour window over,
+and that is reported from the timestamp alone.
+
 What is displayed is the **reset time**, not the percentage. `resets_at` is an
 absolute anchor: past means the window rolled over, and future makes the
 recorded percentage a lower bound — hence `≥`. See
-`docs/usage-limits-research.md` for what was measured.
+`docs/usage-limits-research.md` for what was measured, and
+`docs/superpowers/specs/2026-07-27-usage-poll-design.md` for why the poll exists.
 
 ## Notes
 

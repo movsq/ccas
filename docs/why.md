@@ -760,3 +760,65 @@ the synthetic pointer stops working on an output the user is not using, which
 `CLAUDE.md` already warned about and which cost half a day once before. The
 reordering stands on its own — the toggle needs the connector before it can
 decide — and the ambiguity is recorded here rather than dressed up as a result.
+
+## A test enabled a real systemd timer
+
+Found while building the usage poll (2026-07-27). The plan added
+`CCAS_SYSTEMD_DIR` and `CCAS_SKIP_SYSTEMD=1` to the three *new* install tests and
+stopped there. But `install.sh` writes the units unconditionally, and four tests
+that predate the feature also run `install.sh` — with a sandboxed `CCAS_HOME`,
+`CCAS_BIN_DIR` and the rest, but nothing at all pointing `$HOME/.config/systemd/user`
+somewhere harmless. So the first green test run wrote both units into the real
+systemd directory and ran `systemctl --user enable --now ccas-poll.timer`.
+
+The suite passed. The symptom was a `ccs poll` appearing in `journalctl` every
+five minutes, against the user's real accounts, from a unit whose `ExecStart`
+pointed into a `tmp_path` that pytest had already removed.
+
+Two things worth keeping from it. The first is that the env-override discipline
+has a hole where the shell is concerned: every *Python* path goes through
+`paths.py` and every one of those is overridable, which is easy to check. The
+install scripts read their own environment directly, so a new file the installer
+writes is a new place to leak, and it will not show up in any audit of
+`paths.py`. `_sandbox_env` now carries both variables for every test that runs
+`install.sh`, rather than each test remembering.
+
+The second is that a green suite proved nothing here. The leak was invisible to
+the tests by construction — they assert on `tmp_path`, and the escape went
+somewhere they never look. It was found by running `systemctl --user list-timers`
+by hand afterwards, which is the same habit `ccs doctor` exists to automate.
+
+## The bar's repaint could not be photographed
+
+Also 2026-07-27, verifying the poll end to end. The plan's last step asks for
+`grim` before and after a poll that changed a number. Both screenshots were
+identical — and the reason was not the feature. `grim -o HDMI-A-1` returned
+2073600 pixels of a single colour, pure black, and so did DP-1: at six in the
+morning both displays were blank, so there was no bar in either frame to differ.
+
+Worth writing down because the first reading of "the two screenshots match" is
+"the bar did not repaint", which would have been a bug report about working
+code. The null case — is there *anything* on this screen — costs one call and
+settles it. `getcolors()` returning a list of length one is the whole test.
+
+Note also that `CLAUDE.md`'s "Waybar is on HDMI-A-1 (x 2560–4480)" is now only
+half right: HDMI-A-1 still starts at x 2560 but is 1920 wide, not 1920 tall at
+2560 wide as the old note implies. The monitor geometry moved at some point.
+
+What replaced the screenshot, since the pixels were unavailable:
+
+- A `pkill` shim early on `PATH`, which records what `ccs poll` signals. A poll
+  that changed both accounts logged `-RTMIN+1` and `-RTMIN+2`, the two module
+  signal numbers; the same command run again immediately logged nothing at all,
+  because both readings were then unchanged. That is write-on-change and the
+  signal riding on the write, measured in both directions on the real system.
+- `SigCgt` out of `/proc/<waybar>/status`, which says waybar has handlers
+  installed for signals 35 and 36 — SIGRTMIN+1 and +2.
+
+Two attempts that did *not* work are worth naming, because both look reasonable.
+Watching for waybar to re-run the module's `exec` by sweeping `/proc` is far too
+slow to catch a process that lives about 100 ms, and matching on the command
+line catches the watcher's own shell — the `pkill -f` lesson in a new shape.
+Reading `/proc/<waybar>/task/*/children` is fast enough, but the children are
+caught between fork and exec, so every one of them reads as `waybar` and none
+can be told from the module it belongs to.

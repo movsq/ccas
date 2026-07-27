@@ -1,6 +1,6 @@
 # Polling usage — making an idle account's numbers move
 
-Status: **approved 2026-07-27**, not yet built. Extends
+Status: **shipped 2026-07-27**. Extends
 `2026-07-25-usage-limits-design.md`; the display it produces is unchanged, only
 the freshness of what feeds it.
 
