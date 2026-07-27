@@ -141,27 +141,30 @@ def filter_state(state: dict, query: str) -> dict:
 
 
 def color_targets(account: dict) -> list:
-    """What the panel's one colour dropdown offers: the widget, then each token
-    in this account's format string.
+    """What the panel's chip row offers: the icon, then each token in this
+    account's format string.
 
-    A decision, so it lives here — panel_ui renders the list it is handed. The
-    widget leads because it is what the tokens on `auto` and `account` point at,
-    and it is the only entry that is always present.
+    A decision, so it lives here — panel_ui renders the list it is handed.
 
-    `color` is what the sliders should open at. `account` has no hue of its own
-    — it resolves to the widget's — so it seeds from the widget, and so does a
-    token holding nothing, or a retired `auto`/`dim`: the sliders start where
-    the eye already is instead of at an arbitrary red.
+    The icon leads and is always present: it is the account's own colour,
+    painting the ✻ on the bar and the dot in the panel's account list. It was
+    called `the widget` back when a token could point at it, which is when it
+    could also silently point at nothing.
+
+    `color` is what the sliders should open at. A token holding nothing — or a
+    retired `auto`, `dim` or `account` — opens at DEFAULT_COLOR, which is what
+    it renders as. Seeding it from the account's colour would show the user a
+    value the label has never used, and the settle timer would then write it.
     """
     own = account.get("color") or paths.PALETTE[0][1]
     colors = account.get("format_colors") or {}
-    targets = [{"token": None, "label": "the widget", "color": own}]
+    targets = [{"token": None, "label": "icon", "color": own}]
     for token in fmt.tokens_in(account.get("format") or fmt.DEFAULT_FORMAT):
         value = colors.get(token) or ""
         targets.append({
             "token": token,
             "label": token,
-            "color": value if fmt.HEX.match(value) else own,
+            "color": value if fmt.HEX.match(value) else fmt.DEFAULT_COLOR,
         })
     return targets
 

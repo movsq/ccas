@@ -757,12 +757,12 @@ def test_build_state_carries_the_format_and_its_targets(reg):
     """The colour targets are precomputed here so panel_ui never parses a
     format string — the widget tree renders what it is handed and decides
     nothing. color_targets replaced format_tokens with its last reader."""
-    registry.set_field(reg, "one", "format", "%icon %name %icon %5h")
+    registry.set_field(reg, "one", "format", "%email %name %email %5h")
     registry.save(reg)
     state = panel.build_state("one")
-    assert state["format"] == "%icon %name %icon %5h"
+    assert state["format"] == "%email %name %email %5h"
     assert [t["token"] for t in state["color_targets"]] == \
-        [None, "%icon", "%name", "%5h"]
+        [None, "%email", "%name", "%5h"]
 
 
 def test_build_state_defaults_the_format_for_an_old_account(reg):
@@ -819,44 +819,41 @@ def test_stays_open_does_not_carry_display():
     assert "display" not in panel.STAYS_OPEN
 
 
-def test_color_targets_lead_with_the_widget():
-    account = {"color": "#89b4fa", "format": "%icon %name",
-               "format_colors": {}}
+def test_the_first_colour_target_is_the_icon():
+    """It paints the glyph on the bar and the dot in the panel's account list.
+    It was called `the widget` while it could reach neither — the account had
+    no token pointing at it, so the slider moved nothing at all."""
+    account = {"color": "#89b4fa", "format": "%name", "format_colors": {}}
     targets = panel.color_targets(account)
-    assert targets[0] == {"token": None, "label": "the widget",
-                          "color": "#89b4fa"}
+    assert targets[0] == {"token": None, "label": "icon", "color": "#89b4fa"}
 
 
 def test_color_targets_then_follow_the_format_string():
     """Left to right the way the label reads, de-duplicated, and only the
     tokens this account actually uses — a target for a token that is not on the
     bar is a setting that does nothing."""
-    account = {"color": "#89b4fa", "format": "%icon %name %icon",
+    account = {"color": "#89b4fa", "format": "%email %name %email",
                "format_colors": {}}
     assert [t["token"] for t in panel.color_targets(account)] == \
-        [None, "%icon", "%name"]
+        [None, "%email", "%name"]
 
 
-def test_a_token_on_auto_seeds_the_sliders_with_the_account_colour():
-    """auto and account both resolve to the widget's colour, so the sliders
-    open where the eye already is rather than at an arbitrary red."""
-    account = {"color": "#f38ba8", "format": "%name",
-               "format_colors": {"%name": "auto"}}
-    assert panel.color_targets(account)[1]["color"] == "#f38ba8"
+def test_an_unrecognised_token_colour_seeds_the_default_not_the_account():
+    """Seeding from the account colour was defensible while `account` existed.
+    Now it puts a colour in the sliders that has nothing to do with the token,
+    and the settle timer then writes it."""
+    for retired in ("auto", "dim", "account"):
+        account = {"color": "#89b4fa", "format": "%name",
+                   "format_colors": {"%name": retired}}
+        token = next(t for t in panel.color_targets(account)
+                     if t["token"] == "%name")
+        assert token["color"] == fmt.DEFAULT_COLOR
 
 
 def test_a_token_with_a_hex_seeds_the_sliders_with_it():
     account = {"color": "#f38ba8", "format": "%name",
                "format_colors": {"%name": "#123abc"}}
     assert panel.color_targets(account)[1]["color"] == "#123abc"
-
-
-def test_a_token_on_dim_seeds_the_sliders_with_the_account_colour():
-    """dim is an alpha, not a hue — there is no colour in it to show, so the
-    sliders start from the widget's and the dim chip stays lit."""
-    account = {"color": "#f38ba8", "format": "%name",
-               "format_colors": {"%name": "dim"}}
-    assert panel.color_targets(account)[1]["color"] == "#f38ba8"
 
 
 def test_build_state_carries_the_targets(reg):
