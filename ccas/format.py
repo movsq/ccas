@@ -19,15 +19,16 @@ from .label import ICON_RISE, ICON_SIZE, TEXT_SIZE, pango_escape
 
 DEFAULT_FORMAT = "%icon %name %5h"
 
-AUTO, DIM = "auto", "dim"
+AUTO, DIM, ACCOUNT = "auto", "dim", "account"
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def valid_color(value) -> bool:
-    """The only three shapes that may reach a pango attribute. This is what
+    """The only four shapes that may reach a pango attribute. This is what
     makes the format string layout rather than markup — nothing else a user
     types ever lands inside a span tag."""
-    return value in (AUTO, DIM) or bool(isinstance(value, str) and HEX.match(value))
+    return value in (AUTO, DIM, ACCOUNT) or \
+        bool(isinstance(value, str) and HEX.match(value))
 
 
 # Measured from paths.PALETTE, not chosen: its eight colours span 73.3%-86.1%
@@ -67,7 +68,9 @@ def _icon(ctx) -> str:
     chosen = _chosen(ctx["account"], "%icon")
     if ctx["account"]["hide_icon"]:
         attrs = "alpha='1'"
-    elif chosen == AUTO:
+    elif chosen in (AUTO, ACCOUNT):
+        # For the glyph the two mean the same thing, so they agree rather
+        # than compete.
         attrs = f"color='{ctx['account']['color']}'"
     elif chosen == DIM:
         attrs = f"alpha='{usage_mod.DIM}'"
@@ -212,6 +215,8 @@ def _emit(token: str, ctx) -> str:
         attrs = auto_fn(ctx)
     elif chosen == DIM:
         attrs = f"alpha='{usage_mod.DIM}'"
+    elif chosen == ACCOUNT:
+        attrs = f"color='{ctx['account']['color']}'"
     else:
         attrs = f"color='{chosen}'"
     return f"<span size='{TEXT_SIZE}'{' ' + attrs if attrs else ''}>" \

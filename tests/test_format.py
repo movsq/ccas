@@ -248,3 +248,24 @@ def test_hs_to_hex_is_always_a_valid_color():
     colour does."""
     for hue in range(0, 360, 37):
         assert fmt.valid_color(fmt.hs_to_hex(hue, 0.8))
+
+
+def test_account_is_a_valid_colour_value():
+    assert fmt.valid_color("account")
+
+
+def test_account_colours_a_token_with_the_widget_colour():
+    """What makes the default's percentage follow the widget: one slider drag
+    moves the glyph and the number together, with no hex baked into the
+    registry to drift away from it."""
+    a = account(color="#89b4fa", format="%name",
+                format_colors={"%name": "account"}, nickname="n")
+    assert "color='#89b4fa'" in fmt.render(a, 1)
+
+
+def test_account_colours_the_icon_like_auto_does():
+    """auto already meant the account's colour for the glyph; account is the
+    same answer said explicitly, so the two agree rather than compete."""
+    a = account(color="#f38ba8", format="%icon")
+    explicit = fmt.render(dict(a, format_colors={"%icon": "account"}), 1)
+    assert explicit == fmt.render(a, 1)
