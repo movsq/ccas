@@ -38,7 +38,7 @@ def test_install_is_idempotent_in_a_sandbox(tmp_path):
         "CCAS_ACCOUNTS_ROOT": str(tmp_path / "accts"),
         "CCAS_TRASH": str(tmp_path / "trash"),
         "CCAS_WAYBAR_CONFIG": str(tmp_path / "config.jsonc"),
-        "CCAS_BASHRC": str(tmp_path / "bashrc"),
+        "CCAS_WAYBAR_STYLE": str(tmp_path / "style.css"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
         "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
@@ -66,7 +66,7 @@ def test_install_emits_the_placeholder_and_leaves_bare_claude_alone(tmp_path):
         "CCAS_ACCOUNTS_ROOT": str(tmp_path / "accts"),
         "CCAS_TRASH": str(tmp_path / "trash"),
         "CCAS_WAYBAR_CONFIG": str(tmp_path / "config.jsonc"),
-        "CCAS_BASHRC": str(tmp_path / "bashrc"),
+        "CCAS_WAYBAR_STYLE": str(tmp_path / "style.css"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
         "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
@@ -75,14 +75,14 @@ def test_install_emits_the_placeholder_and_leaves_bare_claude_alone(tmp_path):
     })
     (tmp_path / "claude").mkdir()
     (tmp_path / "config.jsonc").write_text('{\n    "modules-right": ["clock"]\n}\n')
-    (tmp_path / "bashrc").write_text("export EDITOR=vim\n")
+    (tmp_path / "style.css").write_text("#clock { padding: 0 12px; }\n")
 
     proc = subprocess.run(["bash", str(ROOT / "install.sh")], env=env, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     assert "custom/cc-setup" in (tmp_path / "config.jsonc").read_text()
-    bashrc = (tmp_path / "bashrc").read_text()
-    assert "claude()" not in bashrc, "`claude` is the user's, not ours; `ccs -p` is ours"
-    assert bashrc == "export EDITOR=vim\n", "the user's own bashrc must survive"
+    style = (tmp_path / "style.css").read_text()
+    assert "#custom-cc-" not in style, "no accounts, so no widgets to style"
+    assert style == "#clock { padding: 0 12px; }\n", "the user's own rules survive"
 
 
 def test_uninstall_restores_both_files_byte_for_byte(tmp_path):
@@ -93,7 +93,7 @@ def test_uninstall_restores_both_files_byte_for_byte(tmp_path):
         "CCAS_ACCOUNTS_ROOT": str(tmp_path / "accts"),
         "CCAS_TRASH": str(tmp_path / "trash"),
         "CCAS_WAYBAR_CONFIG": str(tmp_path / "config.jsonc"),
-        "CCAS_BASHRC": str(tmp_path / "bashrc"),
+        "CCAS_WAYBAR_STYLE": str(tmp_path / "style.css"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
         "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
@@ -103,16 +103,16 @@ def test_uninstall_restores_both_files_byte_for_byte(tmp_path):
     })
     (tmp_path / "claude").mkdir()
     original_cfg = '{\n    "modules-right": ["clock"]\n}\n'
-    original_rc = "export EDITOR=vim\n"
+    original_style = "#clock { padding: 0 12px; }\n"
     (tmp_path / "config.jsonc").write_text(original_cfg)
-    (tmp_path / "bashrc").write_text(original_rc)
+    (tmp_path / "style.css").write_text(original_style)
 
     subprocess.run(["bash", str(ROOT / "install.sh")], env=env, capture_output=True, text=True, check=True)
     proc = subprocess.run(["bash", str(ROOT / "uninstall.sh")], env=env, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
 
     assert (tmp_path / "config.jsonc").read_text() == original_cfg
-    assert (tmp_path / "bashrc").read_text() == original_rc
+    assert (tmp_path / "style.css").read_text() == original_style
     assert not (tmp_path / "bin" / "ccs").exists()
 
 
@@ -124,7 +124,7 @@ def test_uninstall_purge_moves_accounts_to_trash_intact(tmp_path):
         "CCAS_ACCOUNTS_ROOT": str(tmp_path / "accts"),
         "CCAS_TRASH": str(tmp_path / "trash"),
         "CCAS_WAYBAR_CONFIG": str(tmp_path / "config.jsonc"),
-        "CCAS_BASHRC": str(tmp_path / "bashrc"),
+        "CCAS_WAYBAR_STYLE": str(tmp_path / "style.css"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
         "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
@@ -155,7 +155,7 @@ def _sandbox_env(tmp_path):
         "CCAS_ACCOUNTS_ROOT": str(tmp_path / "accts"),
         "CCAS_TRASH": str(tmp_path / "trash"),
         "CCAS_WAYBAR_CONFIG": str(tmp_path / "config.jsonc"),
-        "CCAS_BASHRC": str(tmp_path / "bashrc"),
+        "CCAS_WAYBAR_STYLE": str(tmp_path / "style.css"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
         "CCAS_MENU_CSS": str(tmp_path / "menu.css"),
@@ -243,7 +243,7 @@ def test_an_unchanged_reinstall_leaves_no_trash(tmp_path):
         "CCAS_ACCOUNTS_ROOT": str(tmp_path / "accts"),
         "CCAS_TRASH": str(tmp_path / "trash"),
         "CCAS_WAYBAR_CONFIG": str(tmp_path / "config.jsonc"),
-        "CCAS_BASHRC": str(tmp_path / "bashrc"),
+        "CCAS_WAYBAR_STYLE": str(tmp_path / "style.css"),
         "CCAS_BIN_DIR": str(tmp_path / "bin"),
         "CCAS_SHARE_DIR": str(tmp_path / "share"),
         "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),

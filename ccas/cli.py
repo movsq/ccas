@@ -822,12 +822,11 @@ def main(argv) -> int:
     if command == "render":
         return cmd_render(rest[0]) if rest else 1
     if command == "config":
-        # Rewrite the managed block and take the old bashrc function out. This
-        # is what install.sh runs; it no longer rebuilds anything per account,
+        # Rewrite both managed blocks — the modules and their stylesheet
+        # rules. This is what install.sh runs; it rebuilds nothing per account,
         # because nothing per account is generated any more.
         reg = registry.load()
         waybar.apply(reg)
-        waybar.strip_bashrc()
         waybar.reload()
         return 0
     if command == "launch":

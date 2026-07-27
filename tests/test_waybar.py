@@ -22,7 +22,7 @@ def _isolate(monkeypatch, tmp_path):
     cfg = tmp_path / "config.jsonc"
     cfg.write_text(ORIGINAL, encoding="utf-8")
     monkeypatch.setenv("CCAS_WAYBAR_CONFIG", str(cfg))
-    monkeypatch.setenv("CCAS_BASHRC", str(tmp_path / "bashrc"))
+    monkeypatch.setenv("CCAS_WAYBAR_STYLE", str(tmp_path / "style.css"))
     monkeypatch.setenv("CCAS_CCS_BIN", "/home/fixed/.local/bin/ccs")
     monkeypatch.setenv("CCAS_ACCOUNTS_ROOT", str(tmp_path / "accts"))
     importlib.reload(paths)
@@ -132,33 +132,7 @@ def test_generated_block_is_valid_json_once_comments_are_stripped(_isolate):
     assert not any(k.startswith("custom/cc-sep") for k in data), "no divider module"
 
 
-def test_strip_bashrc_removes_a_legacy_claude_function():
-    """CCAS used to shadow `claude` with a shell function. `ccs -p` does the same
-    job without owning a binary the user did not offer, so an install now takes
-    the old block back out."""
-    legacy = (f"# {waybar.RULE}\n# {waybar.START}\nclaude() {{ :; }}\n"
-              f"# {waybar.END}\n# {waybar.RULE}\n")
-    paths.bashrc().write_text("export EDITOR=vim\n" + legacy, encoding="utf-8")
-    waybar.strip_bashrc()
-    text = paths.bashrc().read_text()
-    assert "claude()" not in text
-    assert text == "export EDITOR=vim\n", "the user's own bashrc must survive"
 
-
-def test_strip_bashrc_leaves_an_unmanaged_bashrc_alone():
-    """Nothing of ours in there means nothing to do — no rewrite, and no
-    .ccas-orig backup of a file we never touched."""
-    paths.bashrc().write_text("export EDITOR=vim\n", encoding="utf-8")
-    before = paths.bashrc().stat().st_mtime_ns
-    waybar.strip_bashrc()
-    assert paths.bashrc().stat().st_mtime_ns == before
-    assert not list(paths.bashrc().parent.glob("*.ccas-orig"))
-
-
-def test_strip_bashrc_does_not_create_a_missing_bashrc():
-    assert not paths.bashrc().exists()
-    waybar.strip_bashrc()
-    assert not paths.bashrc().exists()
 
 
 def test_reload_and_signal_are_suppressed_by_the_sandbox_flag(monkeypatch):
@@ -238,3 +212,69 @@ def test_generated_commands_all_force_gui_mode():
     assert "--gui" in mod["exec"]
     assert "--gui" in mod["on-click"]
     assert "--gui" in waybar.placeholder_config()["on-click"]
+
+
+# ── the stylesheet's managed block ───────────────────────────────────────────
+
+
+def test_style_block_names_every_slug_for_spacing_and_hover():
+    """GTK CSS has no prefix matching, so #custom-cc-* is not a selector: every
+    account has to be spelled out. That is why this is generated rather than
+    hand-kept — a slug that was renamed, or an account added, silently lost its
+    hover and the widget stopped answering the pointer."""
+    waybar.apply_style(reg("work", "home"))
+    text = paths.waybar_style().read_text(encoding="utf-8")
+    assert "#custom-cc-work,\n#custom-cc-home {" in text
+    assert "#custom-cc-work:hover,\n#custom-cc-home:hover {" in text
+
+
+def test_style_block_goes_last_so_it_outranks_what_the_user_wrote():
+    """Equal specificity is decided by order, and the block exists to be the
+    answer for the widgets — a stale hand-written rule above it must lose."""
+    style = paths.waybar_style()
+    style.write_text("#clock { padding: 0 12px; }\n", encoding="utf-8")
+    waybar.apply_style(reg("work"))
+    text = style.read_text(encoding="utf-8")
+    assert text.startswith("#clock { padding: 0 12px; }")
+    assert text.rstrip().endswith("*/")
+
+
+def test_style_block_is_replaced_not_appended_twice():
+    waybar.apply_style(reg("work"))
+    waybar.apply_style(reg("home"))
+    text = paths.waybar_style().read_text(encoding="utf-8")
+    assert text.count(waybar.START) == 1
+    assert "#custom-cc-work" not in text
+
+
+def test_style_keeps_one_backup_of_what_the_user_had():
+    style = paths.waybar_style()
+    style.write_text("#clock { padding: 0 12px; }\n", encoding="utf-8")
+    waybar.apply_style(reg("work"))
+    waybar.apply_style(reg("work", "home"))
+    backup = style.with_suffix(style.suffix + ".ccas-orig")
+    assert backup.read_text(encoding="utf-8") == "#clock { padding: 0 12px; }\n"
+
+
+def test_style_with_no_accounts_leaves_no_block():
+    style = paths.waybar_style()
+    style.write_text("#clock { padding: 0 12px; }\n", encoding="utf-8")
+    waybar.apply_style(reg("work"))
+    waybar.apply_style(reg())
+    assert style.read_text(encoding="utf-8") == "#clock { padding: 0 12px; }\n"
+
+
+def test_apply_writes_both_files():
+    """One call, both halves: the module list and the rules that make those
+    modules look and behave like the others. They drifted apart once already."""
+    waybar.apply(reg("work"))
+    assert "custom/cc-work" in paths.waybar_config().read_text(encoding="utf-8")
+    assert "#custom-cc-work" in paths.waybar_style().read_text(encoding="utf-8")
+
+
+def test_strip_takes_the_style_block_out_too():
+    style = paths.waybar_style()
+    style.write_text("#clock { padding: 0 12px; }\n", encoding="utf-8")
+    waybar.apply(reg("work"))
+    waybar.strip(style, "/*", "*/")
+    assert style.read_text(encoding="utf-8") == "#clock { padding: 0 12px; }\n"

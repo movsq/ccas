@@ -76,8 +76,11 @@ def waybar_config() -> Path:
     return _env("CCAS_WAYBAR_CONFIG", Path.home() / ".config/waybar/config.jsonc")
 
 
-def bashrc() -> Path:
-    return _env("CCAS_BASHRC", Path.home() / ".bashrc")
+def waybar_style() -> Path:
+    """Waybar's stylesheet. CCAS owns one managed block in it and nothing else —
+    the widgets' own spacing and hover, which have to name every slug because
+    GTK CSS has no prefix matching. Everything above that block is the user's."""
+    return _env("CCAS_WAYBAR_STYLE", Path.home() / ".config/waybar/style.css")
 
 
 def menu_css() -> Path:

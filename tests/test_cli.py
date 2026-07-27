@@ -25,7 +25,7 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_ACCOUNTS_ROOT", str(tmp_path / "accts"))
     monkeypatch.setenv("CCAS_TRASH", str(tmp_path / "trash"))
     monkeypatch.setenv("CCAS_WAYBAR_CONFIG", str(cfg))
-    monkeypatch.setenv("CCAS_BASHRC", str(tmp_path / "bashrc"))
+    monkeypatch.setenv("CCAS_WAYBAR_STYLE", str(tmp_path / "style.css"))
     # cmd_panel reads and writes it, and the real one names a live pid.
     monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
     for module in (paths, registry, cli):

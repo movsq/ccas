@@ -1,6 +1,6 @@
 """Read-only audit of everything CCAS owns outside this repo.
 
-CCAS writes into four places that can drift apart: `config.jsonc`, `~/.bashrc`,
+CCAS writes into four places that can drift apart: `config.jsonc`, `style.css`,
 the account directories, and the registry. Every bug found on the real system
 was drift between them rather than a logic error, and each was caught by hand
 with the checks below. `run()` is those checks, in one pass.
@@ -115,6 +115,30 @@ def _waybar_matches(reg: dict) -> list:
     return checks
 
 
+def _style_matches(reg: dict) -> Check:
+    """Does the stylesheet's managed block name exactly this account set?
+
+    The failure it exists to catch is silent: a widget whose id no rule names
+    still draws and still clicks, it just stops answering the pointer — which
+    reads as a bad install rather than as stale CSS. It happened to an account
+    that was removed and added back under a different slug.
+    """
+    label_ = "waybar style block matches the registry"
+    path = paths.waybar_style()
+    if not reg["accounts"]:
+        return Check(True, label_, "")
+    if not path.exists():
+        return Check(False, label_, f"{path} is missing; run `ccs config`")
+    text = path.read_text(encoding="utf-8")
+    block = text.split(waybar.START, 1)[-1].split(waybar.END, 1)[0] \
+        if waybar.START in text else ""
+    missing = [a["slug"] for a in reg["accounts"]
+               if f"#custom-cc-{a['slug']}:hover" not in block]
+    return Check(not missing, label_,
+                 f"no hover rule for {', '.join(missing)}; run `ccs config`"
+                 if missing else "")
+
+
 def _registry_checks(reg: dict) -> list:
     slugs = [a["slug"] for a in reg["accounts"]]
     default = reg.get("default")
@@ -162,18 +186,6 @@ def _statusline_hook() -> Check:
                f'"{wanted} <your statusline, if any>"}}')
     return Check(False, label_,
                  f"{path}: {fix} — without it no account records its usage")
-
-
-def _no_legacy_shell_function() -> Check:
-    """A shell opened before the install that removed it still shadows `claude`.
-
-    Invisible from inside that shell, which is the whole reason to check.
-    """
-    path = paths.bashrc()
-    present = path.exists() and waybar.START in path.read_text(encoding="utf-8")
-    return Check(not present, "no CCAS shell function in ~/.bashrc",
-                 "a legacy `claude()` block is still there; run `./install.sh` "
-                 "to strip it, then open a new shell" if present else "")
 
 
 def _panel_import_error():
@@ -245,7 +257,7 @@ def _usage_freshness(account: dict) -> Check:
 
 def run(reg: dict) -> list:
     checks = [_claude_home_has_no_symlinks(), *_binaries(),
-              _no_legacy_shell_function(), _statusline_hook(), _poll_timer(),
+              _style_matches(reg), _statusline_hook(), _poll_timer(),
               _panel_dependencies(),
               *_registry_checks(reg),
               *_waybar_matches(reg)]

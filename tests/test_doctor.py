@@ -1,7 +1,7 @@
 """`ccs doctor`: assert the invariants that live outside this repo.
 
 Every bug this tool has hit on the real system was drift between four places —
-`config.jsonc`, `~/.bashrc`, the account directories and the registry — rather
+`config.jsonc`, `style.css`, the account directories and the registry — rather
 than a logic bug. These are the checks that were being run by hand.
 """
 import importlib
@@ -26,20 +26,20 @@ def _isolate(monkeypatch, tmp_path):
     (home / "settings.json").write_text("{}", encoding="utf-8")
     cfg = tmp_path / "config.jsonc"
     cfg.write_text('{\n    "modules-right": ["clock"]\n}\n', encoding="utf-8")
-    rc = tmp_path / "bashrc"
-    rc.write_text("export EDITOR=vim\n", encoding="utf-8")
+    style = tmp_path / "style.css"
+    style.write_text("#clock { padding: 0 12px; }\n", encoding="utf-8")
     binary = tmp_path / "claude-bin"
     binary.write_text("#!/bin/sh\n", encoding="utf-8")
     os.chmod(binary, 0o755)
     ccs = tmp_path / "ccs-bin"
     ccs.write_text("#!/bin/sh\n", encoding="utf-8")
     os.chmod(ccs, 0o755)
+    monkeypatch.setenv("CCAS_WAYBAR_STYLE", str(style))
     monkeypatch.setenv("CCAS_HOME", str(home))
     monkeypatch.setenv("CCAS_CLAUDE_JSON", str(tmp_path / "claude.json"))
     monkeypatch.setenv("CCAS_ACCOUNTS_ROOT", str(tmp_path / "accts"))
     monkeypatch.setenv("CCAS_TRASH", str(tmp_path / "trash"))
     monkeypatch.setenv("CCAS_WAYBAR_CONFIG", str(cfg))
-    monkeypatch.setenv("CCAS_BASHRC", str(rc))
     monkeypatch.setenv("CCAS_CLAUDE_BIN", str(binary))
     monkeypatch.setenv("CCAS_CCS_BIN", str(ccs))
     monkeypatch.setenv("CCAS_NO_RELOAD", "1")
@@ -83,7 +83,7 @@ def test_a_healthy_install_reports_no_failures():
 def test_doctor_never_writes_anything(_isolate):
     reg = healthy()
     watched = [paths.claude_home() / "settings.json", paths.waybar_config(),
-               paths.bashrc(), paths.registry_file()]
+               paths.waybar_style(), paths.registry_file()]
     before = [p.stat().st_mtime_ns for p in watched]
     doctor.run(reg)
     assert [p.stat().st_mtime_ns for p in watched] == before
@@ -150,16 +150,23 @@ def test_a_missing_claude_binary_is_reported(monkeypatch, _isolate):
     assert any("claude binary" in c.label for c in failures(reg))
 
 
-def test_a_legacy_shell_function_is_reported():
-    """New shells are clean after the install that removed it, but a shell open
-    since before then still shadows `claude` — invisible drift, exactly what a
-    doctor is for."""
+
+def test_a_stylesheet_that_does_not_name_every_widget_is_reported():
+    """The hover rule is per-slug — GTK CSS has no prefix matching — so an
+    account added, or one renamed, silently leaves a widget that draws and
+    clicks but never answers the pointer."""
     reg = healthy()
-    paths.bashrc().write_text(
-        f"# {waybar.RULE}\n# {waybar.START}\nclaude() {{ :; }}\n"
-        f"# {waybar.END}\n# {waybar.RULE}\n", encoding="utf-8")
+    paths.waybar_style().write_text(
+        f"/* {waybar.START} */\n#custom-cc-other:hover {{ }}\n"
+        f"/* {waybar.END} */\n", encoding="utf-8")
     bad = failures(reg)
-    assert any("shell function" in c.label for c in bad), bad
+    assert any("style block" in c.label for c in bad), bad
+
+
+def test_a_stylesheet_naming_every_widget_passes():
+    reg = healthy()
+    waybar.apply_style(reg)
+    assert not [c for c in failures(reg) if "style block" in c.label]
 
 
 def test_the_command_exits_nonzero_only_when_something_failed(capsys):

@@ -18,9 +18,10 @@ import os, sys
 sys.path.insert(0, os.environ["CCAS_SRC_DIR"])
 sys.path.insert(0, os.environ.get("CCAS_SHARE_DIR", os.path.expanduser("~/.local/share/ccas")))
 from ccas import paths, waybar
-for path, comment in ((paths.waybar_config(), "//"), (paths.bashrc(), "#")):
+for path, comment, close in ((paths.waybar_config(), "//", ""),
+                             (paths.waybar_style(), "/*", "*/")):
     if path.exists():
-        waybar.strip(path, comment)
+        waybar.strip(path, comment, close)
 PY
 
 if [ -e "$BIN_DIR/ccs" ]; then
