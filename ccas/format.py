@@ -29,12 +29,24 @@ DEFAULT_COLOR = "#ffffff"
 # underneath, so it could not survive `dim` being retired as a colour.
 GREY = "#9399b2"
 
-DEFAULT_FORMAT = "%icon %email %5hused"
-# The glyph and the used percentage in the widget's colour, the address grey
-# between them. ACCOUNT rather than a literal hex so the pair follows the hue
-# slider instead of drifting away from it the first time it moves.
-DEFAULT_FORMAT_COLORS = {"%icon": "account", "%email": GREY, "%5hused": "account"}
+# The glyph is not in it: it is the widget's own mark, drawn by render()
+# ahead of whatever the format asks for, and hidden only by hide_icon.
+DEFAULT_FORMAT = "%email %5hused"
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def default_format_colors(color: str) -> dict:
+    """A new account's token colours. The used percentage takes the account's
+    own colour so that the glyph and the number match from the first paint;
+    the address is grey between them.
+
+    A function rather than a constant because that hex differs per account.
+    It used to be ACCOUNT — a stored indirection that kept the pair together
+    when the hue moved, at the price of a colour setting whose effect you
+    could not see from the format string. One drag per token is the cost of
+    being able to read it.
+    """
+    return {"%email": GREY, "%5hused": color}
 
 
 def valid_color(value) -> bool:
@@ -94,16 +106,21 @@ def _chosen(account: dict, token: str) -> str:
 
 
 def _icon(ctx) -> str:
-    # hide_icon deliberately wins over a colour override: it is the invisibility
-    # toggle, and a colour that resurrected the glyph would make the panel's
-    # checkbox lie.
+    """The ✻, or nothing. Not a token — the widget's own mark, in the account's
+    colour, with no per-token entry left to override it.
+
+    hide_icon removes it outright rather than drawing it at alpha='1'. The
+    invisible span was a spacer for a glyph the format string had asked for;
+    with the glyph implicit in every label, keeping it would reserve the
+    glyph's width in exactly the labels that asked not to have one.
+    """
     if ctx["account"]["hide_icon"]:
-        attrs = "alpha='1'"
-    else:
-        attrs = f"color='{_chosen(ctx['account'], '%icon')}'"
-    # Not pango_escape'd and not wrapped by the caller: the glyph carries its own
-    # measured size and rise, and is the one token that is markup by nature.
-    return f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' {attrs}>{paths.GLYPH}</span>"
+        return ""
+    color = ctx["account"]["color"]
+    # Not pango_escape'd: the glyph carries its own measured size and rise, and
+    # is the one piece of the label that is markup by nature.
+    return (f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' "
+            f"color='{color}'>{paths.GLYPH}</span>")
 
 
 def _state(ctx, key):
@@ -161,14 +178,14 @@ def _smart(ctx):
 
 
 # token -> text_fn(ctx) -> str
-# The text is plain and gets wrapped in a TEXT_SIZE span by _emit; %icon is the
-# exception and returns finished markup, flagged by the None below.
+# Every entry is a text function, wrapped in a TEXT_SIZE span by _emit. The
+# glyph is not here: it returns finished markup and is drawn by render() rather
+# than placed by the format string.
 #
 # One function per token, not two: the second used to be the token's `auto`
 # colour — the usage ramp for the windowed ones, nothing for the rest — and
 # with auto retired a token's colour comes from the account dict alone.
 TOKENS = {
-    "%icon": None,
     "%name": lambda ctx: ctx["account"].get("nickname") or "",
     "%email": lambda ctx: ctx["account"]["email"],
     "%index": lambda ctx: str(ctx["index"]),
@@ -216,8 +233,6 @@ def unknown_tokens(fmt: str) -> list:
 
 
 def _emit(token: str, ctx) -> str:
-    if token == "%icon":
-        return _icon(ctx)
     text = TOKENS[token](ctx)
     if not text:
         return ""
@@ -244,7 +259,13 @@ def render(account: dict, index: int, usage=None, now=None,
             pieces.append(("lit", text))
         pos = match.end()
     pieces.append(("lit", fmt[pos:]))
-    return _collapse(pieces)
+    # The glyph leads, ahead of anything the format string asks for: it is the
+    # widget's identity rather than a piece of its layout.
+    body = _collapse(pieces)
+    glyph = _icon(ctx)
+    if not glyph:
+        return body
+    return f"{glyph} {body}" if body else glyph
 
 
 def _collapse(pieces) -> str:
