@@ -788,7 +788,7 @@ the tests by construction — they assert on `tmp_path`, and the escape went
 somewhere they never look. It was found by running `systemctl --user list-timers`
 by hand afterwards, which is the same habit `ccs doctor` exists to automate.
 
-## The bar's repaint could not be photographed
+## A blank screen is not a bar that failed to repaint
 
 Also 2026-07-27, verifying the poll end to end. The plan's last step asks for
 `grim` before and after a poll that changed a number. Both screenshots were
@@ -805,7 +805,22 @@ Note also that `CLAUDE.md`'s "Waybar is on HDMI-A-1 (x 2560–4480)" is now only
 half right: HDMI-A-1 still starts at x 2560 but is 1920 wide, not 1920 tall at
 2560 wide as the old note implies. The monitor geometry moved at some point.
 
-What replaced the screenshot, since the pixels were unavailable:
+The pixels were captured later the same morning, once the displays were awake,
+and they say what they were supposed to say. A reading planted at 40 % renders
+`09:30` dim with `60%` beside it; the poll then writes the true 96 % and the
+widget becomes `09:29` in red with `4%`. Both cc widgets' columns move, which is
+not a second repaint: the vsed label got shorter, and `modules-center` re-centres
+the group around it.
+
+**Timing is what separates the signal from the 30-second tick**, and it is worth
+measuring rather than assuming, because both produce the same final pixels. If
+the interval were doing the work the delay would be spread over 0–30 s. Measured
+across three trials, the widget changed 0.16 s, 0.16 s and 0.15 s after `ccs
+poll` returned. Three consecutive delays under 0.2 s by chance is about one in
+three million, so the signal is the cause.
+
+What stood in for the screenshot while the screens were dark, and is still the
+better evidence for the *negative* half:
 
 - A `pkill` shim early on `PATH`, which records what `ccs poll` signals. A poll
   that changed both accounts logged `-RTMIN+1` and `-RTMIN+2`, the two module
