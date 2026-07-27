@@ -209,3 +209,42 @@ def test_an_account_predating_the_feature_still_renders():
     a = account()
     del a["format"], a["format_colors"]
     assert fmt.render(a, 1) == fmt.render(account(), 1)
+
+
+def test_hex_to_hs_reads_the_palette_blue():
+    """The two slider coordinates come out of a stored hex. #89b4fa is
+    paths.PALETTE's blue, measured at H=217.2 S=91.9%."""
+    hue, sat = fmt.hex_to_hs("#89b4fa")
+    assert round(hue, 1) == 217.2
+    assert round(sat, 3) == 0.919
+
+
+def test_hs_to_hex_pins_lightness():
+    """Saturation 0 is a grey, and the same grey at every hue: with L fixed
+    there is no hue left to see. It is light enough to read on the bar's
+    #353535, which is why lightness is pinned rather than offered."""
+    assert fmt.hs_to_hex(0, 0.0) == "#c7c7c7"
+    assert fmt.hs_to_hex(217.2, 0.0) == "#c7c7c7"
+
+
+def test_hs_to_hex_round_trips_within_a_rounding_error():
+    """8-bit channels cannot hold the exact angle back, so this is approximate
+    by nature — a drag that moved nothing must not shift the colour visibly."""
+    hue, sat = fmt.hex_to_hs(fmt.hs_to_hex(217.2, 0.919))
+    assert abs(hue - 217.2) < 1.0
+    assert abs(sat - 0.919) < 0.02
+
+
+def test_hs_to_hex_wraps_hue_and_clamps_saturation():
+    """The hue slider is a ring: 360 and 0 are the same colour, so a slider at
+    either end must not produce two different reds."""
+    assert fmt.hs_to_hex(360, 0.5) == fmt.hs_to_hex(0, 0.5)
+    assert fmt.hs_to_hex(120, 1.5) == fmt.hs_to_hex(120, 1.0)
+    assert fmt.hs_to_hex(120, -0.5) == fmt.hs_to_hex(120, 0.0)
+
+
+def test_hs_to_hex_is_always_a_valid_color():
+    """It feeds a pango attribute, so it has to satisfy the same gate a typed
+    colour does."""
+    for hue in range(0, 360, 37):
+        assert fmt.valid_color(fmt.hs_to_hex(hue, 0.8))

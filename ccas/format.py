@@ -8,6 +8,7 @@ The format string is layout, never markup. Its literal text is escaped and the
 only colours that reach the pango are the three validated shapes valid_color
 accepts, so nothing a user types can produce a span attribute.
 """
+import colorsys
 import re
 import time
 
@@ -27,6 +28,31 @@ def valid_color(value) -> bool:
     makes the format string layout rather than markup — nothing else a user
     types ever lands inside a span tag."""
     return value in (AUTO, DIM) or bool(isinstance(value, str) and HEX.match(value))
+
+
+# Measured from paths.PALETTE, not chosen: its eight colours span 73.3%-86.1%
+# lightness (mean 78.2%) while their saturation runs 54.1%-92.0%. The palette is
+# already a fixed-lightness hue ring, so hue and saturation are its own
+# coordinates and lightness is the axis nobody was using. Pinning it also means
+# no slider position can reach black or white, which on a bar label is the
+# point: saturation 0 is a grey that still reads on #353535.
+LIGHTNESS = 0.78
+
+
+def hex_to_hs(value: str) -> tuple:
+    """(hue in degrees, saturation 0-1). The stored lightness is discarded —
+    the editor shows the colour as it is and only snaps it on the first drag."""
+    r, g, b = (int(value[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    hue, _lightness, sat = colorsys.rgb_to_hls(r, g, b)
+    return hue * 360, sat
+
+
+def hs_to_hex(hue: float, saturation: float, lightness: float = LIGHTNESS) -> str:
+    """The slider pair as a colour. Hue wraps because the slider is a ring;
+    saturation clamps because a Gtk.Adjustment can overshoot its bounds."""
+    saturation = max(0.0, min(1.0, saturation))
+    rgb = colorsys.hls_to_rgb((hue % 360) / 360, lightness, saturation)
+    return "#%02x%02x%02x" % tuple(round(c * 255) for c in rgb)
 
 
 def _chosen(account: dict, token: str) -> str:
