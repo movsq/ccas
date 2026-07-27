@@ -876,17 +876,125 @@ def _build_toggles(state, pick, ui_state):
     box.append(toggle("headless runner", "headless", "headless"))
     box.append(toggle("hide the icon", "hide_icon", "hide_icon"))
 
-    bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
-    edit = Gtk.Button(label="Edit format…")
-    edit.add_css_class("ccas-ghost")
-    edit.connect("clicked",
-                 lambda _b: pick(panel.Action("edit_format", slug, None)))
-    bottom.append(edit)
-
-    box.append(bottom)
+    box.append(_build_format_editor(state, pick, ui_state))
     box.append(_build_color_editor(state, pick, ui_state))
     box.append(_build_manage(state, pick))
     return outside, box
+
+
+def _build_format_editor(state, pick, ui_state):
+    """The format string, its preview, and a chip per token.
+
+    The last widget setting that used to leave the panel: the button here
+    spawned a terminal running `ccs format <slug> --edit`, because free text
+    needs a prompt. It needs an entry, which the panel has — and the preview is
+    better here than there, since this process can render the real pango.
+
+    Commit is Enter or focus-out, never a settle timer. The sliders use one
+    because every position a drag passes through is a colour; typing %5hused
+    passes through %5, %5h and %5hus, each a valid but different format, so a
+    pause mid-word would write the registry and repaint the bar with a
+    half-typed label.
+    """
+    from gi.repository import Gtk, Pango
+
+    slug = state["slug"]
+    stored = state["format"]
+    preview_of = panel.format_previewer(slug)
+    # What was last written, so that opening the drawer and clicking out again
+    # writes nothing: write only on a change is the same rule the hook obeys.
+    committed = {"text": stored}
+
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    box.add_css_class("ccas-format-editor")
+
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+    caption = Gtk.Label(label="format", xalign=0)
+    caption.set_size_request(70, -1)
+    entry = Gtk.Entry()
+    entry.set_hexpand(True)
+    entry.add_css_class("ccas-format-entry")
+    entry.set_text(stored)
+    row.append(caption)
+    row.append(entry)
+    box.append(row)
+
+    # The widget, not the format string: it carries the ✻ exactly as the bar
+    # does, which is also the only preview there is of a colour already set on
+    # a token. Ellipsized, so a long format cannot widen the card.
+    preview = Gtk.Label(xalign=0)
+    preview.add_css_class("ccas-format-preview")
+    preview.set_ellipsize(Pango.EllipsizeMode.END)
+    box.append(preview)
+
+    unknown_label = Gtk.Label(xalign=0)
+    unknown_label.add_css_class("ccas-format-unknown")
+    box.append(unknown_label)
+
+    def repaint(*_a):
+        markup, unknown = preview_of(entry.get_text())
+        preview.set_markup(markup)
+        # Hidden rather than blank: an empty row that appears and disappears
+        # moves everything under it by its own height.
+        unknown_label.set_visible(bool(unknown))
+        if unknown:
+            unknown_label.set_text("unknown token: " + " ".join(unknown))
+
+    def commit(*_a):
+        text = entry.get_text()
+        if text == committed["text"]:
+            return
+        committed["text"] = text
+        # The rebuild this triggers destroys the entry — the chip row below is
+        # one chip per token and the token set just changed. The flag survives
+        # it, the same way the selected colour target does.
+        ui_state["focus_format"] = True
+        pick(panel.Action("format", slug, text))
+
+    entry.connect("changed", repaint)
+    entry.connect("activate", commit)
+    focus = Gtk.EventControllerFocus()
+    focus.connect("leave", commit)
+    entry.add_controller(focus)
+
+    chips = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    chips.add_css_class("ccas-token-chips")
+    insert_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+    insert_caption = Gtk.Label(label="insert", xalign=0)
+    insert_caption.set_size_request(70, -1)
+    scroller = Gtk.ScrolledWindow()
+    scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+    scroller.set_hexpand(True)
+    scroller.set_child(chips)
+    insert_row.append(insert_caption)
+    insert_row.append(scroller)
+
+    def insert(token):
+        # At the caret, not at the end: a token is as likely to belong in the
+        # middle of the label as after it.
+        position = entry.get_position()
+        entry.get_buffer().insert_text(position, token, len(token))
+        entry.set_position(position + len(token))
+
+    for token in fmt.TOKENS:
+        chip = Gtk.Button(label=fmt.NAMES[token])
+        chip.add_css_class("ccas-token-chip")
+        # Not focusable: a button takes the focus on click, which is a
+        # focus-out, which would commit a half-built format between every
+        # inserted token — the same mistake as committing a colour mid-drag.
+        chip.set_focusable(False)
+        chip.connect("clicked", lambda _b, t=token: insert(t))
+        chips.append(chip)
+    box.append(insert_row)
+
+    repaint()
+    # Read once and cleared: every applied setting rebuilds this subtree, and a
+    # flag left standing would yank the focus here on a ticked checkbox.
+    if ui_state.get("focus_format"):
+        ui_state["focus_format"] = False
+        entry.grab_focus()
+        entry.set_position(-1)
+    return box
 
 
 def _build_color_editor(state, pick, ui_state):

@@ -15,6 +15,10 @@ import ccas.panel as panel
 import ccas.panel_ui as panel_ui
 import ccas.usage as usage
 
+gi = pytest.importorskip("gi")
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk  # noqa: E402
+
 
 @pytest.fixture
 def gtk():
@@ -142,3 +146,121 @@ def test_usage_text_separates_an_idle_window_from_an_unknown_one():
     assert panel_ui._usage_text(idle) == "0% used"
     assert panel_ui._usage_text(absent) == "no data"
     assert panel_ui._usage_text(bounded) == "≥61%  clears 19:30"
+
+
+def _format_editor(gtk, monkeypatch, stored="%email %5hused", ui_state=None):
+    """(entry, chips, picked, ui_state). No window is mapped: the editor reads
+    the dict it is handed and writes through the pick callback it is handed."""
+    monkeypatch.setattr(panel, "format_previewer",
+                        lambda slug, now=None:
+                        lambda text: (f"<span>{text}</span>",
+                                      fmt.unknown_tokens(text)))
+    picked = []
+    ui_state = {"target": 0, "expanded": True} if ui_state is None else ui_state
+    box = panel_ui._build_format_editor(
+        {"slug": "vsed", "format": stored}, picked.append, ui_state)
+
+    entries, chips = [], []
+
+    def walk(widget):
+        child = widget.get_first_child()
+        while child is not None:
+            if isinstance(child, gtk.Entry):
+                entries.append(child)
+            if isinstance(child, gtk.Button) and \
+                    child.has_css_class("ccas-token-chip"):
+                chips.append(child)
+            walk(child)
+            child = child.get_next_sibling()
+
+    walk(box)
+    return entries[0], chips, picked, ui_state
+
+
+def _leave(entry):
+    """The focus-out a click elsewhere would deliver. No window is mapped, so
+    the controller is emitted on directly rather than moving a real focus."""
+    controllers = entry.observe_controllers()
+    for index in range(controllers.get_n_items()):
+        controller = controllers.get_item(index)
+        if isinstance(controller, Gtk.EventControllerFocus):
+            controller.emit("leave")
+            return
+    raise AssertionError("no focus controller on the format entry")
+
+
+def test_the_format_entry_is_seeded_with_the_stored_format(gtk, monkeypatch):
+    entry, _chips, _picked, _ui = _format_editor(gtk, monkeypatch,
+                                                 stored="%name %7dused")
+    assert entry.get_text() == "%name %7dused"
+
+
+def test_enter_commits_the_typed_format(gtk, monkeypatch):
+    entry, _chips, picked, _ui = _format_editor(gtk, monkeypatch)
+    entry.set_text("%name %5hused")
+    assert picked == []          # never per keystroke
+    entry.emit("activate")
+    assert picked == [panel.Action("format", "vsed", "%name %5hused")]
+
+
+def test_focus_out_commits_the_typed_format(gtk, monkeypatch):
+    """The safety net for a change that is finished but not entered."""
+    entry, _chips, picked, _ui = _format_editor(gtk, monkeypatch)
+    entry.set_text("%name")
+    _leave(entry)
+    assert picked == [panel.Action("format", "vsed", "%name")]
+
+
+def test_an_unchanged_entry_writes_nothing(gtk, monkeypatch):
+    """Opening the drawer, clicking into the entry and clicking out again is
+    not a change — write only on a change, with the signal riding on it."""
+    entry, _chips, picked, _ui = _format_editor(gtk, monkeypatch)
+    _leave(entry)
+    entry.emit("activate")
+    assert picked == []
+
+
+def test_a_committed_format_is_not_committed_twice(gtk, monkeypatch):
+    """Enter, then the focus-out that follows reaching for another widget."""
+    entry, _chips, picked, _ui = _format_editor(gtk, monkeypatch)
+    entry.set_text("%name")
+    entry.emit("activate")
+    _leave(entry)
+    assert picked == [panel.Action("format", "vsed", "%name")]
+
+
+def test_a_token_chip_inserts_at_the_caret(gtk, monkeypatch):
+    entry, chips, _picked, _ui = _format_editor(gtk, monkeypatch,
+                                                stored="%name ")
+    entry.set_position(6)
+    chip = next(c for c in chips if c.get_child().get_label() == "email")
+    chip.emit("clicked")
+    assert entry.get_text() == "%name %email"
+
+
+def test_a_token_chip_does_not_commit(gtk, monkeypatch):
+    """A focusable chip steals focus, which is a focus-out, which would write
+    the registry between every inserted token."""
+    entry, chips, picked, _ui = _format_editor(gtk, monkeypatch)
+    for chip in chips:
+        assert chip.get_focusable() is False
+    chips[0].emit("clicked")
+    assert picked == []
+
+
+def test_a_commit_asks_for_the_focus_back(gtk, monkeypatch):
+    """The rebuild that follows destroys this entry. ui_state survives it, the
+    same way the selected colour target does."""
+    entry, _chips, _picked, ui_state = _format_editor(gtk, monkeypatch)
+    entry.set_text("%name")
+    entry.emit("activate")
+    assert ui_state["focus_format"] is True
+
+
+def test_the_rebuilt_editor_takes_the_focus_flag_back(gtk, monkeypatch):
+    """Read once and cleared, or every later rebuild — a ticked checkbox — would
+    yank the focus into the format entry."""
+    ui_state = {"target": 0, "expanded": True, "focus_format": True}
+    _entry, _chips, _picked, ui_state = _format_editor(gtk, monkeypatch,
+                                                       ui_state=ui_state)
+    assert ui_state["focus_format"] is False
