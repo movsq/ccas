@@ -110,7 +110,13 @@ def prompt_edit(message: str, initial: str):
 
 
 def prompt(message: str):
+    """Free text, None for an empty answer, or CANCEL.
+
+    The three are distinct for the same reason prompt_or_clear's are: an
+    optional question's empty answer is a *value*, and reading a Ctrl-C as one
+    is how backing out of `ccs add` still made an account.
+    """
     try:
         return input(f"{message} ").strip() or None
     except (EOFError, KeyboardInterrupt):
-        return None
+        return CANCEL

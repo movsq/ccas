@@ -680,6 +680,43 @@ def test_add_trashes_the_directory_when_login_fails(monkeypatch):
     assert list(paths.trash_dir().iterdir()), "moved to trash, never deleted"
 
 
+def test_add_makes_nothing_when_the_nickname_prompt_is_cancelled(monkeypatch):
+    """Ctrl-C at the first question is a no, not an empty nickname. It used to
+    read as one, so backing out of `ccs add` left a directory behind."""
+    _stub_login(monkeypatch, "someone@x.com")
+    monkeypatch.setattr(cli.pickers, "prompt", lambda *a, **k: cli.pickers.CANCEL)
+    assert cli.main(["add"]) == 1
+    assert registry.load()["accounts"] == []
+    assert not list(paths.accounts_root().glob("*/"))
+
+
+def test_add_trashes_the_directory_when_the_login_step_raises(monkeypatch):
+    """Anything at all going wrong between the mkdir and the registry write —
+    a Ctrl-C, a missing `claude`, a full disk — leaves no half-made account.
+    Trashed, not deleted, in case the login had already written credentials."""
+    _stub_login(monkeypatch, "someone@x.com")
+
+    def boom(*a, **kw):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.subprocess, "run", boom)
+    with pytest.raises(KeyboardInterrupt):
+        cli.main(["add"])
+    assert registry.load()["accounts"] == []
+    assert not paths.account_dir("account").exists()
+    assert list(paths.trash_dir().iterdir()), "moved to trash, never deleted"
+
+
+def test_add_leaves_no_module_on_the_bar_when_it_does_not_finish(monkeypatch):
+    """The registry and config.jsonc are written last and together, so an add
+    that stops short cannot leave a widget pointing at nothing."""
+    _stub_login(monkeypatch, "someone@x.com", ok=False)
+    config = paths.waybar_config()
+    before = config.read_text(encoding="utf-8")
+    assert cli.main(["add"]) == 1
+    assert config.read_text(encoding="utf-8") == before
+
+
 def test_add_registers_the_module_without_generating_any_files(monkeypatch):
     """`cmd_add` used to have to write menu.xml before waybar.apply pointed at
     it, because menu-file is read on the reload that follows. There is no

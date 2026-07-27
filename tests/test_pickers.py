@@ -58,12 +58,14 @@ def test_prompt_reads_a_line(monkeypatch):
     assert pickers.prompt("nickname:") == "typed name"
 
 
-def test_prompt_returns_none_when_cancelled(monkeypatch):
+def test_prompt_separates_cancel_from_an_empty_answer(monkeypatch):
+    """An optional question's empty answer is a value. Reading Ctrl-C as one is
+    how backing out of `ccs add` still left an account directory behind."""
     def interrupted(_p):
         raise KeyboardInterrupt
 
     monkeypatch.setattr("builtins.input", interrupted)
-    assert pickers.prompt("nickname:") is None
+    assert pickers.prompt("nickname:") is pickers.CANCEL
     monkeypatch.setattr("builtins.input", lambda _p: "")
     assert pickers.prompt("nickname:") is None
 

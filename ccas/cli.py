@@ -438,7 +438,20 @@ def _free_slug(reg, base: str, taken=None) -> str:
 
 
 def cmd_add(gui: bool) -> int:
+    """Add an account, or leave the machine exactly as it was found.
+
+    An add is a directory, a login, a registry entry and a Waybar module, and
+    it can stop at any of them: Ctrl-C at the prompt, a login window closed
+    without finishing, a `claude` that is not there. So the directory is the
+    only thing that exists before the end, and every way out of here takes it
+    to the trash — the last three are written together, after the login has
+    already succeeded, and nothing can leave a widget pointing at nothing.
+    """
     nickname = pickers.prompt("nickname (optional):")
+    if nickname is pickers.CANCEL:
+        # A no, not an empty nickname. Before create(), so there is nothing to
+        # undo — an add that never started leaves no trace at all.
+        return 1
     reg = registry.load()
     # A placeholder. The account directory *is* CLAUDE_CONFIG_DIR, so it has to
     # exist before `auth login` runs — and the email that should name it is not
@@ -446,33 +459,45 @@ def cmd_add(gui: bool) -> int:
     slug = _free_slug(reg, registry.slugify(nickname or "account"))
 
     accounts.create(slug)
-    accounts.relink(slug)
-    accounts.seed_config(slug)
+    try:
+        accounts.relink(slug)
+        accounts.seed_config(slug)
 
-    env = accounts.env_for(slug)
-    command = f"{paths.claude_bin()} auth login"
-    if gui:
-        subprocess.run(["kitty", "--class", "ccas", "-e", "bash", "-lc",
-                        f"{command}; echo; read -n1 -r -p 'press any key…'"],
-                       env=env, check=False)
-    else:
-        subprocess.run(["bash", "-lc", command], env=env, check=False)
+        env = accounts.env_for(slug)
+        command = f"{paths.claude_bin()} auth login"
+        if gui:
+            subprocess.run(["kitty", "--class", "ccas", "-e", "bash", "-lc",
+                            f"{command}; echo; read -n1 -r -p 'press any key…'"],
+                           env=env, check=False)
+        else:
+            subprocess.run(["bash", "-lc", command], env=env, check=False)
 
-    status = accounts.auth_status(slug)
-    if not status.get("loggedIn"):
-        accounts.to_trash(paths.account_dir(slug))
-        notify("Login did not complete — account discarded.")
-        return 1
+        status = accounts.auth_status(slug)
+        if not status.get("loggedIn"):
+            accounts.to_trash(paths.account_dir(slug))
+            notify("Login did not complete — account discarded.")
+            return 1
 
-    # The window where a rename is free: login has exited, nothing references
-    # the account yet, and the slug becomes permanent the moment it is written
-    # to the registry, the Waybar block and every generated command.
-    email = status.get("email", "")
-    if email:
-        final = _free_slug(reg, registry.slugify(email), taken=slug)
-        if final != slug:
-            accounts.rename(slug, final)
-            slug = final
+        # The window where a rename is free: login has exited, nothing
+        # references the account yet, and the slug becomes permanent the moment
+        # it is written to the registry, the Waybar block and every generated
+        # command.
+        email = status.get("email", "")
+        if email:
+            final = _free_slug(reg, registry.slugify(email), taken=slug)
+            if final != slug:
+                accounts.rename(slug, final)
+                slug = final
+    except BaseException:
+        # BaseException, because KeyboardInterrupt is the likeliest of them:
+        # this function's middle is a login the user sat through and may well
+        # abandon. Trashed rather than removed, since by then it may hold
+        # credentials — and the account is not in the registry, so nothing but
+        # this knows the directory is there to clean up.
+        directory = paths.account_dir(slug)
+        if directory.exists():
+            accounts.to_trash(directory)
+        raise
 
     registry.add(reg, slug, email or slug, nickname)
     registry.save(reg)
