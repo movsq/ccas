@@ -146,7 +146,15 @@ def set_field(reg: dict, slug: str, field: str, value) -> None:
     if field == "format" and not isinstance(value, str):
         raise ValueError(f"format must be a string: {value!r}")
     if field == "format_colors":
-        if not isinstance(value, dict) or \
-                not all(format.valid_color(v) for v in value.values()):
+        if not isinstance(value, dict):
             raise ValueError(f"invalid format colours: {value!r}")
+        # Anything that is not a hex is dropped, not rejected. Rejecting the
+        # dict punished the wrong write: both callers read the stored colours,
+        # change one key and hand the whole thing back, so a single token left
+        # holding a retired `account` made every *other* token in that account
+        # unwritable — rc 1, nothing said, and the panel's slider inert. The
+        # read path already answers "not a hex" with "absent"; this is that
+        # same answer, which also means the stale value is gone the first time
+        # anything writes the account.
+        value = {k: v for k, v in value.items() if format.valid_color(v)}
     account[field] = value

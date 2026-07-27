@@ -212,13 +212,43 @@ def test_an_unknown_token_is_stored_not_rejected():
     assert registry.find(reg, "work")["format"] == "%name %bogus"
 
 
-def test_set_field_validates_the_colours():
+def test_set_field_keeps_everything_but_a_hex_out_of_the_colours():
+    """Nothing but a hex is ever stored — that is what keeps the format string
+    layout rather than markup. A dict is still the only shape the field takes,
+    so that stays a ValueError; a *value* inside one is dropped instead, which
+    is the same answer the read path gives it."""
     reg = registry.load()
     registry.add(reg, "work", "w@example.com", None)
     registry.set_field(reg, "work", "format_colors", {"%name": "#f9e2af"})
-    for bad in ({"%name": "red"}, {"%name": "' x='y"}, "not a dict"):
-        with pytest.raises(ValueError):
-            registry.set_field(reg, "work", "format_colors", bad)
+    for bad in ({"%name": "red"}, {"%name": "' x='y"}):
+        registry.set_field(reg, "work", "format_colors", bad)
+        assert registry.find(reg, "work")["format_colors"] == {}
+    with pytest.raises(ValueError):
+        registry.set_field(reg, "work", "format_colors", "not a dict")
+
+
+def test_a_retired_colour_does_not_block_writing_a_different_token():
+    """The bug this pins: `set_field` validated every value in the dict, and
+    both write paths read the stored dict, change one key and hand the whole
+    thing back. So one token still holding `account` — the retired value the
+    read path deliberately tolerates — made *every other* token in that
+    account unwritable, with rc 1 and no message and `doctor` green. A live,
+    previewed, inert colour control is exactly what retiring `account` was
+    meant to end; validating on write moved it up one level.
+
+    Dropping rather than raising is the same rule the renderer already
+    follows: not a hex means absent. It also self-heals — the stale value is
+    gone the first time anything writes that account.
+    """
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
+    stored = {"%5hreset": "#c7c7c7", "%5hquotaleft": "account"}
+    registry.find(reg, "work")["format_colors"] = stored
+
+    colors = dict(stored)
+    colors["%5hreset"] = "#ff0000"
+    registry.set_field(reg, "work", "format_colors", colors)
+    assert registry.find(reg, "work")["format_colors"] == {"%5hreset": "#ff0000"}
 
 
 def _write_registry(reg: dict) -> None:
