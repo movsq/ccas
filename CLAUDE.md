@@ -20,12 +20,12 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | module | what it owns |
 |---|---|
 | `paths.py` | every filesystem location, each `CCAS_*`-overridable. Nothing else may hardcode a path. |
-| `registry.py` | `accounts.json`: slugs, colours (hex), `headless`, `default`, and the read-path migrations. |
+| `registry.py` | `accounts.json`: slugs, colours (hex), `headless`, `default`. No migrations — see below. |
 | `accounts.py` | the account directory: create, `relink` (the never-write-to-`~/.claude` guarantee), `rename`, trash, `env_for`. |
-| `waybar.py` | the managed block in `config.jsonc`, stripping the legacy one from `~/.bashrc`, plus reload/signal. |
+| `waybar.py` | the managed blocks in `config.jsonc` and `style.css`, plus reload/signal. |
 | `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
 | `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
-| `format.py` | the format string — the only way a label is built: the token table, `tokens_in`, `unknown_tokens`, `render()`, and the hue/saturation maths. Pure — no I/O and no GTK, because `ccs statusline` reaches it. |
+| `format.py` | the format string — the only way a label is built: the token table, `tokens_in`, `unknown_tokens`, `render()`, `random_color()`, and the hue/saturation maths. Pure — no I/O and no GTK, because `ccs statusline` reaches it. |
 | `usage.py` | the per-account usage reading: recording it, all three source shapes, the three states, and how each is said. |
 | `poll.py` | the session-free usage fetch: the credential read, the freshness gate, the request. Its fetcher is injected, so no test opens a socket. |
 | `pickers.py` | the terminal front-ends (fzf, `input()`), and `is_gui()`. |
@@ -60,9 +60,9 @@ Prove the write was not ours before calling it a bug.
 
 **Never invoke `claude` by bare name from inside the code.** Always
 `paths.claude_bin()`. CCAS no longer installs the `claude()` shell function that
-made this fatal — `ccs -p …` replaced it, and `waybar.strip_bashrc()` takes the
-old block out — but a shell opened before that install still has the function
-loaded, and there a bare call re-enters it and loops forever. `CCAS_INNER=1` is
+made this fatal — `ccs -p …` replaced it — but a shell opened before it went
+away still has the function loaded, and there a bare call re-enters it and
+loops forever. `CCAS_INNER=1` is
 exported into launched sessions as a second guard.
 
 **`claude` is the user's.** We shadowed it once; owning a binary the user did not
@@ -84,13 +84,28 @@ checkout. Override `CCAS_TRASH` to install from anywhere else. Do not
 
 **Tests must never touch real state.** Every path goes through `ccas/paths.py`
 and every one of them is env-overridable (`CCAS_HOME`, `CCAS_ACCOUNTS_ROOT`,
-`CCAS_CLAUDE_JSON`, `CCAS_TRASH`, `CCAS_WAYBAR_CONFIG`, `CCAS_BASHRC`,
+`CCAS_CLAUDE_JSON`, `CCAS_TRASH`, `CCAS_WAYBAR_CONFIG`, `CCAS_WAYBAR_STYLE`,
 `CCAS_CCS_BIN`, `CCAS_CLAUDE_BIN`, `CCAS_MENU_CSS`, `CCAS_PANEL_OUTPUT`,
 `CCAS_PANEL_LOCK`). `test_relink_never_touches_mtimes_in_claude_home`
 is the canary. `CCAS_NO_RELOAD=1` suppresses signalling the live bar, and
 `CCAS_SYSTEMD_DIR` plus `CCAS_SKIP_SYSTEMD=1` keep `install.sh` from writing and
 enabling a real systemd unit — both are needed, and the shell reads them
 directly rather than through `paths.py`.
+
+**Nothing migrates.** One user, one installation, and the user re-adds their
+accounts rather than being carried across a rename. `registry.load()` defaults
+the keys every read path needs and does nothing else; a stored value that is no
+longer valid — a `format_colors` entry of `auto` or `dim` — reads as absent and
+renders `format.DEFAULT_COLOR`. When something is retired, delete it; do not
+grow a read path that understands both.
+
+**A token's colour is `account`, a hex, or nothing.** Nothing means
+`format.DEFAULT_COLOR`, white, and it means that for every token. `auto` used to
+make the answer depend on which token was asked — the usage ramp for the
+windowed ones, the account colour for the glyph — so the one thing a format
+string could not tell you was what it would look like. There is no usage ramp in
+the label any more; `usage.color()` still ramps inside `usage.bar()` and the
+panel's bars, which is where pressure is shown.
 
 **`ccs doctor` never writes.** It exists to police the invariants above, so a
 repair inside it would mask the fault it is looking for — including a `relink`,
@@ -144,10 +159,15 @@ markup with `pango-view --markup` and compare the two runs' ink extents; that
 works with the bar covered or off-screen, which `grim` does not. Recipe and
 constants table: `docs/waybar-setup.md`.
 
-**CCAS does not own `style.css`.** It writes the managed block in
-`config.jsonc` and nothing else. Spacing, hover and press feedback are hand-set
-per slug (`#custom-cc-<slug>`; GTK CSS has no prefix matching), documented in
-`docs/waybar-setup.md`. Back the file up before touching it — it is the user's.
+**CCAS owns one block in `style.css` and nothing else.** The widgets' spacing
+and hover, appended at the end of the file by `waybar.apply_style()` — last, so
+that equal-specificity rules above it lose. Everything else in that file is the
+user's; back it up before touching it, and `.ccas-orig` holds what was there
+before CCAS first wrote. The block is generated rather than hand-kept because
+GTK CSS has no prefix matching: `#custom-cc-*` is not a selector, so every slug
+is spelled out, and a hand-kept list goes stale the first time an account is
+renamed — the widget still draws and still clicks, it just stops answering the
+pointer. `ccs doctor` reports that. Details in `docs/waybar-setup.md`.
 
 **Only use glyphs that survive the bar's font stack.** `style.css` here starts
 `font-family: FontAwesome, "JetBrainsMono Nerd Font Mono", monospace`, and
@@ -397,8 +417,6 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   a stale install before suspecting the test.
 - `git remote origin` is `github.com/movsq/ccas` (private). Push when the user
   asks; the user set it up so work is not only on this disk.
-- `~/.bashrc` changes only reach **new** shells — which is why the terminal
-  entry point is `ccs`, not a shell function.
 - Add a section to `docs/why.md` when you fix a bug found on the real system, or
   deviate from what a plan said. Not for routine changes, and never for status —
   it holds no test counts and no "as of today", which is exactly why it survives
@@ -412,7 +430,7 @@ the binary instead:
 
 ```bash
 export CCAS_HOME=$SB/home CCAS_ACCOUNTS_ROOT=$SB/accts CCAS_CLAUDE_JSON=$SB/claude.json \
-       CCAS_WAYBAR_CONFIG=$SB/config.jsonc CCAS_BASHRC=$SB/bashrc CCAS_TRASH=$SB/trash \
+       CCAS_WAYBAR_CONFIG=$SB/config.jsonc CCAS_WAYBAR_STYLE=$SB/style.css CCAS_TRASH=$SB/trash \
        CCAS_CLAUDE_BIN=$SB/fakeclaude CCAS_NO_RELOAD=1
 script -qec "ccs add" /dev/null < /dev/null      # a pty, on purpose — see below
 ```
@@ -436,13 +454,13 @@ ccs                              # terminal: pick account → mode (fzf)
 ccs --gui <slug>                 # the bar's click: the GTK panel. A second one closes it.
 ccs list                         # accounts
 ccs doctor                       # audit the four places that drift; rc 1 if any failed
-ccs config                       # rewrite the managed block in config.jsonc and reload
+ccs config                       # rewrite both managed blocks (config.jsonc, style.css) and reload
 ccs headless [<slug>]            # show / toggle which account runs `ccs -p`
 ccs dangerous [<slug>]           # show / toggle --dangerously-skip-permissions per account
-ccs color <slug> <#rrggbb|n>     # the widget's colour; the palette index still works
+ccs color <slug> <#rrggbb|n>     # the widget's colour; a palette index is shorthand
 ccs format <slug> ['<fmt>']      # show / set the format string — the whole label
 ccs format --tokens              # every token, with what it renders
-ccs format <slug> --color %5h dim   # one token's colour: auto, dim, account, or #rrggbb
+ccs format <slug> --color %5h account  # one token's colour: account, #rrggbb, or - to clear
 ccs usage [<slug>]               # both quota windows, their age and their source
 ccs statusline [<delegate> …]    # the recording hook; wired by hand in ~/.claude/settings.json
 ccs poll [<slug>] [--force]      # fetch usage with no session running; what the systemd timer runs

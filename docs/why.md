@@ -888,3 +888,54 @@ fired — but motion delivered while the button is held does not move the knob.
 That is the `swaymsg cursor` limit already documented under Working style, in a
 new shape: a press is enough to verify a commit path end to end (click the
 trough at a new position and the value jumps), a drag is not.
+
+
+## The hover that went missing when an account came back (2026-07-27)
+
+An account was removed and added again to test the flow. It worked — the widget
+appeared, the click opened the panel — but it no longer lit up under the
+pointer, while the other account's did.
+
+`style.css` was the cause, and it was CCAS's stance that made it one. The
+stylesheet was documented as entirely the user's, so the per-slug spacing and
+hover rules were hand-written from `docs/waybar-setup.md`. GTK CSS has no
+prefix matching — `#custom-cc-*` is not a selector — so those rules name every
+slug one by one, and the account came back as `vo-sedlacek` where the rule still
+said `vo-se-15th`. Nothing errored: a CSS selector that matches nothing is not a
+mistake, so the widget kept drawing and kept clicking and simply stopped
+answering the pointer. That reads as a bad install, which is how it was
+reported.
+
+Hand-keeping a list that has to be exact is the part that cannot work, so
+`waybar.apply_style()` generates it now: a sentinel-fenced block written at the
+**end** of `style.css`, so a stale hand-written rule above it loses on order
+rather than fighting it, with everything above untouched and copied once to
+`style.css.ccas-orig`. `ccs doctor` fails when a widget has no hover rule, since
+the symptom is otherwise invisible until someone moves a mouse over it.
+
+The stance did not really change — CCAS owns one region of that file and nothing
+else, exactly as it does in `config.jsonc`. What changed is which region: it was
+"none of it, ask the user to hand-write the part that has to match the registry",
+and a thing that has to match the registry is the registry's to write.
+
+## What `auto` cost, and why nothing migrates now (2026-07-27)
+
+`auto` was the colour a token had when it had no colour: the usage ramp for the
+windowed tokens, the account's colour for the glyph, plain for the rest. Three
+behaviours under one name, which meant the only way to know what a format string
+would look like was to render it. `dim` was a second way to say what the
+saturation slider says by being dragged to zero. Both are gone, and a token with
+no colour of its own is white — one answer, the same for every token.
+
+They were removed rather than migrated, and so were the read-path migrations in
+`registry.load()`: the integer-colour normalisation and the display-mode
+rewrite. There is one user and one installation, and the accounts are re-added
+rather than carried forward. A stored `auto` or `dim` fails `valid_color()` and
+reads as absent, which is what the code already did with a value it did not
+understand. The migration code was not free — it was a second definition of what
+a registry entry means, living on the read path, and its whole job was to make
+`accounts.json` mean two things at once.
+
+Where the ramp still lives: `usage.color()`, inside `usage.bar()` and the
+panel's usage bars. Pressure is shown where the numbers are, not smuggled into
+the colour of a label the user picked a colour for.
