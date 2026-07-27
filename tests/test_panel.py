@@ -887,3 +887,54 @@ def test_the_verbs_drop_the_project_when_there_is_none():
     """Nothing selected — a fresh account with no history. A parenthesis with
     nothing in it reads as a bug."""
     assert panel.verb_labels(None) == ("New session", "Resume last session")
+
+
+def test_the_previewer_renders_the_typed_text_not_the_stored_format(reg):
+    """The panel's format entry previews what is being typed. Reading the
+    stored format instead would show the label you are trying to leave."""
+    registry.set_field(reg, "one", "format", "%name")
+    registry.save(reg)
+    preview = panel.format_previewer("one")
+    markup, _unknown = preview("%email")
+    assert "one@example.com" in markup
+    assert "First" not in markup
+
+
+def test_the_previewer_answers_the_unknown_tokens_of_the_typed_text(reg):
+    """Warned about under the entry, never rejected: an unknown token renders
+    as its own name on the bar, which is visible and self-explaining."""
+    preview = panel.format_previewer("one")
+    markup, unknown = preview("%name %bogus")
+    assert unknown == ["%bogus"]
+    assert "%bogus" in markup
+
+
+def test_the_previewer_carries_the_token_colours_already_set(reg):
+    """The preview is the widget, not the format string: a colour set on a
+    token is the only preview of that colour there is."""
+    registry.set_field(reg, "one", "format_colors", {"%email": "#89b4fa"})
+    registry.save(reg)
+    markup, _unknown = panel.format_previewer("one")("%email")
+    assert "#89b4fa" in markup
+
+
+def test_the_previewer_reads_the_account_once(reg, monkeypatch):
+    """Built once per editor, called per keystroke. A registry read per
+    keystroke is the thing this shape exists to avoid."""
+    reads = []
+    real = panel.registry.load
+    monkeypatch.setattr(panel.registry, "load",
+                        lambda: reads.append(1) or real())
+    preview = panel.format_previewer("one")
+    for text in ("%n", "%na", "%name"):
+        preview(text)
+    assert len(reads) == 1
+
+
+def test_the_previewer_tolerates_an_unknown_slug(reg):
+    """build_state() tolerates one — the bar and the registry can disagree for
+    one click after an account is removed — and this must not be the thing
+    that tracebacks instead."""
+    markup, unknown = panel.format_previewer("gone")("%name")
+    assert unknown == []
+    assert isinstance(markup, str)

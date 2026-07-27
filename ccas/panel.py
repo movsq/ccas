@@ -169,6 +169,42 @@ def color_targets(account: dict) -> list:
     return targets
 
 
+def format_previewer(slug: str, now=None):
+    """A closure that renders arbitrary format text for this account.
+
+    The registry, the account's index and its usage reading are read once,
+    here, and the closure then costs a render — the panel's format entry calls
+    it on every keystroke, and a registry read per keystroke is the shape this
+    exists to avoid.
+
+    It answers the markup *and* the unknown tokens of the same text, because
+    both are shown under the same entry and neither is worth a second walk of
+    the format string.
+
+    An unknown slug answers an empty render rather than raising, for the reason
+    build_state() tolerates one: the bar and the registry can disagree for a
+    click after an account is removed.
+    """
+    now = time.time() if now is None else now
+    reg = registry.load()
+    found = registry.find(reg, slug)
+    # An account that is not there renders as a widget with nothing in it. `{}`
+    # is not enough: render() indexes hide_icon, color and email directly, and
+    # index_of() raises for a slug it cannot find — so both are answered here
+    # rather than in registry.py, which knows nothing about a missing account
+    # being survivable.
+    account = found if found is not None else {
+        "hide_icon": True, "color": "", "email": ""}
+    index = registry.index_of(reg, slug) if found is not None else 0
+    reading = usage.read(slug)
+
+    def preview(text: str):
+        return (fmt.render(account, index, reading, now, format_override=text),
+                fmt.unknown_tokens(text))
+
+    return preview
+
+
 def verb_labels(project):
     """The two launch buttons' text. Wording, so it lives here — panel_ui sets
     the strings it is handed, the same split the chip row's labels take.
