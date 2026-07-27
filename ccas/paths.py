@@ -4,6 +4,13 @@ from pathlib import Path
 
 GLYPH = "✻"
 
+# The checkout CCAS was installed from. The trash lives here rather than under
+# $HOME so that a home directory shared with other tooling stays clean. It has
+# to be a literal: the installed package runs out of ~/.local/share/ccas and has
+# no way to find the repo it was copied from. Anyone installing CCAS elsewhere
+# must override CCAS_TRASH, or set this.
+REPO_ROOT = Path("/home/fixed/ccas")
+
 PALETTE = [
     ("peach", "#fab387"),
     ("red", "#f38ba8"),
@@ -62,7 +69,7 @@ def projects_root() -> Path:
 
 
 def trash_dir() -> Path:
-    return _env("CCAS_TRASH", Path.home() / ".claude_trash")
+    return _env("CCAS_TRASH", REPO_ROOT / ".claude_trash")
 
 
 def waybar_config() -> Path:

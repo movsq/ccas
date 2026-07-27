@@ -76,7 +76,7 @@ def seed_config(slug: str) -> None:
 
 
 def to_trash(path: Path) -> Path:
-    """Move to ~/.claude_trash. Never deletes."""
+    """Move to the checkout's .claude_trash. Never deletes."""
     trash = paths.trash_dir()
     trash.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")

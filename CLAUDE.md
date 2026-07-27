@@ -73,8 +73,14 @@ which would otherwise read as `ccs` commands. Whatever is added to `main()`'s
 dispatch, those two branches must stay ahead of the account-slug lookup and
 behind the `--gui` strip.
 
-**Never delete.** Everything moves to `~/.claude_trash/` (global CLAUDE.md rule).
-`install.sh` and `uninstall.sh` both obey this — do not "simplify" them to `rm`.
+**Never delete.** Everything moves to `.claude_trash/` in the CCAS checkout
+(global CLAUDE.md rule — the path is repo-relative, as that rule states; an
+earlier version of this code expanded it to `$HOME` on its own, which was not
+the intent). `install.sh` and `uninstall.sh` derive it from `$SRC`;
+`paths.trash_dir()` falls back to `paths.REPO_ROOT`, a literal, because the
+installed package runs out of `~/.local/share/ccas` and cannot find its
+checkout. Override `CCAS_TRASH` to install from anywhere else. Do not
+"simplify" any of this to `rm`.
 
 **Tests must never touch real state.** Every path goes through `ccas/paths.py`
 and every one of them is env-overridable (`CCAS_HOME`, `CCAS_ACCOUNTS_ROOT`,

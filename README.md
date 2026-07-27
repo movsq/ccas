@@ -49,10 +49,10 @@ outside the panel is stdlib-only.
 
 ```bash
 ./uninstall.sh            # strips the managed blocks, leaves account data
-./uninstall.sh --purge    # also moves ~/.cc-accounts to ~/.claude_trash
+./uninstall.sh --purge    # also moves ~/.cc-accounts to the repo's .claude_trash
 ```
 
-Nothing is ever deleted. Removal always means a move to `~/.claude_trash/`.
+Nothing is ever deleted. Removal always means a move to `.claude_trash/` in the CCAS checkout.
 
 ## Two doors
 
@@ -79,7 +79,7 @@ has no stdin to ask on.
 | `ccs list` | Table of accounts: index, slug, email, colour, display mode. |
 | `ccs doctor` | Read-only audit of everything that can drift. Never writes. rc 1 if anything failed. |
 | `ccs add` | Create the directory, relink, seed config, run login, record the email. |
-| `ccs rm <slug>` | Move the account directory to `~/.claude_trash/`, drop it from the registry. |
+| `ccs rm <slug>` | Move the account directory to `.claude_trash/`, drop it from the registry. |
 | `ccs manage <action> [<slug>]` | `add`, `rename <slug>`, `remove <slug>`. |
 | `ccs nick <slug> [name]` | Set or clear the nickname. Empty falls back to the email. |
 | `ccs color <slug> <n>` | Set the palette index, 0–7. |

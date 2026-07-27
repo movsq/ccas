@@ -8,7 +8,7 @@ set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${CCAS_BIN_DIR:-$HOME/.local/bin}"
 SHARE="${CCAS_SHARE_DIR:-$HOME/.local/share/ccas}"
-TRASH="${CCAS_TRASH:-$HOME/.claude_trash}"
+TRASH="${CCAS_TRASH:-$SRC/.claude_trash}"
 ACCOUNTS="${CCAS_ACCOUNTS_ROOT:-$HOME/.cc-accounts}"
 
 mkdir -p "$BIN_DIR" "$SHARE" "$TRASH" "$ACCOUNTS"
