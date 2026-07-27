@@ -186,7 +186,7 @@ def test_hide_icon_wins_over_a_colour_override():
 
 
 def test_valid_color():
-    assert fmt.valid_color("account")
+    assert not fmt.valid_color("account")
     assert not fmt.valid_color("auto") and not fmt.valid_color("dim")
     assert fmt.valid_color("#f9e2af") and fmt.valid_color("#F9E2AF")
     assert not fmt.valid_color("f9e2af")
@@ -253,25 +253,22 @@ def test_hs_to_hex_is_always_a_valid_color():
         assert fmt.valid_color(fmt.hs_to_hex(hue, 0.8))
 
 
-def test_account_is_a_valid_colour_value():
-    assert fmt.valid_color("account")
+def test_account_is_no_longer_a_colour():
+    """The one indirection left after auto/dim went. A colour setting that
+    might or might not reach the label is the same defect auto had: the user
+    dragged `the widget` for ten minutes against an account whose tokens all
+    held literal hexes, and nothing on screen ever moved."""
+    assert not fmt.valid_color("account")
+    assert not hasattr(fmt, "ACCOUNT")
 
 
-def test_account_colours_a_token_with_the_widget_colour():
-    """What makes the default's percentage follow the widget: one slider drag
-    moves the glyph and the number together, with no hex baked into the
-    registry to drift away from it."""
-    a = account(color="#89b4fa", format="%name",
-                format_colors={"%name": "account"}, nickname="n")
-    assert "color='#89b4fa'" in fmt.render(a, 1)
-
-
-def test_account_colours_the_icon_too():
-    """The glyph is a token like the others: it takes `account` and follows the
-    widget, rather than being the one thing that always does."""
-    a = account(color="#f38ba8", format="%icon")
-    assert fmt.render(dict(a, format_colors={"%icon": "account"}), 1) \
-        == ACCOUNT_ICON
+def test_a_stored_account_renders_as_the_default_colour():
+    """Nothing migrates: an unrecognised value reads as absent, exactly as a
+    retired `auto` or `dim` does."""
+    a = account(color="#f38ba8", format="%name", nickname="n",
+                hide_icon=True, format_colors={"%name": "account"})
+    assert f"color='{fmt.DEFAULT_COLOR}'" in fmt.render(a, 1)
+    assert "#f38ba8" not in fmt.render(a, 1)
 
 
 def test_the_default_format_is_glyph_address_and_used():

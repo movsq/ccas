@@ -18,8 +18,6 @@ import time
 from . import paths, usage as usage_mod
 from .label import ICON_RISE, ICON_SIZE, TEXT_SIZE, pango_escape
 
-ACCOUNT = "account"
-
 # What a token with no colour of its own renders as. Plain white, and the same
 # answer for every token: `auto` used to make that answer depend on which token
 # it was — a usage ramp here, the account's colour there — so the one thing a
@@ -35,15 +33,21 @@ DEFAULT_FORMAT = "%icon %email %5hused"
 # The glyph and the used percentage in the widget's colour, the address grey
 # between them. ACCOUNT rather than a literal hex so the pair follows the hue
 # slider instead of drifting away from it the first time it moves.
-DEFAULT_FORMAT_COLORS = {"%icon": ACCOUNT, "%email": GREY, "%5hused": ACCOUNT}
+DEFAULT_FORMAT_COLORS = {"%icon": "account", "%email": GREY, "%5hused": "account"}
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def valid_color(value) -> bool:
-    """The only two shapes that may reach a pango attribute. This is what
-    makes the format string layout rather than markup — nothing else a user
-    types ever lands inside a span tag."""
-    return value == ACCOUNT or bool(isinstance(value, str) and HEX.match(value))
+    """The one shape that may reach a pango attribute. This is what makes the
+    format string layout rather than markup — nothing else a user types ever
+    lands inside a span tag.
+
+    A hex or nothing, with nothing meaning DEFAULT_COLOR. `auto` made the
+    answer depend on which token asked; `account` made it depend on whether
+    any token asked at all, so a colour control could be live, previewed and
+    entirely without effect. Both are gone and neither comes back.
+    """
+    return bool(isinstance(value, str) and HEX.match(value))
 
 
 def random_color() -> str:
@@ -89,11 +93,6 @@ def _chosen(account: dict, token: str) -> str:
     return value if valid_color(value) else DEFAULT_COLOR
 
 
-def _resolve(chosen: str, ctx) -> str:
-    """A stored colour as a hex. ACCOUNT is the one indirection left."""
-    return ctx["account"]["color"] if chosen == ACCOUNT else chosen
-
-
 def _icon(ctx) -> str:
     # hide_icon deliberately wins over a colour override: it is the invisibility
     # toggle, and a colour that resurrected the glyph would make the panel's
@@ -101,7 +100,7 @@ def _icon(ctx) -> str:
     if ctx["account"]["hide_icon"]:
         attrs = "alpha='1'"
     else:
-        attrs = f"color='{_resolve(_chosen(ctx['account'], '%icon'), ctx)}'"
+        attrs = f"color='{_chosen(ctx['account'], '%icon')}'"
     # Not pango_escape'd and not wrapped by the caller: the glyph carries its own
     # measured size and rise, and is the one token that is markup by nature.
     return f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' {attrs}>{paths.GLYPH}</span>"
@@ -222,7 +221,7 @@ def _emit(token: str, ctx) -> str:
     text = TOKENS[token](ctx)
     if not text:
         return ""
-    attrs = f"color='{_resolve(_chosen(ctx['account'], token), ctx)}'"
+    attrs = f"color='{_chosen(ctx['account'], token)}'"
     return f"<span size='{TEXT_SIZE}' {attrs}>{pango_escape(text)}</span>"
 
 
