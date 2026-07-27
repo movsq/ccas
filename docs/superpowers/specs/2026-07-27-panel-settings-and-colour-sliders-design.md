@@ -60,6 +60,13 @@ the live state before you write it" exists to prevent, and on this machine both
 accounts are already on `custom`, so the path only ever runs against a registry
 we cannot see.
 
+`cli.cmd_list` prints a colour *name* out of the palette and the account's
+`display` (`cli.py:364`). Both stop existing: the mode is gone, and an arbitrary
+hex has no name. That column becomes the hex itself, which is also what
+`ccs color` now takes.
+
+`panel.STAYS_OPEN` carries `"display"`; it goes with the rest.
+
 What survives: `hide_icon`, which is an override on `%icon` rather than a mode;
 `Edit format…` and the terminal editor behind it, untouched; every form of
 `ccs format`.
@@ -126,7 +133,18 @@ are token values and mean nothing for a widget's own colour. An integer is still
 accepted and normalised through `paths.PALETTE[i][1]`, which covers
 `ccs color <slug> 3` and any registry written by the old code. `paths.PALETTE`
 itself stays — it is the migration table, the source of the 0.78 constant, and
-what `registry.new_account` picks an unused colour from.
+what `registry.add` picks an unused colour from, comparing hex strings rather
+than indices (`registry.py:72`).
+
+Three other places index the palette and become direct hex reads: `label.py:49`,
+`format._icon` at `format.py:45` — the `auto` path for the glyph — and
+`panel.py:66`.
+
+**The terminal keeps the eight swatches.** `cli._color_menu` is an fzf list and
+cannot grow sliders, so it stays a list of the palette's named colours and
+writes the corresponding hex. The panel gets the continuous editor; the terminal
+gets the presets. Neither is a subset of the other, and that is fine — the two
+doors have always differed in toolkit.
 
 **Commit on release, never during the drag.** `usage.py`'s rule is write only on
 a change and let `waybar.signal()` ride on the write; a live drag would fire both
@@ -173,7 +191,16 @@ is never relevant to a panel click.
 Collapsed, the panel is chips, usage, verbs, search, panes, one toggle and one
 Settings row.
 
-## Two things that will break if not designed for
+## Three things that will break if not designed for
+
+**The preview swatch cannot use `_tint()`.** Colours reach the panel's widgets
+as CSS classes generated once at build time by `_load_tints()`
+(`panel_ui.py:428`), from the palette plus the colours the accounts already
+hold. A colour halfway through a drag is in neither set, so `_tint()` would
+resolve to a class that does not exist and the swatch would show nothing. The
+preview needs its own `Gtk.CssProvider`, updated per `value-changed` — which is
+also the only widget that needs one, since everything else is only ever painted
+with a colour already committed to the registry.
 
 **The rebuild destroys UI state.** Applying any setting fires
 `GLib.idle_add(refresh_toggles)`, which tears down and rebuilds the whole toggles
@@ -200,7 +227,8 @@ TDD inline, per the working style. Tests go in the file that owns the behaviour.
 - `test_panel.py` — the colour target list is the widget plus the tokens in this
   account's format string; `shows_color_row` is gone.
 - `test_cli.py` — `ccs display` is gone; `ccs color <slug> <hex>` and
-  `ccs color <slug> <int>` both land as hex.
+  `ccs color <slug> <int>` both land as hex; `ccs list` prints the hex and no
+  mode column; `_color_menu` writes the palette hex for the row chosen.
 
 The HSL conversion is pure arithmetic and belongs with `format.py`'s other pure
 functions, so it is unit-testable without GTK. `panel_ui.py` stays the module
