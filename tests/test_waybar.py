@@ -35,7 +35,7 @@ def reg(*slugs):
         "default": slugs[0] if slugs else None,
         "accounts": [
             {"slug": s, "nickname": s, "email": f"{s}@x.com", "color": i,
-             "display": "nickname", "hide_icon": False,
+             "hide_icon": False,
              "warned_invisible": False, "signal": i + 1}
             for i, s in enumerate(slugs)
         ],
@@ -232,8 +232,8 @@ def test_generated_commands_all_force_gui_mode():
     terminal entry point (`ccs -p …`) must be free to pick fzf. Pinned because
     the mistake was made once already, back when a bashrc function was the
     terminal path — see test_cli's passthrough gui test for the other half."""
-    account = {"slug": "work", "signal": 1, "display": "index",
-               "color": 0, "hide_icon": False}
+    account = {"slug": "work", "signal": 1,
+               "color": "#fab387", "hide_icon": False}
     mod = waybar.module_config(account)
     assert "--gui" in mod["exec"]
     assert "--gui" in mod["on-click"]

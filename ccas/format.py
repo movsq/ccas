@@ -17,9 +17,10 @@ import time
 from . import paths, usage as usage_mod
 from .label import ICON_RISE, ICON_SIZE, TEXT_SIZE, pango_escape
 
-DEFAULT_FORMAT = "%icon %name %5h"
-
 AUTO, DIM, ACCOUNT = "auto", "dim", "account"
+
+DEFAULT_FORMAT = "%icon %name %5h"
+DEFAULT_FORMAT_COLORS = {}
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 

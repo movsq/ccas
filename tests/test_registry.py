@@ -30,7 +30,7 @@ def test_add_assigns_colour_signal_and_default():
     reg = registry.load()
     a = registry.add(reg, "personal", "p@example.com", None)
     assert a["color"] == paths.PALETTE[0][1] and a["signal"] == 1
-    assert a["display"] == "nickname" and a["hide_icon"] is False
+    assert "display" not in a and a["hide_icon"] is False
     assert a["warned_invisible"] is False
     assert reg["default"] == "personal"
     b = registry.add(reg, "work", "w@example.com", "work")
@@ -84,10 +84,6 @@ def test_index_of_is_one_based():
 def test_set_field_rejects_invalid_values():
     reg = registry.load()
     registry.add(reg, "a", "a@example.com", None)
-    registry.set_field(reg, "a", "display", "icon only")
-    assert registry.find(reg, "a")["display"] == "icon only"
-    with pytest.raises(ValueError):
-        registry.set_field(reg, "a", "display", "nonsense")
     with pytest.raises(ValueError):
         registry.set_field(reg, "a", "color", 99)
 
@@ -175,12 +171,7 @@ def test_dangerous_is_not_exclusive():
     assert [a["dangerous"] for a in reg["accounts"]] == [True, True]
 
 
-# ── the custom display mode and its two fields ────────────────────────────────
-
-def test_custom_is_a_display_mode():
-    assert "custom" in paths.DISPLAY_MODES
-    assert paths.DISPLAY_MODES[-1] == "custom"   # appended, so no index moved
-
+# ── the format string and its two fields ──────────────────────────────────────
 
 def test_a_new_account_carries_the_default_format():
     reg = registry.load()
@@ -271,3 +262,53 @@ def test_load_normalises_an_integer_colour_written_by_the_old_code():
     ]})
     reg = registry.load()
     assert reg["accounts"][0]["color"] == paths.PALETTE[2][1]
+
+
+def test_load_migrates_an_account_off_a_retired_display_mode():
+    """Its stored format was never rendered — the mode decided the label — so
+    it is replaced by the default rather than trusted."""
+    _write_registry({"default": "a", "accounts": [
+        {"slug": "a", "email": "a@x", "nickname": None, "color": "#89b4fa",
+         "display": "nickname", "hide_icon": False,
+         "format": registry.OLD_DEFAULT_FORMAT, "format_colors": {},
+         "signal": 1},
+    ]})
+    a = registry.load()["accounts"][0]
+    assert "display" not in a
+    assert a["format"] == fmt.DEFAULT_FORMAT
+    assert a["format_colors"] == fmt.DEFAULT_FORMAT_COLORS
+
+
+def test_load_keeps_a_format_the_user_typed():
+    """Only a format still equal to the old default is assumed unchosen. One
+    the user actually wrote survives the migration — a value we did not capture
+    is a value we cannot restore."""
+    _write_registry({"default": "a", "accounts": [
+        {"slug": "a", "email": "a@x", "nickname": None, "color": "#89b4fa",
+         "display": "index", "hide_icon": False,
+         "format": "%index %7d", "format_colors": {}, "signal": 1},
+    ]})
+    a = registry.load()["accounts"][0]
+    assert "display" not in a
+    assert a["format"] == "%index %7d"
+
+
+def test_load_leaves_an_account_already_on_custom_alone():
+    _write_registry({"default": "a", "accounts": [
+        {"slug": "a", "email": "a@x", "nickname": None, "color": "#89b4fa",
+         "display": "custom", "hide_icon": False,
+         "format": "%icon %name", "format_colors": {"%name": "dim"},
+         "signal": 1},
+    ]})
+    a = registry.load()["accounts"][0]
+    assert "display" not in a
+    assert a["format"] == "%icon %name"
+    assert a["format_colors"] == {"%name": "dim"}
+
+
+def test_set_field_rejects_display():
+    """The field is retired; writing it would put a key back that load() strips."""
+    reg = {"default": None, "accounts": []}
+    registry.add(reg, "a", "a@x", None)
+    with pytest.raises(ValueError):
+        registry.set_field(reg, "a", "display", "custom")

@@ -817,19 +817,11 @@ def _build_toggles(state, pick):
     box.append(toggle("hide the icon", "hide_icon", "hide_icon"))
 
     bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
-    bottom.append(Gtk.Label(label="Show", xalign=0))
-    modes = Gtk.DropDown.new_from_strings(paths.DISPLAY_MODES)
-    if state["display"] in paths.DISPLAY_MODES:
-        modes.set_selected(paths.DISPLAY_MODES.index(state["display"]))
-    modes.connect("notify::selected", lambda d, _p: _on_mode(d, slug, state, pick))
-    bottom.append(modes)
-
-    if panel.shows_color_row(state):
-        edit = Gtk.Button(label="Edit format…")
-        edit.add_css_class("ccas-ghost")
-        edit.connect("clicked",
-                     lambda _b: pick(panel.Action("edit_format", slug, None)))
-        bottom.append(edit)
+    edit = Gtk.Button(label="Edit format…")
+    edit.add_css_class("ccas-ghost")
+    edit.connect("clicked",
+                 lambda _b: pick(panel.Action("edit_format", slug, None)))
+    bottom.append(edit)
 
     # Named now that a second colour row sits under it: this one is the
     # account's colour, "Colour of" below is one token's.
@@ -837,19 +829,18 @@ def _build_toggles(state, pick):
     swatches = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
     swatches.set_valign(Gtk.Align.CENTER)
     current = next((a for a in state["accounts"] if a["current"]), None)
-    for index, (_name, hexcolor) in enumerate(paths.PALETTE):
+    for _name, hexcolor in paths.PALETTE:
         swatch = Gtk.Button()
         swatch.add_css_class("ccas-swatch")
         swatch.add_css_class(_tint(hexcolor))
         if current and current["color"] == hexcolor:
             swatch.add_css_class("current")
-        swatch.connect("clicked", lambda _b, i=index:
-                       pick(panel.Action("color", slug, i)))
+        swatch.connect("clicked", lambda _b, h=hexcolor:
+                       pick(panel.Action("color", slug, h)))
         swatches.append(swatch)
     bottom.append(swatches)
     box.append(bottom)
-    if panel.shows_color_row(state):
-        box.append(_build_token_colors(state, pick))
+    box.append(_build_token_colors(state, pick))
     return box
 
 
@@ -898,14 +889,6 @@ def _build_token_colors(state, pick):
                   pick(panel.Action("format_color", slug, (chosen(), e.get_text()))))
     row.append(entry)
     return row
-
-
-def _on_mode(dropdown, slug, state, pick):
-    """Only on a real change. set_selected() during the build emits this too, and
-    acting on it would rewrite the registry every time the panel opened."""
-    mode = paths.DISPLAY_MODES[dropdown.get_selected()]
-    if mode != state["display"]:
-        pick(panel.Action("display", slug, mode))
 
 
 def _build_manage(state, pick):

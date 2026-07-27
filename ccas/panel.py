@@ -28,7 +28,7 @@ Action = namedtuple("Action", "kind slug value")
 # next thing, which is the opposite of gathering the switches in one place.
 # cli.dispatch_panel runs them in place, through the same branches as before.
 STAYS_OPEN = frozenset({
-    "headless", "dangerous", "hide_icon", "display", "color", "format_color",
+    "headless", "dangerous", "hide_icon", "color", "format_color",
 })
 
 WINDOW_LABELS ={"five_hour": "5h", "seven_day": "wk"}
@@ -147,7 +147,6 @@ def build_state(slug: str, now=None) -> dict:
     return {
         "slug": slug,
         "accounts": _accounts(reg, slug),
-        "display": account.get("display", "nickname"),
         "format": account.get("format") or fmt.DEFAULT_FORMAT,
         "format_colors": dict(account.get("format_colors") or {}),
         # Precomputed so panel_ui parses nothing: the widget tree renders the
@@ -164,12 +163,6 @@ def build_state(slug: str, now=None) -> dict:
         "selected_session": (by_project[selected][0]["uuid"] if selected
                              else None),
     }
-
-
-def shows_color_row(state) -> bool:
-    """Whether the panel offers per-token colour. A decision, so it lives here
-    and not in panel_ui, which decides nothing."""
-    return state.get("display") == "custom"
 
 
 # ── the open panel ───────────────────────────────────────────────────────────

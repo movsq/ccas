@@ -8,6 +8,11 @@ import unicodedata
 # No cycle: format imports label and paths, neither of which imports registry.
 from . import format, paths
 
+# What DEFAULT_FORMAT was before the display modes were retired. A stored format
+# still equal to it was never chosen by anyone — it is what add() wrote — so the
+# migration may replace it. Anything else the user typed, and it survives.
+OLD_DEFAULT_FORMAT = "%icon %name %5h"
+
 
 def slugify(text: str) -> str:
     text = text.split("@", 1)[0]
@@ -37,6 +42,15 @@ def load() -> dict:
             index = account["color"]
             account["color"] = paths.PALETTE[index][1] \
                 if 0 <= index < len(paths.PALETTE) else paths.PALETTE[0][1]
+        # The mode is retired. An account that was not on "custom" had its
+        # label built by the mode, so its stored format is whatever add() wrote
+        # and is replaced; one the user typed is kept. The key is dropped either
+        # way, and only on the read path — nothing rewrites accounts.json here.
+        if "display" in account:
+            if account.pop("display") != "custom" and \
+                    account.get("format", OLD_DEFAULT_FORMAT) == OLD_DEFAULT_FORMAT:
+                account["format"] = format.DEFAULT_FORMAT
+                account["format_colors"] = dict(format.DEFAULT_FORMAT_COLORS)
     return reg
 
 
@@ -85,7 +99,6 @@ def add(reg: dict, slug: str, email: str, nickname):
         "nickname": nickname,
         "email": email,
         "color": color,
-        "display": "nickname",
         "hide_icon": False,
         "format": format.DEFAULT_FORMAT,
         "format_colors": {},
@@ -130,8 +143,8 @@ def set_field(reg: dict, slug: str, field: str, value) -> None:
     account = find(reg, slug)
     if account is None:
         raise KeyError(slug)
-    if field == "display" and value not in paths.DISPLAY_MODES:
-        raise ValueError(f"invalid display mode: {value}")
+    if field == "display":
+        raise ValueError("display modes are retired; set 'format' instead")
     if field == "color":
         # An int is the shape the pre-hex registry and `ccs color <slug> 3`
         # both use; it is normalised here rather than rejected, so the palette

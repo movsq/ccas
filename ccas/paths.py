@@ -15,11 +15,6 @@ PALETTE = [
     ("pink", "#f5c2e7"),
 ]
 
-# "custom" is appended, never inserted: `ccs display <slug> <mode>` and the
-# panel dropdown both address modes by position in this list, so inserting would
-# silently repoint every existing selection.
-DISPLAY_MODES = ["nickname", "index", "claude code", "icon only", "custom"]
-
 # How many recent sessions the resume picker lists. Both doors scroll, so this is
 # a bound on the scan, not on what fits on screen.
 HIST_SLOTS = 300

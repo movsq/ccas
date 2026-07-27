@@ -262,7 +262,7 @@ def dispatch_panel(action):
         if account is None:
             return 1
         return _mutate(slug, "hide_icon", not account["hide_icon"])
-    if kind in ("display", "color"):
+    if kind == "color":
         return _mutate(slug, kind, value)
     if kind == "format_color":
         token, color = value
@@ -544,16 +544,6 @@ def cmd_tty(args, gui=None) -> int:
     return cmd_mode_menu(slug, gui)
 
 
-def _display_menu(reg, slug: str, gui: bool) -> int:
-    account = registry.find(reg, slug)
-    rows = [f"{label.MARK_ON if account['display'] == m else label.MARK_OFF} {m}"
-            for m in paths.DISPLAY_MODES]
-    choice = pickers.choose("display as", rows)
-    if choice is None:
-        return 0
-    return _mutate(slug, "display", choice.split(" ", 1)[1])
-
-
 def _color_menu(reg, slug: str, gui: bool) -> int:
     """The terminal keeps the eight presets. fzf cannot grow a slider, so this
     door offers the palette and the panel offers the continuous editor; the two
@@ -664,7 +654,7 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
                    f"History in  {short}…", "All projects…"]
     # The old menu's grouping: launch verbs, appearance, runner toggles, manage.
     options = [*launch_rows,
-               "Display as…", hide_row, "Color…",
+               hide_row, "Color…",
                headless_row, danger_row, "Manage…"]
     # The account's identity, which used to be the menu's title row — a picker
     # prompted "mode" does not say which account it belongs to. Under it, where
@@ -675,8 +665,6 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
     if choice is None:
         return 1
     # Before the launch rows: the last of those is this dispatch's catch-all.
-    if choice == "Display as…":
-        return _display_menu(reg, slug, gui)
     if choice == "Color…":
         return _color_menu(reg, slug, gui)
     if choice == hide_row:
@@ -751,9 +739,12 @@ def main(argv) -> int:
     if command == "nick":
         return _mutate(rest[0], "nickname", rest[1] if len(rest) > 1 else None) if rest else 1
     if command == "color":
-        return _mutate(rest[0], "color", int(rest[1])) if len(rest) > 1 else 1
-    if command == "display":
-        return _mutate(rest[0], "display", rest[1]) if len(rest) > 1 else 1
+        # A hex is the storage shape; an index is the shorthand the palette
+        # still offers, and set_field normalises it.
+        if len(rest) < 2:
+            return 1
+        value = int(rest[1]) if rest[1].isdigit() else rest[1]
+        return _mutate(rest[0], "color", value)
     if command == "format":
         return cmd_format(rest)
     if command == "hide":

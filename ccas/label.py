@@ -32,47 +32,32 @@ def display_name(account: dict) -> str:
 
 
 def render(account: dict, index: int, usage=None, now=None) -> str:
-    """The bar label: the glyph and whatever the display mode asks for.
+    """The bar label: whatever the account's format string asks for.
 
-    The four built-in modes are exactly what they are named — "icon only" is an
-    icon, and nothing else. Usage lives in the "custom" mode's tokens, which is
-    the only place it can be asked for, moved, coloured or left out.
+    There is one way to build a label. The four named modes this used to switch
+    on were presets the format string already expressed — "icon only" is the
+    string "%icon" — and the branch that chose between them was the reason the
+    panel carried two colour rows that meant different things.
 
-    `usage` is a reading from usage.read(), passed through to that mode.
+    `usage` is a reading from usage.read(), passed through.
     """
-    if account["display"] == "custom":
-        # Imported here, not at module scope: format.py imports this module's
-        # measured metrics, and a top-level import either way is a cycle.
-        from . import format as fmt
-        return fmt.render(account, index, usage, now)
-
-    color = account["color"]
-    if account["hide_icon"]:
-        icon = f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' alpha='1'>{paths.GLYPH}</span>"
-    else:
-        icon = f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' color='{color}'>{paths.GLYPH}</span>"
-
-    mode = account["display"]
-    if mode == "icon only":
-        return icon
-    if mode == "index":
-        text = str(index)
-    elif mode == "claude code":
-        text = "claude code"
-    else:
-        # Deliberately not display_name(): a cleared nickname means "show no
-        # text", so the bar falls back to the bare glyph rather than to a long
-        # email address. display_name keeps its fallback for the menu title and
-        # the account chooser, where a blank row would be unpickable.
-        text = account.get("nickname") or ""
-    if text:
-        return f"{icon} <span size='{TEXT_SIZE}'>{pango_escape(text)}</span>"
-    return icon
+    # Imported here, not at module scope: format.py imports this module's
+    # measured metrics, and a top-level import either way is a cycle.
+    from . import format as fmt
+    return fmt.render(account, index, usage, now)
 
 
 def check_invisible_warning(account: dict) -> bool:
-    """True when the caller should notify. Latches, and re-arms on exit."""
-    invisible = account["hide_icon"] and account["display"] == "icon only"
+    """True when the caller should notify. Latches, and re-arms on exit.
+
+    "Invisible" used to be the hidden glyph plus the "icon only" mode. With the
+    modes retired the same combination is a format string that asks for the
+    glyph and nothing else — the test moved from a mode name to the string,
+    because that is where the answer now lives.
+    """
+    from . import format as fmt
+    fmt_string = account.get("format") or fmt.DEFAULT_FORMAT
+    invisible = account["hide_icon"] and not fmt_string.replace("%icon", "").strip()
     if not invisible:
         account["warned_invisible"] = False
         return False

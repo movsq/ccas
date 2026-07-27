@@ -9,7 +9,7 @@ ICON = "<span size='150%' rise='-800' color='#f38ba8'>✻</span>"
 def account(**kw):
     base = {
         "slug": "work", "nickname": "work", "email": "w@example.com",
-        "color": "#f38ba8", "display": "custom", "hide_icon": False,
+        "color": "#f38ba8", "hide_icon": False,
         "warned_invisible": False, "signal": 1,
         "format": fmt.DEFAULT_FORMAT, "format_colors": {},
     }

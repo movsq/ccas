@@ -77,18 +77,14 @@ def test_render_prints_the_label_and_never_reloads(monkeypatch):
     assert reloads == [], "a new session is not a reason to rebuild the bar"
 
 
-def test_display_persists_and_refreshes_the_bar(monkeypatch):
+def test_format_persists_and_refreshes_the_bar(monkeypatch):
+    """What `ccs display` used to pin: a label change repaints its module."""
     make_account()
     fired = []
     monkeypatch.setattr(cli.waybar, "signal", lambda n: fired.append(n))
-    assert cli.main(["display", "work", "icon only"]) == 0
-    assert registry.find(registry.load(), "work")["display"] == "icon only"
+    assert cli.main(["format", "work", "%icon"]) == 0
+    assert registry.find(registry.load(), "work")["format"] == "%icon"
     assert fired == [1], "the label changed, so the module repaints"
-
-
-def test_display_rejects_an_invalid_mode():
-    make_account()
-    assert cli.main(["display", "work", "sideways"]) == 1
 
 
 def test_hide_toggle_flips_the_flag():
@@ -103,7 +99,7 @@ def test_invisible_combination_notifies_once(monkeypatch):
     make_account()
     sent = []
     monkeypatch.setattr(cli, "notify", lambda text: sent.append(text))
-    cli.main(["display", "work", "icon only"])
+    cli.main(["format", "work", "%icon"])
     cli.main(["hide", "work", "on"])
     assert len(sent) == 1 and "invisible" in sent[0]
     cli.main(["hide", "work", "off"])
@@ -127,7 +123,7 @@ def test_a_setting_change_signals_the_label_and_does_not_reload(monkeypatch):
     monkeypatch.setattr(cli.waybar, "signal", lambda n: signals.append(n))
 
     assert cli.main(["color", "work", "5"]) == 0
-    assert cli.main(["display", "work", "index"]) == 0
+    assert cli.main(["format", "work", "%index"]) == 0
     assert cli.main(["nick", "work", "personal"]) == 0
     assert cli.main(["hide", "work", "toggle"]) == 0
 
@@ -478,9 +474,9 @@ def test_the_terminal_keeps_its_cwd_scoped_verbs(monkeypatch):
     assert "All projects…" in seen[0]
 
 
-def test_mode_menu_offers_display_colour_and_hide(monkeypatch):
-    """The three settings that only the Waybar menu could reach. Once the bar's
-    click opens this picker instead of a GtkMenu, this is the only way in."""
+def test_mode_menu_offers_colour_and_hide(monkeypatch):
+    """The settings that only the Waybar menu could reach. Once the bar's click
+    opens this picker instead of a GtkMenu, this is the only way in."""
     make_account("work")
     monkeypatch.setattr(cli.launch, "run", lambda *a, **k: pytest.fail("no session"))
     seen = []
@@ -492,28 +488,12 @@ def test_mode_menu_offers_display_colour_and_hide(monkeypatch):
     monkeypatch.setattr(cli.pickers, "choose", fake_choose)
     cli.cmd_mode_menu("work", False)
     prompt, options = seen[0]
-    assert "Display as…" in options
+    assert "Display as…" not in options, "the modes are retired"
     assert "Color…" in options
     assert f"{cli.label.MARK_OFF} Hide icon" in options
     # The identity that used to head the menu. Once the bar's click opens this,
     # a picker prompted "mode" does not say which account it belongs to.
     assert prompt == "work"
-
-
-def test_display_submenu_marks_the_current_mode_and_sets_the_new_one(monkeypatch):
-    make_account("work")
-    seen = []
-
-    def fake_choose(prompt, options, note=None):
-        seen.append(options)
-        return "Display as…" if len(seen) == 1 else \
-            next(o for o in options if o.endswith("index"))
-
-    monkeypatch.setattr(cli.pickers, "choose", fake_choose)
-    assert cli.cmd_mode_menu("work", False) == 0
-    assert f"{cli.label.MARK_ON} nickname" in seen[1], seen[1]
-    assert f"{cli.label.MARK_OFF} index" in seen[1], seen[1]
-    assert registry.find(registry.load(), "work")["display"] == "index"
 
 
 def test_colour_submenu_marks_the_current_colour_and_sets_the_new_one(monkeypatch):
@@ -1054,13 +1034,10 @@ def test_statusline_signals_the_bar_only_when_the_reading_changed(monkeypatch, t
 def test_render_puts_the_recorded_reading_on_the_bar(monkeypatch):
     """The 30 s tick is what keeps the clock on screen when no signal fired.
 
-    In the custom mode, which is now the only one that carries usage at all —
-    the four built-ins are exactly what they are named.
+    Usage lives in the format string's tokens, which is the only place it can
+    be asked for at all.
     """
     make_account()
-    reg = registry.load()
-    registry.set_field(reg, "work", "display", "custom")
-    registry.save(reg)
     payload = json.dumps({"rate_limits": {"five_hour": {
         "used_percentage": 94.0, "resets_at": time.time() + 3600}}})
     _feed(monkeypatch, payload, paths.account_dir("work"))
@@ -1267,13 +1244,13 @@ def test_dispatch_hide_icon_toggles(monkeypatch):
     assert registry.find(registry.load(), "work")["hide_icon"] is True
 
 
-def test_dispatch_display_and_color_go_through_the_registry(monkeypatch):
-    """set_field() validates the mode and the index. The panel must not get its
-    own unchecked write path."""
+def test_dispatch_color_goes_through_the_registry(monkeypatch):
+    """set_field() validates the colour. The panel must not get its own
+    unchecked write path."""
     make_account("work")
-    cli.dispatch_panel(cli.panel.Action("display", "work", "icon only"))
-    assert registry.find(registry.load(), "work")["display"] == "icon only"
-    assert cli.dispatch_panel(cli.panel.Action("display", "work", "nonsense")) == 1
+    cli.dispatch_panel(cli.panel.Action("color", "work", "#89b4fa"))
+    assert registry.find(registry.load(), "work")["color"] == "#89b4fa"
+    assert cli.dispatch_panel(cli.panel.Action("color", "work", "nonsense")) == 1
 
 
 def test_dispatch_switch_returns_the_reopen_sentinel(monkeypatch):
@@ -1675,3 +1652,8 @@ def test_format_edit_warns_about_an_unknown_token(monkeypatch, capsys):
     monkeypatch.setattr(cli.pickers, "prompt", lambda *_: None)
     assert cli.main(["format", "work", "--edit"]) == 0
     assert "%bogus" in capsys.readouterr().out
+
+
+def test_display_command_is_gone():
+    """An unknown command returns non-zero rather than silently doing nothing."""
+    assert cli.main(["display", "a", "custom"]) != 0

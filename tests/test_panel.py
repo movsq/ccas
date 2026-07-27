@@ -63,7 +63,6 @@ def test_build_state_carries_the_three_toggles(reg):
     assert state["headless"] is True
     assert state["dangerous"] is True
     assert state["hide_icon"] is False
-    assert state["display"] == "nickname"
 
 
 def test_build_state_reports_both_usage_windows_in_order(reg):
@@ -110,7 +109,6 @@ def test_build_state_survives_an_unknown_slug(reg):
     panel has to open rather than traceback into a dead bar button."""
     state = panel.build_state("gone")
     assert state["slug"] == "gone"
-    assert state["display"] == "nickname"
     assert state["headless"] is False
 
 
@@ -776,14 +774,6 @@ def test_build_state_defaults_the_format_for_an_old_account(reg):
     assert state["format_tokens"] == fmt.tokens_in(fmt.DEFAULT_FORMAT)
 
 
-def test_the_colour_row_is_only_offered_for_the_custom_mode():
-    """panel_ui asks state, not the registry. The rule lives here so it is
-    testable without GTK — panel_ui decides nothing."""
-    assert panel.shows_color_row({"display": "custom"}) is True
-    for mode in ("nickname", "index", "claude code", "icon only"):
-        assert panel.shows_color_row({"display": mode}) is False
-
-
 def test_a_setting_is_applied_without_shutting_the_panel():
     """Ticking 'hide the icon' used to end the panel: every button went through
     the one Action the panel returns, so a setting and a launch closed alike.
@@ -791,7 +781,7 @@ def test_a_setting_is_applied_without_shutting_the_panel():
     things, and reopening the panel per tick is not how that reads."""
     from ccas import panel
     for kind in ("headless", "dangerous", "hide_icon",
-                 "display", "color", "format_color"):
+                 "color", "format_color"):
         assert kind in panel.STAYS_OPEN
     # A launch, a switch and anything that spawns a terminal still end it: the
     # panel has handed the screen to something else.
@@ -817,3 +807,11 @@ def test_the_panel_is_given_a_way_to_apply_a_setting(monkeypatch):
     monkeypatch.setattr(panel, "build_state", lambda slug: {"slug": slug})
     cli.cmd_panel("one")
     assert seen["apply"] is cli.dispatch_panel
+
+
+def test_build_state_has_no_display(reg):
+    assert "display" not in panel.build_state("one")
+
+
+def test_stays_open_does_not_carry_display():
+    assert "display" not in panel.STAYS_OPEN
