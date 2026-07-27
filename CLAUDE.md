@@ -376,10 +376,26 @@ the lock, and a lock naming a dead pid reads as nothing being open.
 `cmd_panel` therefore closes the running panel **inside the gate**, not before
 `panel_ui.show()`: which monitor the click came from is not known until the
 pointer probe answers, inside the panel process. The gate is called once with
-the settled connector, closes what was open, and returns False when that was
-this widget's own panel. A chip click reopens through the same gate — hence the
-`first` flag, or the panel would send itself `SIGTERM` — and reuses the
-connector rather than probing again.
+the settled connector — exactly once, per panel — closes what was open, and
+returns False when that was this widget's own panel.
+
+**Switching account does not open a second panel.** A chip click swaps the
+frame's one child for another account's `build_body`, in the same window and on
+the same surface; `cmd_panel` has no loop, and `panel_ui.show()` is called once
+per process. What cli still owns is the **lock**: `dispatch_panel`'s `switch`
+branch re-claims it for the new slug, on the connector read back from the lock
+this process wrote. Skip that and the panel is showing one account behind a lock
+naming another, which makes the shown account's own widget read as a *different*
+widget — it closes the panel and opens a fresh one, which is the reload the
+in-place switch removed, by the back door.
+
+Two things a body owes when it is replaced. `ui_state` lives in `_open`, not in
+`build_body`, so the drawer, the query and the selected rows survive the swap —
+the panes are not per-account at all. And the outgoing body is **retired while
+it is still alive** (`_retire`): a `GtkListBox` announces `row-selected` as it is
+disposed, which is whenever the GC reaches the discarded body, and by then
+CPython has cleared its handlers' closure cells — one `NameError` traceback into
+Waybar's log per switch.
 
 `PROBE_MS` is **1500, and it is a mouse-hold budget, not a repaint one.** Waybar
 spawns `on-click` on button *press*, sway holds an implicit pointer grab until

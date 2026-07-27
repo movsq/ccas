@@ -1163,3 +1163,64 @@ on every poll would spawn a claude every five minutes for an account that needs
 nothing — and `CCAS_NO_TOKEN_REFRESH=1` restores the old behaviour whole, tested
 by asserting claude is *not asked*, because an off switch that only goes quieter
 is not one.
+
+## The account switch that rebuilt the whole window (2026-07-27)
+
+Clicking another account's chip closed the panel. `pick()` sent
+`Action("switch", …)`, which was not in `panel.STAYS_OPEN`, so the window shut,
+`show()` returned, `app.run()` unwound, and `cmd_panel`'s loop called
+`panel_ui.show()` again on the next slug — a new `Gtk.Application`, a new layer
+surface, a fresh `present()`, for a change of one dict. On screen it is a blink,
+and everything the user had done in that window went with it.
+
+Nothing in that teardown was load-bearing. The frame holds **exactly one child**
+and every account-shaped widget is inside it; the layer-shell setup, the scrim,
+the Escape controller and the size negotiation know nothing about which account
+is showing. So a switch swaps that child, and the surface never unmaps.
+
+**The lock is the half that is not in the widget tree.** The bar's toggle
+compares (slug, output) against the widget clicked. A panel showing `two` behind
+a lock still naming `one` makes `two`'s own widget read as a *different* widget:
+it closes the panel and opens a fresh one — the reload, back through the door it
+was shown out of. `dispatch_panel`'s switch branch re-claims the lock, taking
+the connector from the lock this very process wrote, because there is no gate
+closure to read it from and the answer is already on disk. Verified on the real
+panel: switch to `vose` inside the window, then `ccs --gui vo-sedlacek` on the
+same output exits 0 with no panel left and no lock.
+
+With nothing reopening, three things stopped having a reason to exist: the loop,
+the gate's `first` flag — which was there so a reopening chip click did not make
+the panel `SIGTERM` itself — and `show(output=…)` / `_pointer_output(skip=…)`,
+which existed to skip the pointer probe on that reopen. `CCAS_PANEL_OUTPUT`'s
+own skip is a different question and stays.
+
+**A discarded body has to be retired while it is still alive.** A `GtkListBox`
+announces `row-selected` as it is disposed. A body that has been swapped out is
+disposed whenever the garbage collector reaches it, and by then CPython has
+cleared the closure cells its handlers were built from — so the handler runs
+against a `view` that no longer holds anything and prints a `NameError`
+traceback into Waybar's log, once per switch. It is reproducible on demand
+(`swap(); gc.collect()`) and absent without the swap, which is what identified
+it. `_retire()` unselects the rows first: the disposal then has nothing left to
+announce, and the emission it does cause happens while the handlers are intact.
+
+The same fact bit a second time, in the opposite direction. The session the user
+had picked is recorded from the **row**, never from `selected_session()`'s
+fallback — because `_retire`'s unselect is itself a `row-selected`, and
+recording the effective session there would have replaced their choice with the
+top of the list, in the moment before the new body read it back.
+
+**And `GtkSearchEntry` arms `search-changed` on a delay.** Seeding the rebuilt
+entry with the remembered query fires one about 150 ms into the new body, where
+`on_search` does what a *new* search should do and drops the selected project
+for the top hit — a selection quietly moving a moment after a click that had
+nothing to do with it. The echo is recognised by the text being what was already
+remembered.
+
+What carries over is the drawer, the query and the selected project and session:
+the panes are not per-account at all — `history.scan()` reads
+`~/.claude/projects` and both accounts see the same list — so a switch that
+emptied them would be discarding work over a change that cannot have affected
+what was being looked for. The colour target does not: the chip row is one chip
+per token in *this* account's format string, so the index names a different
+token either side of a switch, and `icon` is the one target every account has.
