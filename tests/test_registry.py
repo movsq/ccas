@@ -174,12 +174,23 @@ def test_dangerous_is_not_exclusive():
 
 # ── the format string and its two fields ──────────────────────────────────────
 
-def test_a_new_account_carries_the_default_format():
+def test_a_new_accounts_colours_are_all_literal_hexes():
+    """The preset the user asked for — glyph and used-percentage in one random
+    colour, the address grey — with no indirection to reach it. The glyph
+    follows `color` by definition, so only %5hused needs the hex written in."""
     reg = registry.load()
-    registry.add(reg, "work", "w@example.com", None)
-    account = registry.find(reg, "work")
-    assert account["format"] == fmt.DEFAULT_FORMAT
-    assert account["format_colors"] == fmt.DEFAULT_FORMAT_COLORS
+    a = registry.add(reg, "work", "w@e.com", None)
+    assert fmt.HEX.match(a["color"])
+    assert a["format"] == fmt.DEFAULT_FORMAT
+    assert a["format_colors"] == {"%email": fmt.GREY, "%5hused": a["color"]}
+    assert all(fmt.HEX.match(v) for v in a["format_colors"].values())
+
+
+def test_two_new_accounts_do_not_share_a_colour():
+    reg = registry.load()
+    first = registry.add(reg, "a", "a@e.com", None)
+    second = registry.add(reg, "b", "b@e.com", None)
+    assert first["color"] != second["color"]
 
 
 def test_set_field_validates_the_format():
@@ -269,6 +280,17 @@ def test_add_writes_the_default_format_colours():
     reg = {"default": None, "accounts": []}
     a = registry.add(reg, "a", "a@x", None)
     assert a["format"] == fmt.DEFAULT_FORMAT
-    assert a["format_colors"] == fmt.DEFAULT_FORMAT_COLORS
-    # A copy, not the shared constant: two accounts must not edit one dict.
-    assert a["format_colors"] is not fmt.DEFAULT_FORMAT_COLORS
+    assert a["format_colors"] == fmt.default_format_colors(a["color"])
+    # A fresh dict per account, because the colour in it is per account: two
+    # accounts editing one shared dict is not a thing that can happen now.
+    b = registry.add(reg, "b", "b@x", None)
+    assert a["format_colors"] is not b["format_colors"]
+
+
+def test_a_new_accounts_format_colours_survive_set_field():
+    """They are written by add() and validated by set_field, so the two have to
+    agree on what a colour is — `account` failed that pair the moment
+    valid_color stopped accepting it."""
+    reg = {"default": None, "accounts": []}
+    a = registry.add(reg, "a", "a@x", None)
+    registry.set_field(reg, "a", "format_colors", dict(a["format_colors"]))

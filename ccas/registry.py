@@ -72,17 +72,19 @@ def _renumber(reg: dict) -> None:
 def add(reg: dict, slug: str, email: str, nickname):
     if find(reg, slug):
         raise ValueError(f"account already exists: {slug}")
+    color = format.random_color()
     account = {
         "slug": slug,
         "nickname": nickname,
         "email": email,
-        # Random, and the format's glyph and percentage follow it: a new
-        # account looks like itself from the first paint, and one hue drag
-        # still moves the pair together.
-        "color": format.random_color(),
+        # Random, and written into the used-percentage as a literal so the
+        # glyph and the number match from the first paint. They no longer
+        # follow one another — moving one is one drag, moving both is two,
+        # and in exchange the format string says what it will look like.
+        "color": color,
         "hide_icon": False,
         "format": format.DEFAULT_FORMAT,
-        "format_colors": dict(format.DEFAULT_FORMAT_COLORS),
+        "format_colors": format.default_format_colors(color),
         "headless": False,
         "dangerous": False,
         "warned_invisible": False,
@@ -134,8 +136,8 @@ def set_field(reg: dict, slug: str, field: str, value) -> None:
             if not 0 <= value < len(paths.PALETTE):
                 raise ValueError(f"invalid colour index: {value}")
             value = paths.PALETTE[value][1]
-        # HEX, not valid_color: auto/dim/account are token values and mean
-        # nothing for the widget's own colour.
+        # HEX and nothing else. There is no longer any other shape a colour can
+        # take, here or in format_colors.
         elif not (isinstance(value, str) and format.HEX.match(value)):
             raise ValueError(f"invalid colour: {value!r}")
     # An unknown *token* is deliberately not checked: retiring a token in a later
