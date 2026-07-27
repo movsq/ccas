@@ -24,10 +24,6 @@ NO_ACCOUNT_ARGS = {"--version", "-v", "--help", "-h",
 # and this row is drawn by fzf, whose font nothing here has measured.
 ADD_ROW = "+  Add account…"
 
-# Not an exit code: a chip click reopens the panel on another account, and the
-# loop in cmd_panel has to tell that apart from a command that finished.
-SWITCH = object()
-
 
 def notify(text: str) -> None:
     subprocess.run(["notify-send", "Claude accounts", text], check=False,
@@ -248,7 +244,19 @@ def dispatch_panel(action):
         return 1  # Esc, or a click outside the surface
     kind, slug, value = action
     if kind == "switch":
-        return SWITCH
+        # The panel rebuilds its own body; the lock is cli's half of it. The
+        # bar's toggle compares (slug, output) against the widget clicked, so a
+        # panel showing `two` behind a lock still naming `one` makes `two`'s own
+        # widget read as a different widget — it would close the panel and open
+        # a fresh one, which is the reload this removed, by the back door.
+        #
+        # The connector comes from the lock this process wrote: there is no gate
+        # closure to read it from here, and the answer is already on disk. None
+        # if it is somehow gone, which reads back as "no connector" and makes
+        # the next click reopen rather than die quietly.
+        open_now = panel.running_panel()
+        panel.claim(slug, open_now[2] if open_now else None)
+        return 0
     if kind == "new":
         # cwd and scope are the same directory: the panel picked it explicitly,
         # which is what the bar click never had.
@@ -584,7 +592,7 @@ def _color_menu(reg, slug: str, gui: bool) -> int:
 
 
 def cmd_panel(slug: str) -> int:
-    """The GUI door. Loops so a chip click reopens rather than exits.
+    """The GUI door. One click, one panel, one surface.
 
     The bar's click is a toggle: whatever panel is open closes first, and if it
     was this same widget's, that is the whole of it. Clicking a widget to open
@@ -604,42 +612,35 @@ def cmd_panel(slug: str) -> int:
     same output — and `docs/why.md` records what that ordering could and could
     not be shown to fix.
     """
-    where = {"first": True}
+    where = {}
 
     def gate(connector) -> bool:
-        # Only the click that started this process can be a toggle-off, and only
-        # it has a panel to close. A chip click reopens through the same gate,
-        # by which time the lock names *this* process — closing there would be
-        # the panel sending itself SIGTERM.
-        if not where.pop("first", False):
-            panel.claim(slug, connector)
-            return True
+        # Once per panel. It used to run again whenever a chip reopened the
+        # panel on another account — and by then the lock named *this* process,
+        # so the close below would have been the panel sending itself SIGTERM,
+        # which is what the `first` flag here was guarding. A switch never
+        # leaves the window now, so there is nothing to guard.
         closed = panel.close_running()
         if closed == (slug, connector):
             where["toggled_off"] = True
             return False
-        where["output"] = connector
         panel.claim(slug, connector)
         return True
 
     try:
-        while True:
-            if where.get("output"):
-                panel.claim(slug, where["output"])
-            # `apply`: the settings kinds are run inside the open panel and
-            # never come back as an Action, so ticking a box changes the thing
-            # and leaves the panel up. Same branches, same writes — only the
-            # moment differs.
-            action = panel_ui.show(panel.build_state(slug), gate,
-                                   where.get("output"), dispatch_panel)
-            if where.get("toggled_off"):
-                # Not a cancelled panel: the click did what it was for, which
-                # was to shut the one that was already open.
-                return 0
-            result = dispatch_panel(action)
-            if result is not SWITCH:
-                return result
-            slug = action.slug
+        # `apply`: the STAYS_OPEN kinds are run inside the open panel and never
+        # come back as an Action, so ticking a box changes the thing and leaves
+        # the panel up — and clicking another account's chip swaps the body
+        # rather than the window. Same branches, same writes; only the moment
+        # differs. The Action that does come back is a departure, and it carries
+        # the slug the panel was showing when it was clicked, which after a
+        # switch is not the one this command was called with.
+        action = panel_ui.show(panel.build_state(slug), gate, dispatch_panel)
+        if where.get("toggled_off"):
+            # Not a cancelled panel: the click did what it was for, which was to
+            # shut the one that was already open.
+            return 0
+        return dispatch_panel(action)
     finally:
         panel.release()
 

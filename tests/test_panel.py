@@ -786,10 +786,18 @@ def test_a_setting_is_applied_without_shutting_the_panel():
     for kind in ("headless", "dangerous", "hide_icon",
                  "color", "format_color", "format"):
         assert kind in panel.STAYS_OPEN
-    # A launch, a switch and anything that spawns a terminal still end it: the
-    # panel has handed the screen to something else.
-    for kind in ("new", "resume", "switch", "add", "rename", "remove"):
+    # A launch and anything that spawns a terminal still end it: the panel has
+    # handed the screen to something else.
+    for kind in ("new", "resume", "add", "rename", "remove"):
         assert kind not in panel.STAYS_OPEN
+
+
+def test_a_switch_is_applied_without_shutting_the_panel():
+    """It was a departure while it handed the screen to another panel process.
+    The body is swapped inside the one window now, so it is the same window
+    showing another account — which is what STAYS_OPEN means."""
+    from ccas import panel
+    assert "switch" in panel.STAYS_OPEN
 
 
 def test_the_panel_is_given_a_way_to_apply_a_setting(monkeypatch):
@@ -798,7 +806,7 @@ def test_the_panel_is_given_a_way_to_apply_a_setting(monkeypatch):
     from ccas import cli, panel, panel_ui
     seen = {}
 
-    def fake_show(state, gate=None, output=None, apply=None):
+    def fake_show(state, gate=None, apply=None):
         seen["apply"] = apply
         return None
 

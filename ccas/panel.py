@@ -21,14 +21,21 @@ from . import format as fmt, history, label, paths, registry, usage
 # kinds that take none.
 Action = namedtuple("Action", "kind slug value")
 
-# The kinds that are a *setting*, not a departure. Everything else hands the
-# screen to something else — a session, another account's panel, a terminal —
-# so the panel closing is part of what was asked for. These are not: ticking
-# "hide the icon" and having the panel vanish means reopening it to tick the
-# next thing, which is the opposite of gathering the switches in one place.
-# cli.dispatch_panel runs them in place, through the same branches as before.
+# The kinds the panel applies where they were clicked, rather than handing back
+# and closing. Everything else gives the screen to something else — a session,
+# a terminal — so the panel going away is part of what was asked for. These are
+# not: ticking "hide the icon" and having the panel vanish means reopening it to
+# tick the next thing, which is the opposite of gathering the switches in one
+# place. cli.dispatch_panel runs them in place, through the same branches.
+#
+# `switch` is here because it stopped being a departure. It used to end the
+# window and have cmd_panel open another one on the next account — a new
+# application, a new layer surface, a visible blink for a change of one dict.
+# panel_ui swaps the body inside the one window instead, so a switch is the same
+# panel showing someone else, and cli's share of it is moving the lock.
 STAYS_OPEN = frozenset({
     "headless", "dangerous", "hide_icon", "color", "format_color", "format",
+    "switch",
 })
 
 # Of those, the ones applied *without* rebuilding the settings subtree. A

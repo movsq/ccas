@@ -291,3 +291,143 @@ def test_the_widget_settings_carry_a_heading(gtk, monkeypatch):
     walk(hidden)
     assert "Bar label" in found
     assert "What this account's widget says, and how it is coloured" in found
+
+
+# ── switching account inside the one window ───────────────────────────────────
+
+PROJECTS = [{"path": "/p/alpha", "short": "p/alpha", "age": "1m", "mtime": 2.0},
+            {"path": "/p/beta", "short": "p/beta", "age": "2h", "mtime": 1.0}]
+SESSIONS = {
+    "/p/alpha": [{"uuid": "u1", "title": "newest", "age": "1m",
+                  "mtime": 2.0, "cwd": "/p/alpha"},
+                 {"uuid": "u2", "title": "older", "age": "3h",
+                  "mtime": 1.5, "cwd": "/p/alpha"}],
+    "/p/beta": [{"uuid": "u3", "title": "only in beta", "age": "2h",
+                 "mtime": 1.0, "cwd": "/p/beta"}],
+}
+
+
+def _state(slug):
+    """What panel.build_state() answers, for two accounts and three sessions.
+
+    The panes are deliberately identical whichever account is current: they are
+    not per-account at all — history.scan() reads ~/.claude/projects — which is
+    why a switch keeps the user's place in them rather than resetting it.
+    """
+    return {
+        "slug": slug,
+        "accounts": [{"slug": s, "name": s.upper(),
+                      "email": f"{s}@example.com", "color": "#89b4fa",
+                      "current": s == slug} for s in ("one", "two")],
+        "format": "%name", "format_colors": {},
+        "color_targets": [{"token": None, "label": "icon", "color": "#89b4fa"}],
+        "hide_icon": False, "headless": False, "dangerous": False,
+        "usage": [{"key": "five_hour", "label": "5h", "kind": usage.ABSENT,
+                   "percent": None, "resets": "", "color": None}],
+        "projects": PROJECTS, "sessions": SESSIONS,
+        "selected_project": "/p/alpha", "selected_session": "u1",
+    }
+
+
+def _walk(widget, want):
+    """Every descendant `want` says yes to, in tree order."""
+    found = []
+    child = widget.get_first_child()
+    while child is not None:
+        if want(child):
+            found.append(child)
+        found.extend(_walk(child, want))
+        child = child.get_next_sibling()
+    return found
+
+
+def _chips(frame):
+    return _walk(frame, lambda w: isinstance(w, Gtk.Button)
+                 and w.has_css_class("ccas-chip"))
+
+
+def _current_account(frame):
+    """The name on the chip marked current — which account the body is showing."""
+    chip = next(c for c in _chips(frame) if c.has_css_class("current"))
+    return _walk(chip, lambda w: isinstance(w, Gtk.Label))[0].get_label()
+
+
+def _body(gtk, monkeypatch, ui_state=None, rebuild=True):
+    """(frame, chosen, applied, ui_state). A real body in a real frame, with no
+    window mapped: nothing here needs a surface, only a display."""
+    monkeypatch.setattr(panel, "format_previewer",
+                        lambda slug, now=None: lambda text: (text, []))
+    monkeypatch.setattr(panel, "build_state", lambda slug, now=None: _state(slug))
+    chosen, applied = {"action": None}, []
+    window = gtk.Window()
+    frame = gtk.Box(orientation=gtk.Orientation.VERTICAL)
+    ui_state = {"expanded": False, "target": 0} if ui_state is None else ui_state
+    swap = (panel_ui._body_swapper(frame, chosen, window, applied.append,
+                                   ui_state) if rebuild else None)
+    frame.append(panel_ui.build_body(_state("one"), chosen, window,
+                                     applied.append, ui_state, swap))
+    return frame, chosen, applied, ui_state
+
+
+def test_a_chip_click_swaps_the_body_and_keeps_the_window(gtk, monkeypatch):
+    """The whole change, in one test. Switching used to close the window and
+    have cmd_panel open a new application on the next account — a new layer
+    surface for a change of one dict. The frame holds one child and everything
+    account-shaped is inside it, so the switch is a swap of that child."""
+    frame, chosen, applied, _ui = _body(gtk, monkeypatch)
+    assert _current_account(frame) == "ONE"
+    other = next(c for c in _chips(frame) if not c.has_css_class("current"))
+    other.emit("clicked")
+    assert applied == [panel.Action("switch", "two", None)]
+    _settle()
+    assert _current_account(frame) == "TWO"
+    assert chosen["action"] is None      # the window was never asked to close
+
+
+def test_the_swapped_body_replaces_the_old_one(gtk, monkeypatch):
+    """One child, not two stacked: the frame is a fixed WIDTH, HEIGHT card, so a
+    second body in it is not a panel with two bodies — it is a panel with half
+    of each."""
+    frame, _chosen, _applied, ui_state = _body(gtk, monkeypatch)
+    panel_ui._body_swapper(frame, {"action": None}, gtk.Window(),
+                           lambda _a: None, ui_state)("two")
+    children = _walk(frame, lambda w: w.get_parent() is frame)
+    assert len(children) == 1
+    assert _current_account(frame) == "TWO"
+
+
+def test_a_switch_still_closes_a_panel_that_cannot_swap(gtk, monkeypatch):
+    """show()'s bare contract: with no way to rebuild the body, a switch is a
+    departure like any other and comes back as the Action it always was."""
+    frame, chosen, applied, _ui = _body(gtk, monkeypatch, rebuild=False)
+    next(c for c in _chips(frame) if not c.has_css_class("current")).emit("clicked")
+    assert applied == []
+    assert chosen["action"] == panel.Action("switch", "two", None)
+
+
+def test_a_switch_resets_the_colour_target(gtk, monkeypatch):
+    """The chip row is one chip per token in *this* account's format string, so
+    index 2 names a different token either side of a switch. `icon` is the one
+    target every account has."""
+    frame, _chosen, _applied, ui_state = _body(gtk, monkeypatch)
+    ui_state["target"] = 1
+    ui_state["focus_format"] = True
+    panel_ui._body_swapper(frame, {"action": None}, gtk.Window(),
+                           lambda _a: None, ui_state)("two")
+    assert ui_state["target"] == 0
+    assert "focus_format" not in ui_state
+
+
+def test_the_swapped_out_body_lets_go_of_its_rows(gtk, monkeypatch):
+    """A GtkListBox announces row-selected as it is disposed, and a body that
+    has been swapped out is disposed whenever the GC reaches it — by which time
+    its handlers' closure cells are cleared and the announcement is a NameError
+    traceback in Waybar's log. Unselecting while the body is still alive leaves
+    the disposal nothing to say. Measured: one traceback per discarded body,
+    with an explicit gc.collect() after a swap, and none without the swap."""
+    frame, _chosen, _applied, ui_state = _body(gtk, monkeypatch)
+    old = frame.get_first_child()
+    assert any(b.get_selected_row() is not None for b in panel_ui._list_boxes(old))
+    panel_ui._body_swapper(frame, {"action": None}, gtk.Window(),
+                           lambda _a: None, ui_state)("two")
+    assert all(b.get_selected_row() is None for b in panel_ui._list_boxes(old))

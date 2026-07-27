@@ -1294,11 +1294,28 @@ def test_dispatch_color_goes_through_the_registry(monkeypatch):
     assert cli.dispatch_panel(cli.panel.Action("color", "work", "nonsense")) == 1
 
 
-def test_dispatch_switch_returns_the_reopen_sentinel(monkeypatch):
-    """A chip click reopens the panel on another account rather than exiting, so
-    it cannot come back as an ordinary exit code."""
-    make_account("work")
-    assert cli.dispatch_panel(cli.panel.Action("switch", "work", None)) is cli.SWITCH
+def test_dispatch_switch_reclaims_the_lock_for_the_new_account(monkeypatch, tmp_path):
+    """A switch is applied inside the open panel now, so the only thing left for
+    cli to do is move the lock: the bar's toggle compares (slug, output) against
+    the widget clicked, and a panel showing `two` behind a lock saying `one`
+    makes `two`'s own widget read as a different one — it would close the panel
+    and open a fresh one, which is the reload this removed."""
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
+    make_account("one")
+    make_account("two")
+    cli.panel.claim("one", "DP-1")
+    assert cli.dispatch_panel(cli.panel.Action("switch", "two", None)) == 0
+    assert cli.panel.running_panel() == (os.getpid(), "two", "DP-1")
+
+
+def test_dispatch_switch_without_a_lock_still_answers(monkeypatch, tmp_path):
+    """The connector is read back from the lock this process wrote. There is
+    always one — but a panel that lost it must switch account anyway rather than
+    traceback out of a chip click."""
+    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
+    make_account("two")
+    assert cli.dispatch_panel(cli.panel.Action("switch", "two", None)) == 0
+    assert cli.panel.running_panel() == (os.getpid(), "two", None)
 
 
 def test_dispatch_none_is_a_cancel(monkeypatch):
@@ -1319,24 +1336,25 @@ def test_gui_mode_menu_opens_the_panel_not_the_picker(monkeypatch):
     """The whole change, in one test: a bar click reaches the panel."""
     make_account("one")
     monkeypatch.setattr(cli.pickers, "choose", _panel_never_called)
-    monkeypatch.setattr(cli.panel_ui, "show", lambda s, gate=None, output=None, apply=None: None)
+    monkeypatch.setattr(cli.panel_ui, "show", lambda s, gate=None, apply=None: None)
     assert cli.cmd_mode_menu("one", True) == 1
 
 
-def test_switch_reopens_the_panel_on_the_other_account(monkeypatch):
-    """A chip click must not exit — it is a switch, not a choice."""
+def test_the_panel_is_opened_once(monkeypatch):
+    """One click, one surface. cmd_panel used to loop, because a chip click came
+    back as an action and the next account needed a whole new window; the panel
+    swaps its own body instead, so there is nothing left to loop over."""
     make_account("one")
     make_account("two")
     seen = []
 
-    def fake_show(state, gate=None, output=None, apply=None):
+    def fake_show(state, gate=None, apply=None):
         seen.append(state["slug"])
-        return (cli.panel.Action("switch", "two", None) if len(seen) == 1
-                else None)
+        return None
 
     monkeypatch.setattr(cli.panel_ui, "show", fake_show)
     cli.cmd_panel("one")
-    assert seen == ["one", "two"]
+    assert seen == ["one"]
 
 
 def test_terminal_mode_menu_still_uses_fzf(monkeypatch):
@@ -1358,7 +1376,7 @@ def _gated(monkeypatch, connector):
     """
     opened = []
 
-    def fake_show(state, gate=None, output=None, apply=None):
+    def fake_show(state, gate=None, apply=None):
         if gate is not None and not gate(connector):
             return None
         opened.append(state["slug"])
@@ -1410,7 +1428,7 @@ def test_the_open_panel_is_closed_after_the_probe_and_not_before(monkeypatch, tm
     monkeypatch.setattr(cli.panel, "close_running",
                         lambda: order.append("closed") or None)
 
-    def fake_show(state, gate=None, output=None, apply=None):
+    def fake_show(state, gate=None, apply=None):
         order.append("probed")
         gate("DP-1")
         return None
@@ -1420,50 +1438,27 @@ def test_the_open_panel_is_closed_after_the_probe_and_not_before(monkeypatch, tm
     assert order == ["probed", "closed"]
 
 
-def test_a_chip_click_does_not_make_the_panel_close_itself(monkeypatch, tmp_path):
-    """The gate runs again when a chip reopens the panel on another account, and
-    by then the lock names *this* process — a second close_running() there would
-    SIGTERM the panel that is asking the question."""
+def test_the_panel_is_only_ever_asked_to_close_one_panel(monkeypatch, tmp_path):
+    """The gate is the toggle, and it runs exactly once now. It used to run
+    again whenever a chip reopened the panel on another account, by which time
+    the lock named *this* process — a second close_running() there would have
+    been the panel sending itself SIGTERM, which is why the gate carried a
+    `first` flag it no longer needs."""
     monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
     make_account("one")
-    make_account("two")
     closes = []
     monkeypatch.setattr(cli.panel, "close_running",
                         lambda: closes.append(1) or None)
-    seen = []
+    gates = []
 
-    def fake_show(state, gate=None, output=None, apply=None):
-        gate("DP-1")
-        seen.append(state["slug"])
-        return (cli.panel.Action("switch", "two", None) if len(seen) == 1
-                else None)
+    def fake_show(state, gate=None, apply=None):
+        gates.append(gate("DP-1"))
+        return None
 
     monkeypatch.setattr(cli.panel_ui, "show", fake_show)
     cli.cmd_panel("one")
-    assert seen == ["one", "two"]
+    assert gates == [True]
     assert len(closes) == 1
-
-
-def test_a_chip_click_reopens_where_the_panel_already_was(monkeypatch, tmp_path):
-    """And without probing again, for the reason the probe now runs before the
-    close: the surface that just went away is this panel's own, on the output a
-    second probe would be asking about. The answer is already known — reusing it
-    is both correct and one less thing to wait for."""
-    monkeypatch.setenv("CCAS_PANEL_LOCK", str(tmp_path / "panel.lock"))
-    make_account("one")
-    make_account("two")
-    monkeypatch.setattr(cli.panel, "close_running", lambda: None)
-    given = []
-
-    def fake_show(state, gate=None, output=None, apply=None):
-        given.append(output)
-        gate(output or "HDMI-A-1")
-        return (cli.panel.Action("switch", "two", None) if len(given) == 1
-                else None)
-
-    monkeypatch.setattr(cli.panel_ui, "show", fake_show)
-    cli.cmd_panel("one")
-    assert given == [None, "HDMI-A-1"]
 
 
 def test_the_open_panel_records_the_monitor_it_opened_on(monkeypatch, tmp_path):
@@ -1474,7 +1469,7 @@ def test_the_open_panel_records_the_monitor_it_opened_on(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.panel, "close_running", lambda: None)
     held = []
 
-    def fake_show(state, gate=None, output=None, apply=None):
+    def fake_show(state, gate=None, apply=None):
         gate("HDMI-A-1")
         held.append(cli.panel.running_panel())
         return None
@@ -1504,7 +1499,7 @@ def test_the_open_panel_is_findable_and_stops_being_so(monkeypatch, tmp_path):
     make_account("one")
     held = []
 
-    def fake_show(_state, gate=None, output=None, apply=None):
+    def fake_show(_state, gate=None, apply=None):
         gate("DP-1")
         held.append(cli.panel.running_panel())
         raise KeyboardInterrupt

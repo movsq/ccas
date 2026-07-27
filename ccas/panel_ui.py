@@ -148,7 +148,7 @@ def _pin_to_output(window, LayerShell, output=None) -> None:
             return
 
 
-def show(state: dict, gate=None, output=None, apply=None):
+def show(state: dict, gate=None, apply=None):
     """Open the panel, block until it closes, return the chosen Action or None.
 
     None means cancelled — Esc, or a click outside the surface. cli.dispatch_panel
@@ -160,15 +160,11 @@ def show(state: dict, gate=None, output=None, apply=None):
     monitor it came from, which is here and not in cli. The gate decides — this
     module only asks it.
 
-    `output` is a connector already settled — the caller reopening the panel it
-    just closed, on a chip click. It skips the probe, which would be both a
-    delay and a wrong answer: the surface that has just gone away is this very
-    panel's, on the output the probe would be asking about.
-
     `apply` runs a panel.STAYS_OPEN action there and then — cli.dispatch_panel,
     which the returned Action would otherwise have reached after the window was
     gone. A setting is not a departure, so it does not end the panel; the
-    toggles are rebuilt from fresh state instead.
+    toggles are rebuilt from fresh state instead. Nor is a switch: the body is
+    rebuilt on the other account, inside the same window.
     """
     try:
         # Before `import gi`, and load-bearing. gtk4-layer-shell has to come
@@ -209,14 +205,13 @@ def show(state: dict, gate=None, output=None, apply=None):
         from gi.repository import GLib
 
         def settled(probe):
-            connector = output or panel.choose_output(probe)
+            connector = panel.choose_output(probe)
             if gate is not None and not gate(connector):
                 app.quit()   # the same widget, on the same bar: it just closed
                 return
             _open(app, Gtk, LayerShell, state, chosen, connector, apply)
 
-        _pointer_output(app, Gtk, GLib, LayerShell, state, settled,
-                        skip=output is not None)
+        _pointer_output(app, Gtk, GLib, LayerShell, state, settled)
 
     app.connect("activate", on_activate)
     # No arguments: ccs has already parsed its own, and GTK would reject them.
@@ -248,7 +243,7 @@ def _skip_probe() -> bool:
     return bool(paths.panel_output())
 
 
-def _pointer_output(app, Gtk, GLib, LayerShell, state, then, skip=False) -> None:
+def _pointer_output(app, Gtk, GLib, LayerShell, state, then) -> None:
     """Find the monitor the pointer is on, then call `then(connector)`.
 
     Wayland tells a client nothing about where the pointer is until it is over
@@ -267,7 +262,7 @@ def _pointer_output(app, Gtk, GLib, LayerShell, state, then, skip=False) -> None
     display = Gdk_display(Gtk)
     # Before the first present(): a probe that paints is a flash on every open.
     _load_base(display)
-    if skip or _skip_probe():
+    if _skip_probe():
         then(None)
         return
     monitors = display.get_monitors()
@@ -360,7 +355,12 @@ def _open(app, Gtk, LayerShell, state, chosen, connector, apply=None) -> None:
     frame.set_halign(Gtk.Align.CENTER)
     frame.set_valign(Gtk.Align.START)
     frame.set_margin_top(8)
-    frame.append(build_body(state, chosen, window, apply))
+    # Held out here, not inside build_body, because the body is what a switch
+    # replaces: the drawer's state and the user's place in the panes belong to
+    # the window, which is not going anywhere.
+    ui_state = {"expanded": False, "target": 0}
+    rebuild = _body_swapper(frame, chosen, window, apply, ui_state)
+    frame.append(build_body(state, chosen, window, apply, ui_state, rebuild))
 
     scrim = Gtk.Box()
     scrim.set_hexpand(True)
@@ -380,6 +380,73 @@ def _open(app, Gtk, LayerShell, state, chosen, connector, apply=None) -> None:
 
     window.set_child(scrim)
     window.present()
+
+
+def _list_boxes(widget):
+    """Every GtkListBox under `widget`, in tree order."""
+    from gi.repository import Gtk
+    found = []
+    child = widget.get_first_child()
+    while child is not None:
+        if isinstance(child, Gtk.ListBox):
+            found.append(child)
+        found.extend(_list_boxes(child))
+        child = child.get_next_sibling()
+    return found
+
+
+def _retire(body) -> None:
+    """Let go of a body about to be dropped, while it is still alive.
+
+    A GtkListBox announces `row-selected` as it is disposed — and a body that
+    has been swapped out is disposed whenever the garbage collector reaches it,
+    by which time CPython has cleared the closure cells its handlers were built
+    from. The handler then runs against a `view` that no longer holds anything
+    and prints a NameError traceback into Waybar's log, on every account switch.
+    Measured: one traceback per discarded body, reproducible with an explicit
+    gc.collect() after a swap and absent without one.
+
+    Unselecting now means the disposal has nothing left to announce. It happens
+    while the handlers are intact, so the one emission it does cause is the
+    ordinary one they were written for.
+    """
+    if body is None:
+        return
+    for box in _list_boxes(body):
+        box.unselect_all()
+
+
+def _body_swapper(frame, chosen, window, apply, ui_state):
+    """A `rebuild(slug)` that shows another account in this same window.
+
+    The frame holds exactly one child and everything account-shaped is inside
+    it, so a switch is a swap of that child: the layer surface, the scrim, the
+    Escape controller and the size negotiation are untouched, and nothing
+    unmaps. Switching used to end the window and have cmd_panel open a whole new
+    application on the next account, which is a visible blink for a change of
+    one dict.
+
+    It answers False so it can be handed straight to GLib.idle_add — and it has
+    to be, for the reason refresh_toggles does: the widget being destroyed is
+    the one whose `clicked` handler is running.
+
+    No re-tint. _load_tints() covers every colour any account can ask for, so
+    the provider installed before the first surface mapped is still right.
+    """
+    def rebuild(slug):
+        # The chip row is one chip per token in *this* account's format string,
+        # so the index means a different token either side of a switch. `icon`
+        # is the one target every account has. The focus flag belongs to a
+        # format entry that no longer exists.
+        ui_state["target"] = 0
+        ui_state.pop("focus_format", None)
+        _retire(frame.get_first_child())
+        _clear(frame)
+        frame.append(build_body(panel.build_state(slug), chosen, window,
+                                apply, ui_state, rebuild))
+        return False
+
+    return rebuild
 
 
 def _inside(rect, x, y) -> bool:
@@ -443,14 +510,20 @@ def _load_base(display) -> None:
 
 
 def _load_tints(display, state) -> None:
-    """One provider for every colour the panel needs, at APPLICATION priority.
+    """One provider for every colour the panel can need, at APPLICATION priority.
 
     Below the user's menu.css (USER), deliberately: these say what a colour *is*,
     and the stylesheet stays free to override anything it names.
+
+    Can, not does. This runs once, before the first surface maps, and a switch
+    then shows another account's reading through it — so the whole of usage.RAMP
+    goes in rather than the two values the account being opened happens to
+    reach. Every account's own colour is in state["accounts"] whichever one is
+    current, so a switch needs nothing added and no second provider.
     """
     from gi.repository import Gtk
     colors = {c for _name, c in paths.PALETTE}
-    colors |= {row["color"] for row in state["usage"] if row["color"]}
+    colors |= {value for _threshold, value in usage.RAMP}
     colors |= {a["color"] for a in state["accounts"]}
     css = "\n".join(
         f".{_tint(c)} {{ background: {c}; }}\n"
@@ -591,12 +664,19 @@ def _clear(listbox):
         child = nxt
 
 
-def build_body(state, chosen, window, apply=None):
+def build_body(state, chosen, window, apply=None, ui_state=None, rebuild=None):
     """The panel's root widget: header, verbs, search, the two panes, toggles.
 
     `state` is rendered, never consulted for a decision — panel.py already made
     them. The one thing held here is the unfiltered state, so that a keystroke
     refilters it instead of rescanning ~/.claude/projects.
+
+    `ui_state` is where the panel's own place is kept — the drawer, the colour
+    target, the query and the selected rows — because everything built here is
+    thrown away twice over: refresh_toggles() destroys the settings subtree on
+    every applied setting, and `rebuild` replaces this whole body on a switch.
+    `rebuild(slug)` is that swap; without one, a switch is a departure and the
+    window closes on it, which is what show()'s bare contract says.
     """
     from gi.repository import Gtk, GLib
 
@@ -605,14 +685,19 @@ def build_body(state, chosen, window, apply=None):
     # emit the very signals that call pick(), so a refresh would otherwise
     # re-apply everything it just rendered.
     filling_toggles = {"on": False}
-    # Outside the rebuilt subtree, for the same reason the search text and the
-    # selected session are: refresh_toggles() destroys everything inside it, so
-    # anything stored in there is lost the moment a checkbox is ticked.
-    ui_state = {"expanded": False, "target": 0}
+    ui_state = {"expanded": False, "target": 0} if ui_state is None else ui_state
 
     def pick(action):
         if apply is not None and action.kind in panel.STAYS_OPEN:
             if filling_toggles["on"]:
+                return
+            if action.kind == "switch":
+                if rebuild is None:
+                    chosen["action"] = action
+                    window.close()
+                    return
+                apply(action)       # cli's half: move the lock to the new slug
+                GLib.idle_add(rebuild, action.slug)
                 return
             apply(action)
             if action.kind not in panel.NO_REBUILD:
