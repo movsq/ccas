@@ -82,8 +82,8 @@ def test_format_persists_and_refreshes_the_bar(monkeypatch):
     make_account()
     fired = []
     monkeypatch.setattr(cli.waybar, "signal", lambda n: fired.append(n))
-    assert cli.main(["format", "work", "%icon"]) == 0
-    assert registry.find(registry.load(), "work")["format"] == "%icon"
+    assert cli.main(["format", "work", "%name"]) == 0
+    assert registry.find(registry.load(), "work")["format"] == "%name"
     assert fired == [1], "the label changed, so the module repaints"
 
 
@@ -99,7 +99,7 @@ def test_invisible_combination_notifies_once(monkeypatch):
     make_account()
     sent = []
     monkeypatch.setattr(cli, "notify", lambda text: sent.append(text))
-    cli.main(["format", "work", "%icon"])
+    cli.main(["format", "work", "   "])
     cli.main(["hide", "work", "on"])
     assert len(sent) == 1 and "invisible" in sent[0]
     cli.main(["hide", "work", "off"])
@@ -1569,8 +1569,8 @@ def test_format_shows_the_current_format(capsys):
 
 def test_format_sets_it():
     make_account()
-    assert cli.main(["format", "work", "%icon %5hused"]) == 0
-    assert registry.find(registry.load(), "work")["format"] == "%icon %5hused"
+    assert cli.main(["format", "work", "%name %5hused"]) == 0
+    assert registry.find(registry.load(), "work")["format"] == "%name %5hused"
 
 
 def test_format_warns_about_an_unknown_token_but_still_sets_it(capsys):
@@ -1596,12 +1596,20 @@ def test_setting_a_colour_to_a_dash_deletes_the_key():
     assert "%name" not in registry.find(registry.load(), "work")["format_colors"]
 
 
-def test_format_rejects_the_retired_colour_names():
-    """auto and dim were removed rather than migrated; the door they were typed
-    at has to say so."""
+def test_format_color_rejects_every_retired_colour_name():
+    """auto, dim and account each meant "work it out from something else".
+    All three are gone and none of them may come back through the CLI."""
     make_account()
-    assert cli.main(["format", "work", "--color", "%name", "auto"]) == 1
-    assert cli.main(["format", "work", "--color", "%name", "dim"]) == 1
+    for retired in ("auto", "dim", "account"):
+        assert cli.main(["format", "work", "--color", "%name", retired]) == 1
+
+
+def test_format_color_dash_still_clears_a_token():
+    make_account()
+    assert cli.main(["format", "work", "--color", "%name", "#89b4fa"]) == 0
+    assert cli.main(["format", "work", "--color", "%name", "-"]) == 0
+    account = registry.find(registry.load(), "work")
+    assert "%name" not in account["format_colors"]
 
 
 def test_format_rejects_a_bad_colour():
@@ -1612,7 +1620,7 @@ def test_format_rejects_a_bad_colour():
 def test_format_tokens_lists_them(capsys):
     assert cli.main(["format", "--tokens"]) == 0
     out = capsys.readouterr().out
-    for token in ("%icon", "%name", "%5hreset", "%7dquotaleft", "%5h"):
+    for token in ("%name", "%email", "%5hreset", "%7dquotaleft", "%5h"):
         assert token in out
 
 
@@ -1665,9 +1673,9 @@ def test_format_edit_prompts_for_a_new_format(monkeypatch):
     """The panel's button lands here: a bare `ccs format <slug>` printed and
     exited, so the terminal it opened closed before anything could be typed."""
     make_account()
-    monkeypatch.setattr(cli.pickers, "prompt_edit", lambda *_: "%icon %5hleft")
+    monkeypatch.setattr(cli.pickers, "prompt_edit", lambda *_: "%name %5hleft")
     assert cli.main(["format", "work", "--edit"]) == 0
-    assert registry.find(registry.load(), "work")["format"] == "%icon %5hleft"
+    assert registry.find(registry.load(), "work")["format"] == "%name %5hleft"
 
 
 def test_format_edit_seeds_the_prompt_with_the_current_format(monkeypatch):

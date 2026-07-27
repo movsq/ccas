@@ -286,7 +286,7 @@ def test_doctor_reports_an_unknown_token():
 
 def test_a_known_format_is_not_reported():
     reg = healthy()
-    registry.set_field(reg, "work", "format", "%icon %name %5htimeleft")
+    registry.set_field(reg, "work", "format", "%name %5htimeleft")
     registry.save(reg)
     assert failures(registry.load()) == []
 

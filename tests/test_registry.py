@@ -196,8 +196,8 @@ def test_two_new_accounts_do_not_share_a_colour():
 def test_set_field_validates_the_format():
     reg = registry.load()
     registry.add(reg, "work", "w@example.com", None)
-    registry.set_field(reg, "work", "format", "%icon %5hused")
-    assert registry.find(reg, "work")["format"] == "%icon %5hused"
+    registry.set_field(reg, "work", "format", "%name %5hused")
+    assert registry.find(reg, "work")["format"] == "%name %5hused"
     with pytest.raises(ValueError):
         registry.set_field(reg, "work", "format", 7)
 

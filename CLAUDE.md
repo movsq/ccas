@@ -474,7 +474,7 @@ ccs dangerous [<slug>]           # show / toggle --dangerously-skip-permissions 
 ccs color <slug> <#rrggbb|n>     # the widget's colour; a palette index is shorthand
 ccs format <slug> ['<fmt>']      # show / set the format string — the whole label
 ccs format --tokens              # every token, with what it renders
-ccs format <slug> --color %5h account  # one token's colour: account, #rrggbb, or - to clear
+ccs format <slug> --color %5h '#89b4fa'  # one token's colour: #rrggbb, or - to clear
 ccs usage [<slug>]               # both quota windows, their age and their source
 ccs statusline [<delegate> …]    # the recording hook; wired by hand in ~/.claude/settings.json
 ccs poll [<slug>] [--force]      # fetch usage with no session running; what the systemd timer runs

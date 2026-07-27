@@ -148,8 +148,8 @@ def test_is_gui_still_answers_which_door_was_used(monkeypatch):
 
 
 def test_prompt_edit_returns_the_typed_text(monkeypatch):
-    monkeypatch.setattr("builtins.input", lambda *_: "  %icon %name  ")
-    assert pickers.prompt_edit("format:", "%name") == "%icon %name"
+    monkeypatch.setattr("builtins.input", lambda *_: "  %email %name  ")
+    assert pickers.prompt_edit("format:", "%name") == "%email %name"
 
 
 def test_prompt_edit_reads_a_blank_line_as_cancel(monkeypatch):
