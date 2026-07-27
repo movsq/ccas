@@ -604,8 +604,14 @@ def build_body(state, chosen, window, apply=None):
         window.close()
     root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
+    # SLIDE_UP, and it grows over the panes rather than above them: the card is
+    # a fixed WIDTH, HEIGHT, so a drawer that took its own row stole the height
+    # from the only thing that expands — the session list shrank to about one
+    # row every time Settings was opened. Overlaid, the panes keep their size and
+    # are simply covered while the drawer is out.
     revealer = Gtk.Revealer()
-    revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+    revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+    revealer.set_valign(Gtk.Align.END)
     root.append(_build_header(state, pick, window.close))
 
     # ── verbs ────────────────────────────────────────────────────────────
@@ -639,7 +645,13 @@ def build_body(state, chosen, window, apply=None):
     panes.set_end_child(right)
     panes.set_position(320)
     panes.set_vexpand(True)
-    root.append(panes)
+    # The drawer is laid over this, anchored to its bottom edge, so it appears
+    # to slide up out of the Settings row directly beneath.
+    stack = Gtk.Overlay()
+    stack.set_child(panes)
+    stack.set_vexpand(True)
+    stack.add_overlay(revealer)
+    root.append(stack)
 
     # `view` is the filtered state; `state` stays whole so a narrowed search can
     # widen again without a rescan.
@@ -756,7 +768,10 @@ def build_body(state, chosen, window, apply=None):
     # in the panel, and ticking a checkbox is no reason to lose either.
     toggles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
+    # Opaque, because it is drawn on top of the panes now: menu.css gives
+    # .ccas-drawer the panel's own background.
     drawer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    drawer.add_css_class("ccas-drawer")
 
     def refresh_toggles():
         filling_toggles["on"] = True
@@ -782,7 +797,6 @@ def build_body(state, chosen, window, apply=None):
     # A rebuild restores the drawer rather than closing it under the user's
     # hand: refresh_toggles() runs on every applied setting.
     revealer.set_reveal_child(ui_state["expanded"])
-    root.append(revealer)
 
     fill_projects()
     # After the fills, so nothing that runs during them can steal it back.
@@ -888,7 +902,12 @@ def _build_color_editor(state, pick, ui_state):
         provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
 
     chips = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    for name in (fmt.AUTO, fmt.DIM, fmt.ACCOUNT):
+    # ACCOUNT alone. `dim` was a second way to say what the saturation slider
+    # already says — drag it to zero and the token greys out — and `auto` was a
+    # reset the sliders cannot express, so a button that undid the thing beside
+    # it. Both remain on `ccs format --color`, which is where a format string is
+    # edited anyway.
+    for name in (fmt.ACCOUNT,):
         chip = Gtk.Button(label=name)
         # Its own class, not the header's .ccas-chip: they are the same shape
         # but the account chip is a row and this is a button the size of a

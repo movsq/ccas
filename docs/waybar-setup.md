@@ -48,7 +48,9 @@ needs reinstalling. The handles are `.ccas-scrim` (the full-output surface
 behind the panel, dim it or make it `transparent`), `.ccas-panel`, and one class
 per part: `.ccas-header`, `.ccas-chip`, `.ccas-usage-bar`, `.ccas-verb`,
 `#ccas-search`, `.ccas-panes`, `.ccas-project-row`, `.ccas-session-row`,
-`.ccas-toggles`, `.ccas-swatch`, `.ccas-manage`, `.ccas-close`.
+`.ccas-toggles`, `.ccas-swatch`, `.ccas-manage`, `.ccas-close`, and
+`.ccas-drawer` (the Settings drawer, which is drawn *over* the panes — keep it
+opaque or the session list shows through it).
 
 Unlike the bar, the panel is its own process and does not inherit Waybar's
 FontAwesome-first font stack, so the glyph rule below does not apply to it.
@@ -157,9 +159,12 @@ ccs format vsed --color %5h auto      # back to the default
 ```
 
 `auto` deletes the entry rather than storing a value — absent means auto, so
-`format_colors` only ever holds deviations. The panel has the same control: with
-the mode set to `custom`, a **Colour of** row appears under Widget
-customisation with the format's own tokens in a dropdown.
+`format_colors` only ever holds deviations. The panel's Settings drawer has a
+**Colour of** row: a dropdown listing the widget itself and then every token in
+this account's format, with hue and saturation sliders under it. `auto` and
+`dim` are not offered there — dragging saturation to zero *is* dim, and auto is
+an undo the sliders cannot express — so those two stay a `ccs format --color`
+job.
 
 ### Getting the old bar back
 

@@ -153,3 +153,8 @@
 .ccas-settings-title { color: #cdd6f4; }
 .ccas-settings-hint  { color: #7f849c; font-size: 0.82em; }
 .ccas-settings-arrow { color: #7f849c; }
+
+/* The Settings drawer, which is drawn *over* the panes rather than above them,
+   so opening it does not steal the height the session list expands into. It
+   therefore has to be opaque — an overlay child inherits no background. */
+.ccas-drawer { background: #1e1e2e; border-top: 1px solid #313244; }
