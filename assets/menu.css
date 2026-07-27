@@ -146,3 +146,10 @@
               #94e2d5 50%, #89b4fa 67%, #cba6f7 83%, #f38ba8 100%); }
 .ccas-slider slider { min-width: 14px; min-height: 14px; border-radius: 999px;
                       background: #cdd6f4; }
+
+.ccas-settings-row   { padding: 8px 16px; border-radius: 8px;
+                       background: transparent; border: none; }
+.ccas-settings-row:hover { background: rgba(255, 255, 255, 0.06); }
+.ccas-settings-title { color: #cdd6f4; }
+.ccas-settings-hint  { color: #7f849c; font-size: 0.82em; }
+.ccas-settings-arrow { color: #7f849c; }

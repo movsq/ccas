@@ -466,7 +466,7 @@ def _dot(color):
     return dot
 
 
-def _build_header(state, pick, reveal_toggle, close):
+def _build_header(state, pick, close):
     from gi.repository import Gtk
 
     header = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -495,11 +495,6 @@ def _build_header(state, pick, reveal_toggle, close):
     spacer = Gtk.Box()
     spacer.set_hexpand(True)
     top.append(spacer)
-
-    gear = Gtk.Button(label="⚙")
-    gear.add_css_class("ccas-gear")
-    gear.connect("clicked", lambda _b: reveal_toggle())
-    top.append(gear)
 
     # Escape and a click outside both close it, but neither is visible. A menu
     # with no way out you can see is one you have to be told how to leave.
@@ -591,6 +586,10 @@ def build_body(state, chosen, window, apply=None):
     # emit the very signals that call pick(), so a refresh would otherwise
     # re-apply everything it just rendered.
     filling_toggles = {"on": False}
+    # Outside the rebuilt subtree, for the same reason the search text and the
+    # selected session are: refresh_toggles() destroys everything inside it, so
+    # anything stored in there is lost the moment a checkbox is ticked.
+    ui_state = {"expanded": False, "target": 0}
 
     def pick(action):
         if apply is not None and action.kind in panel.STAYS_OPEN:
@@ -607,10 +606,7 @@ def build_body(state, chosen, window, apply=None):
 
     revealer = Gtk.Revealer()
     revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
-    root.append(_build_header(
-        state, pick, lambda: revealer.set_reveal_child(
-            not revealer.get_reveal_child()),
-        window.close))
+    root.append(_build_header(state, pick, window.close))
 
     # ── verbs ────────────────────────────────────────────────────────────
     verbs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -760,20 +756,32 @@ def build_body(state, chosen, window, apply=None):
     # in the panel, and ticking a checkbox is no reason to lose either.
     toggles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
+    drawer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+
     def refresh_toggles():
         filling_toggles["on"] = True
         try:
             _clear(toggles)
-            # Fresh, not the captured `state`: display mode decides whether the
-            # format row is there at all, and the account is on disk now.
-            toggles.append(_build_toggles(panel.build_state(slug), pick))
+            _clear(drawer)
+            # Fresh, not the captured `state`: the account is on disk now.
+            visible, hidden = _build_toggles(panel.build_state(slug), pick,
+                                             ui_state)
+            toggles.append(visible)
+            drawer.append(hidden)
         finally:
             filling_toggles["on"] = False
         return False  # a one-shot idle callback
 
-    toggles.append(_build_toggles(state, pick))
+    visible, hidden = _build_toggles(state, pick, ui_state)
+    toggles.append(visible)
+    drawer.append(hidden)
     root.append(toggles)
-    revealer.set_child(_build_manage(state, pick))
+    root.append(_build_settings_row(lambda: revealer.set_reveal_child(
+        not revealer.get_reveal_child()), ui_state))
+    revealer.set_child(drawer)
+    # A rebuild restores the drawer rather than closing it under the user's
+    # hand: refresh_toggles() runs on every applied setting.
+    revealer.set_reveal_child(ui_state["expanded"])
     root.append(revealer)
 
     fill_projects()
@@ -782,11 +790,17 @@ def build_body(state, chosen, window, apply=None):
     return root
 
 
-def _build_toggles(state, pick):
-    """Every switchable thing, with its state readable without opening anything.
+def _build_toggles(state, pick, ui_state):
+    """(always visible, inside the drawer). Two boxes, not one.
 
-    That is the panel's whole argument over the cascade: whether skip-permissions
-    is on used to be knowable only by opening a submenu to read a mark.
+    Every switchable thing, with its state readable without opening anything —
+    that is the panel's whole argument over the cascade, where whether
+    skip-permissions is on was knowable only by opening a submenu to read a
+    mark. The split is by whether a setting bears on the click being made:
+    skip permissions changes how the session this panel is about to launch will
+    run, so it stays on the card. `headless` only affects `ccs -p` from a
+    terminal and is never relevant to a panel click, so it goes in the drawer
+    with the appearance settings.
 
     Real GtkCheckButtons, not label.MARK_ON/MARK_OFF. That pair exists to survive
     Waybar's FontAwesome-first font stack, which this process does not inherit.
@@ -806,19 +820,11 @@ def _build_toggles(state, pick):
                       pick(panel.Action(k, slug, None)))
         return check
 
-    # How this account *runs* — above the rule. Everything below the rule is
-    # how its widget *looks*, and the two were one undifferentiated row until
-    # the format tokens made the second half three widgets deep.
-    checks = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
-    checks.append(toggle("headless runner", "headless", "headless"))
-    checks.append(toggle("skip permissions", "dangerous", "dangerous"))
-    box.append(checks)
+    outside = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+    outside.add_css_class("ccas-toggles")
+    outside.append(toggle("skip permissions", "dangerous", "dangerous"))
 
-    box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
-    heading = Gtk.Label(label="Widget customisation", xalign=0)
-    heading.add_css_class("ccas-section")
-    box.append(heading)
-
+    box.append(toggle("headless runner", "headless", "headless"))
     box.append(toggle("hide the icon", "hide_icon", "hide_icon"))
 
     bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
@@ -829,11 +835,12 @@ def _build_toggles(state, pick):
     bottom.append(edit)
 
     box.append(bottom)
-    box.append(_build_color_editor(state, pick))
-    return box
+    box.append(_build_color_editor(state, pick, ui_state))
+    box.append(_build_manage(state, pick))
+    return outside, box
 
 
-def _build_color_editor(state, pick):
+def _build_color_editor(state, pick, ui_state):
     """One dropdown, two sliders, one preview. The two colour rows this replaces
     showed the same eight swatches under the word Colour and meant different
     things — the account's colour and one token's — which is what made the
@@ -958,7 +965,19 @@ def _build_color_editor(state, pick):
 
     hue.connect("value-changed", on_value)
     sat.connect("value-changed", on_value)
-    picker.connect("notify::selected", seed)
+    # Restored from outside the rebuilt subtree: refresh_toggles() destroys this
+    # dropdown on every applied setting, and reopening on "the widget" after
+    # every tick would lose the target the user picked. set_selected() emits
+    # notify::selected, so the seeding runs once on build — harmless, because
+    # seed() only moves sliders and never commits. That separation is why seed
+    # and _commit are two functions.
+    picker.set_selected(min(ui_state["target"], len(targets) - 1))
+
+    def on_target(_d, _p):
+        ui_state["target"] = picker.get_selected()
+        seed()
+
+    picker.connect("notify::selected", on_target)
 
     entry = Gtk.Entry(placeholder_text="#rrggbb", max_length=7, width_chars=8)
     # The escape hatch for a colour the sliders cannot reach: they hold
@@ -968,6 +987,41 @@ def _build_color_editor(state, pick):
 
     seed()
     return box
+
+
+def _build_settings_row(reveal_toggle, ui_state):
+    """A labelled disclosure, not a gear. It hides three account verbs and every
+    widget setting, and an unlabelled icon is a guess about which.
+
+    The two glyphs are drawn by the panel's own stylesheet, not Waybar's, so the
+    vetted-glyph rule does not reach here — this process has no FontAwesome in
+    it at all.
+    """
+    from gi.repository import Gtk
+
+    button = Gtk.Button()
+    button.add_css_class("ccas-settings-row")
+    inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+    arrow = Gtk.Label(label="⌄" if ui_state["expanded"] else "›")
+    arrow.add_css_class("ccas-settings-arrow")
+    text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+    title = Gtk.Label(label="Settings", xalign=0)
+    title.add_css_class("ccas-settings-title")
+    hint = Gtk.Label(label="Account and widget customisation", xalign=0)
+    hint.add_css_class("ccas-settings-hint")
+    text.append(title)
+    text.append(hint)
+    inner.append(arrow)
+    inner.append(text)
+    button.set_child(inner)
+
+    def toggled(_b):
+        ui_state["expanded"] = not ui_state["expanded"]
+        arrow.set_label("⌄" if ui_state["expanded"] else "›")
+        reveal_toggle()
+
+    button.connect("clicked", toggled)
+    return button
 
 
 def _build_manage(state, pick):
