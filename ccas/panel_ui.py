@@ -876,6 +876,21 @@ def _build_toggles(state, pick, ui_state):
     box.append(toggle("headless runner", "headless", "headless"))
     box.append(toggle("hide the icon", "hide_icon", "hide_icon"))
 
+    # A title and hint pair, reusing the Settings row's own classes rather than
+    # inventing a second pair that would drift from it. It covers the format
+    # editor and the colour chips: the format string decides which tokens the
+    # chip row offers, so they are one subject and read top down.
+    heading = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+    heading.add_css_class("ccas-section-heading")
+    title = Gtk.Label(label="Bar label", xalign=0)
+    title.add_css_class("ccas-settings-title")
+    hint = Gtk.Label(label="What this account's widget says, and how it is "
+                           "coloured", xalign=0)
+    hint.add_css_class("ccas-settings-hint")
+    heading.append(title)
+    heading.append(hint)
+    box.append(heading)
+
     box.append(_build_format_editor(state, pick, ui_state))
     box.append(_build_color_editor(state, pick, ui_state))
     box.append(_build_manage(state, pick))

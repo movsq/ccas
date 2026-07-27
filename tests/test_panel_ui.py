@@ -264,3 +264,30 @@ def test_the_rebuilt_editor_takes_the_focus_flag_back(gtk, monkeypatch):
     _entry, _chips, _picked, ui_state = _format_editor(gtk, monkeypatch,
                                                        ui_state=ui_state)
     assert ui_state["focus_format"] is False
+
+
+def test_the_widget_settings_carry_a_heading(gtk, monkeypatch):
+    """A bare text field between two checkboxes says nothing about what it
+    belongs to. The heading covers the format editor and the colour chips —
+    they are one subject: what the widget says and how it is coloured."""
+    monkeypatch.setattr(panel, "format_previewer",
+                        lambda slug, now=None: lambda text: (text, []))
+    _visible, hidden = panel_ui._build_toggles(
+        {"slug": "vsed", "format": "%name", "headless": False,
+         "dangerous": False, "hide_icon": False,
+         "color_targets": TARGETS},
+        lambda _a: None, {"target": 0, "expanded": True})
+
+    found = []
+
+    def walk(widget):
+        child = widget.get_first_child()
+        while child is not None:
+            if isinstance(child, gtk.Label):
+                found.append(child.get_label())
+            walk(child)
+            child = child.get_next_sibling()
+
+    walk(hidden)
+    assert "Bar label" in found
+    assert "What this account's widget says, and how it is coloured" in found

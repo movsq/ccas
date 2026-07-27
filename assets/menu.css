@@ -159,6 +159,33 @@
 .ccas-slider slider { min-width: 14px; min-height: 14px; border-radius: 999px;
                       background: #cdd6f4; }
 
+/* The format editor. Its entry inherits the .ccas-color-editor entry rule's
+ * shape deliberately — one text field in this drawer, styled one way. */
+.ccas-format-editor { padding: 2px 0 6px 0; }
+.ccas-format-editor > box > label,
+.ccas-format-editor > label { color: #9399b2; }
+.ccas-format-editor entry {
+  min-height: 22px; padding: 2px 10px; border-radius: 8px;
+  border: none; background: rgba(255, 255, 255, 0.06);
+  font-family: monospace; font-size: 0.85em;
+}
+.ccas-format-editor entry:focus-within { background: rgba(255, 255, 255, 0.10); }
+/* The preview is the bar's label, so it gets the bar's own background rather
+ * than the panel's — a white token on #1e1e2e is not what the widget shows. */
+.ccas-format-preview {
+  background: #353535; border-radius: 6px; padding: 2px 8px;
+  margin-left: 80px;
+}
+.ccas-format-unknown { color: #f9e2af; font-size: 0.82em; margin-left: 80px; }
+/* The insert chips: quieter than the colour chips, which carry a value. */
+.ccas-token-chip {
+  min-height: 20px; padding: 1px 8px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06); color: #9399b2;
+  border: none; font-size: 0.82em;
+}
+.ccas-token-chip:hover { background: rgba(255, 255, 255, 0.12); color: #cdd6f4; }
+.ccas-section-heading { padding: 8px 0 2px 0; }
+
 .ccas-settings-row   { padding: 8px 16px; border-radius: 8px;
                        background: transparent; border: none; }
 .ccas-settings-row:hover { background: rgba(255, 255, 255, 0.06); }
