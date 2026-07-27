@@ -323,8 +323,7 @@ moment it exists, the same stance CCAS takes toward `style.css`.
 
 ## Working style
 
-- TDD, inline (the user explicitly declined subagent-driven development):
-  failing test → verify it fails → implement → verify it passes → commit.
+- TDD: failing test → verify it fails → implement → verify it passes → commit.
 - One commit per coherent change. **Never co-sign or co-author** (global rule).
 - Verify on the real system rather than reasoning about it: `./install.sh`,
   `ccs render <slug>`, read `~/.config/waybar/config.jsonc`. `grim` plus PIL

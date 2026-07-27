@@ -2,8 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to
 > implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
-> tracking. Subagent-driven development is **not** used in this repo — the user
-> declined it (see CLAUDE.md, Working style).
+> tracking. Execution for *this* plan is inline, by the user's choice — Tasks 7
+> and 8 need a live panel on screen and a pointer driven at it, which is not
+> work to hand to a subagent.
 
 **Goal:** Make `custom` the only display mode, replace the panel's two swatch
 rows with a single hue/saturation slider editor, and move account and widget
