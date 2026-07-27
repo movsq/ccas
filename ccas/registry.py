@@ -29,6 +29,14 @@ def load() -> dict:
         # Added after the first release; every read path assumes it is present.
         account.setdefault("headless", False)
         account.setdefault("dangerous", False)
+        # Written as an index before colours became continuous. Normalised on
+        # read so no pass over accounts.json is needed at install — rewriting a
+        # whole registry to fix a field is the blind overwrite that "read the
+        # live state before you write it" exists to prevent.
+        if isinstance(account.get("color"), int):
+            index = account["color"]
+            account["color"] = paths.PALETTE[index][1] \
+                if 0 <= index < len(paths.PALETTE) else paths.PALETTE[0][1]
     return reg
 
 
@@ -70,7 +78,8 @@ def add(reg: dict, slug: str, email: str, nickname):
     if find(reg, slug):
         raise ValueError(f"account already exists: {slug}")
     used = {a["color"] for a in reg["accounts"]}
-    color = next((c for c in range(len(paths.PALETTE)) if c not in used), 0)
+    color = next((h for _name, h in paths.PALETTE if h not in used),
+                 paths.PALETTE[0][1])
     account = {
         "slug": slug,
         "nickname": nickname,
@@ -123,8 +132,18 @@ def set_field(reg: dict, slug: str, field: str, value) -> None:
         raise KeyError(slug)
     if field == "display" and value not in paths.DISPLAY_MODES:
         raise ValueError(f"invalid display mode: {value}")
-    if field == "color" and not (0 <= int(value) < len(paths.PALETTE)):
-        raise ValueError(f"invalid colour index: {value}")
+    if field == "color":
+        # An int is the shape the pre-hex registry and `ccs color <slug> 3`
+        # both use; it is normalised here rather than rejected, so the palette
+        # keeps working as a set of shorthands.
+        if isinstance(value, int) and not isinstance(value, bool):
+            if not 0 <= value < len(paths.PALETTE):
+                raise ValueError(f"invalid colour index: {value}")
+            value = paths.PALETTE[value][1]
+        # HEX, not valid_color: auto/dim/account are token values and mean
+        # nothing for the widget's own colour.
+        elif not (isinstance(value, str) and format.HEX.match(value)):
+            raise ValueError(f"invalid colour: {value!r}")
     # An unknown *token* is deliberately not checked: retiring a token in a later
     # version would turn a stored format into a hard error with nothing on the
     # bar, where rendering it literally is visible and self-explaining.

@@ -114,7 +114,7 @@ def test_invisible_combination_notifies_once(monkeypatch):
 def test_color_persists():
     make_account()
     assert cli.main(["color", "work", "5"]) == 0
-    assert registry.find(registry.load(), "work")["color"] == 5
+    assert registry.find(registry.load(), "work")["color"] == paths.PALETTE[5][1]
 
 
 def test_a_setting_change_signals_the_label_and_does_not_reload(monkeypatch):
@@ -529,7 +529,7 @@ def test_colour_submenu_marks_the_current_colour_and_sets_the_new_one(monkeypatc
     monkeypatch.setattr(cli.pickers, "choose", fake_choose)
     assert cli.cmd_mode_menu("work", False) == 0
     assert f"{cli.label.MARK_ON} {paths.PALETTE[0][0]}" in seen[1], seen[1]
-    assert registry.find(registry.load(), "work")["color"] == 5
+    assert registry.find(registry.load(), "work")["color"] == paths.PALETTE[5][1]
 
 
 def test_hide_icon_toggles_in_place_and_shows_its_state(monkeypatch):
@@ -561,7 +561,7 @@ def test_a_cancelled_submenu_changes_nothing(monkeypatch):
 
     monkeypatch.setattr(cli.pickers, "choose", fake_choose)
     assert cli.cmd_mode_menu("work", False) == 0
-    assert registry.find(registry.load(), "work")["color"] == 0
+    assert registry.find(registry.load(), "work")["color"] == paths.PALETTE[0][1]
 
 
 def test_a_leading_flag_is_passed_through_to_claude(monkeypatch):

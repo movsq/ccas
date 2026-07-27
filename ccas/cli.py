@@ -361,9 +361,8 @@ def cmd_list() -> int:
         star = "*" if reg["default"] == a["slug"] else " "
         # Permission bypass is worth seeing without opening a menu.
         bang = "!" if a.get("dangerous") else " "
-        color = paths.PALETTE[a["color"]][0]
         print(f"{star}{bang} {i}  {a['slug']:<14} {a['email']:<28} "
-              f"{color:<7} {a['display']}")
+              f"{a['color']}")
     return 0
 
 
@@ -556,13 +555,16 @@ def _display_menu(reg, slug: str, gui: bool) -> int:
 
 
 def _color_menu(reg, slug: str, gui: bool) -> int:
+    """The terminal keeps the eight presets. fzf cannot grow a slider, so this
+    door offers the palette and the panel offers the continuous editor; the two
+    doors have always differed in toolkit rather than in verb."""
     account = registry.find(reg, slug)
-    rows = [f"{label.MARK_ON if account['color'] == i else label.MARK_OFF} {name}"
-            for i, (name, _hex) in enumerate(paths.PALETTE)]
+    rows = [f"{label.MARK_ON if account['color'] == h else label.MARK_OFF} {name}"
+            for name, h in paths.PALETTE]
     choice = pickers.choose("color", rows)
     if choice is None:
         return 0
-    return _mutate(slug, "color", rows.index(choice))
+    return _mutate(slug, "color", paths.PALETTE[rows.index(choice)][1])
 
 
 def cmd_panel(slug: str) -> int:

@@ -63,7 +63,7 @@ def _accounts(reg: dict, slug: str):
         "slug": a["slug"],
         "name": label.display_name(a),
         "email": a.get("email") or "",
-        "color": paths.PALETTE[a["color"]][1],
+        "color": a["color"],
         "current": a["slug"] == slug,
     } for a in reg["accounts"]]
 

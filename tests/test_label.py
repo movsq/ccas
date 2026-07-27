@@ -4,7 +4,7 @@ import ccas.label as label
 def account(**kw):
     base = {
         "slug": "work", "nickname": "work", "email": "w@example.com",
-        "color": 1, "display": "nickname", "hide_icon": False,
+        "color": "#f38ba8", "display": "nickname", "hide_icon": False,
         "warned_invisible": False, "signal": 1,
     }
     base.update(kw)
@@ -57,8 +57,8 @@ def test_nickname_is_pango_escaped():
 
 
 def test_colour_index_selects_palette_entry():
-    assert "#fab387" in label.render(account(color=0), 1)
-    assert "#f5c2e7" in label.render(account(color=7), 1)
+    assert "#fab387" in label.render(account(color="#fab387"), 1)
+    assert "#f5c2e7" in label.render(account(color="#f5c2e7"), 1)
 
 
 def test_warning_fires_once_on_entering_the_combination():

@@ -29,12 +29,12 @@ def test_load_returns_empty_registry_when_absent():
 def test_add_assigns_colour_signal_and_default():
     reg = registry.load()
     a = registry.add(reg, "personal", "p@example.com", None)
-    assert a["color"] == 0 and a["signal"] == 1
+    assert a["color"] == paths.PALETTE[0][1] and a["signal"] == 1
     assert a["display"] == "nickname" and a["hide_icon"] is False
     assert a["warned_invisible"] is False
     assert reg["default"] == "personal"
     b = registry.add(reg, "work", "w@example.com", "work")
-    assert b["color"] == 1 and b["signal"] == 2
+    assert b["color"] == paths.PALETTE[1][1] and b["signal"] == 2
     assert reg["default"] == "personal"
 
 
@@ -96,7 +96,8 @@ def test_colour_assignment_wraps_past_palette_end():
     reg = registry.load()
     for i in range(10):
         registry.add(reg, f"a{i}", f"a{i}@example.com", None)
-    assert all(0 <= a["color"] < 8 for a in reg["accounts"])
+    assert all(a["color"] in [h for _n, h in paths.PALETTE]
+               for a in reg["accounts"])
 
 
 def test_load_backfills_the_headless_flag_on_older_registries():
@@ -215,3 +216,58 @@ def test_set_field_validates_the_colours():
     for bad in ({"%name": "red"}, {"%name": "' x='y"}, "not a dict"):
         with pytest.raises(ValueError):
             registry.set_field(reg, "work", "format_colors", bad)
+
+
+def _write_registry(reg: dict) -> None:
+    """The on-disk shape, for the read-path migrations. Matches what the two
+    older tests above do by hand; they predate needing it more than once."""
+    paths.accounts_root().mkdir(parents=True, exist_ok=True)
+    paths.registry_file().write_text(json.dumps(reg), encoding="utf-8")
+
+
+def test_add_assigns_an_unused_palette_hex():
+    """New accounts still walk the palette, but store what they picked rather
+    than where it sat: paths.PALETTE is a table of starting points now, not an
+    index space."""
+    reg = {"default": None, "accounts": []}
+    first = registry.add(reg, "a", "a@x", None)
+    second = registry.add(reg, "b", "b@x", None)
+    assert first["color"] == paths.PALETTE[0][1]
+    assert second["color"] == paths.PALETTE[1][1]
+
+
+def test_set_field_accepts_a_hex_colour():
+    reg = {"default": None, "accounts": []}
+    registry.add(reg, "a", "a@x", None)
+    registry.set_field(reg, "a", "color", "#123abc")
+    assert registry.find(reg, "a")["color"] == "#123abc"
+
+
+def test_set_field_normalises_an_integer_colour():
+    """`ccs color <slug> 3` predates hex storage and still has to land."""
+    reg = {"default": None, "accounts": []}
+    registry.add(reg, "a", "a@x", None)
+    registry.set_field(reg, "a", "color", 3)
+    assert registry.find(reg, "a")["color"] == paths.PALETTE[3][1]
+
+
+def test_set_field_rejects_a_token_colour_value():
+    """auto/dim/account mean something for a token and nothing for the widget's
+    own colour, so the widget validates against HEX and not valid_color."""
+    reg = {"default": None, "accounts": []}
+    registry.add(reg, "a", "a@x", None)
+    for bad in ("auto", "dim", "account", "#12", "blue"):
+        with pytest.raises(ValueError):
+            registry.set_field(reg, "a", "color", bad)
+
+
+def test_load_normalises_an_integer_colour_written_by_the_old_code():
+    """A registry on disk from before this change is read, not rewritten: the
+    normalisation is on the read path so nothing has to migrate at install."""
+    _write_registry({"default": "a", "accounts": [
+        {"slug": "a", "email": "a@x", "nickname": None, "color": 2,
+         "hide_icon": False, "format": "%icon", "format_colors": {},
+         "signal": 1},
+    ]})
+    reg = registry.load()
+    assert reg["accounts"][0]["color"] == paths.PALETTE[2][1]

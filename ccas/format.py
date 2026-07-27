@@ -68,7 +68,7 @@ def _icon(ctx) -> str:
     if ctx["account"]["hide_icon"]:
         attrs = "alpha='1'"
     elif chosen == AUTO:
-        attrs = f"color='{paths.PALETTE[ctx['account']['color']][1]}'"
+        attrs = f"color='{ctx['account']['color']}'"
     elif chosen == DIM:
         attrs = f"alpha='{usage_mod.DIM}'"
     else:

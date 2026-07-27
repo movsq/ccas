@@ -46,7 +46,7 @@ def render(account: dict, index: int, usage=None, now=None) -> str:
         from . import format as fmt
         return fmt.render(account, index, usage, now)
 
-    color = paths.PALETTE[account["color"]][1]
+    color = account["color"]
     if account["hide_icon"]:
         icon = f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' alpha='1'>{paths.GLYPH}</span>"
     else:
