@@ -169,6 +169,20 @@ def color_targets(account: dict) -> list:
     return targets
 
 
+def verb_labels(project):
+    """The two launch buttons' text. Wording, so it lives here — panel_ui sets
+    the strings it is handed, the same split the chip row's labels take.
+
+    Both verbs act in the selected project, so both name it. `Resume last` named
+    no target at all, which is the one thing worth knowing before pressing a
+    button that opens a session somewhere.
+    """
+    if project is None:
+        return "New session", "Resume last session"
+    return (f"New session in {project['short']}",
+            f"Resume last session ({project['short']})")
+
+
 def build_state(slug: str, now=None) -> dict:
     """Everything the panel renders, as plain data.
 

@@ -872,3 +872,18 @@ def test_color_targets_are_labelled_by_name_not_by_token():
     assert [t["label"] for t in targets] == \
         ["icon", fmt.NAMES["%email"], fmt.NAMES["%5hused"]]
     assert [t["token"] for t in targets] == [None, "%email", "%5hused"]
+
+
+def test_the_verbs_name_the_project_they_would_act_in():
+    """Both buttons launch into the selected project, so both say which one.
+    "Resume last" named no target at all — the one thing you want to know
+    before pressing a button that opens a session somewhere."""
+    project = {"path": "/home/x/ccas", "short": "~/ccas"}
+    assert panel.verb_labels(project) == (
+        "New session in ~/ccas", "Resume last session (~/ccas)")
+
+
+def test_the_verbs_drop_the_project_when_there_is_none():
+    """Nothing selected — a fresh account with no history. A parenthesis with
+    nothing in it reads as a bug."""
+    assert panel.verb_labels(None) == ("New session", "Resume last session")

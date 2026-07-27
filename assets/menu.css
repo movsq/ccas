@@ -54,6 +54,9 @@
 
 /* ── launch verbs ───────────────────────────────────────────────────────── */
 
+/* The same 16px gutter the header, the search entry and the panes keep. The row
+   had none, so the first button sat flush against the window's edge. */
+.ccas-verbs         { margin: 0 16px; }
 .ccas-verb          { padding: 10px 20px; border-radius: 8px;
                       background: rgba(255, 255, 255, 0.06); border: none; }
 .ccas-verb:hover    { background: rgba(255, 255, 255, 0.12); }

@@ -624,7 +624,9 @@ def build_body(state, chosen, window, apply=None):
     verbs.add_css_class("ccas-verbs")
     new_button = Gtk.Button()
     new_button.add_css_class("ccas-verb")
-    resume_button = Gtk.Button(label="Resume last")
+    # Both labels are set by sync_verbs(), which runs before the window is
+    # presented — they name the selected project and change with it.
+    resume_button = Gtk.Button()
     resume_button.add_css_class("ccas-verb")
     verbs.append(new_button)
     verbs.append(resume_button)
@@ -681,9 +683,9 @@ def build_body(state, chosen, window, apply=None):
     def sync_verbs():
         project = next((p for p in view["state"]["projects"]
                         if p["path"] == view["project"]), None)
-        new_button.set_label("New session"
-                             if project is None
-                             else f"New session in {project['short']}")
+        new_label, resume_label = panel.verb_labels(project)
+        new_button.set_label(new_label)
+        resume_button.set_label(resume_label)
         new_button.set_sensitive(project is not None)
         resume_button.set_sensitive(selected_session() is not None)
 
