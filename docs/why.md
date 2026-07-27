@@ -1093,3 +1093,55 @@ That is the trap. The design was working exactly as written, and what it wrote
 was the bug. The user's own screenshot, timestamped 14:14, is what pinned the
 before-state against the 14:50:32 mtime; CCAS writes only on a change, so that
 mtime is not when a file was touched, it is the second the fact changed.
+
+## Four things the inline format editor was measured into (2026-07-27)
+
+The editor itself went in as designed. Four of its details did not survive
+contact with the running panel, and one of them was in this repo's own notes.
+
+**A previewer for an account that is not there.** The plan's `format_previewer`
+called `registry.index_of()` and rendered against `registry.find(...) or {}`,
+with a test for the unknown slug `build_state()` already tolerates. Both halves
+raise: `index_of` has no answer but `KeyError`, and `format.render()` indexes
+`hide_icon`, `color` and `email` off the account directly rather than `.get`ting
+them. So the tolerance had to be spelled out — an explicit blank account, and
+the index only asked for when there is one to number. Tolerating a missing
+account is not the same as having a dict; `{}` is a third thing, and it is the
+one that tracebacks.
+
+**A focus grab into a widget that is in no window.** The commit rebuilds the
+settings subtree, which destroys the entry it came from, so `ui_state` carries a
+flag and the rebuilt editor grabs the focus back. It did not: `refresh_toggles()`
+builds the whole subtree and only then appends it, so `grab_focus()` ran on a
+widget with no toplevel and was dropped without a word. Nothing errors, nothing
+logs, and the entry simply comes back unfocused — the next keystroke goes
+nowhere. The grab is on the entry's `map` now, one shot, disconnecting itself.
+Measured by pixel rather than by eye: `:focus-within` is `(52,52,66)` against
+`(43,43,58)` unfocused, and neither moves on its own.
+
+**A scrollbar drawn across the chips it was scrolling.** The insert row is a
+`ScrolledWindow` and it asked for **22 px** — one chip, with the 15 px scrollbar
+drawn inside them. `set_min_content_height()` does nothing here: a vertical
+policy of `NEVER` makes the scrolled window propagate its child's height and
+ignore the min-content one, which is exactly the direction the number was meant
+to constrain. Turning off overlay scrolling only changed how it was drawn over
+them. The height belongs on the widget — `set_size_request(-1, 22 + 15)`.
+
+That exposed the second half: the drawer is an **overlay on a fixed-height
+card**, and the chip scroller is the only child in it that can shrink, so every
+pixel the drawer was short landed on that one row. A section had been added to
+the drawer without the card growing, and the symptom was not "the panel is 20 px
+too short" but "the chip row is broken". `HEIGHT` is 670. The constant's own
+comment already said the card is sized to its largest state; the largest state
+had changed and the comment had not.
+
+**`ps | awk '/share\/ccas\/bin/'` — this file's own kill recipe — matches
+nothing.** The panel is `python3 /home/fixed/.local/bin/ccs --gui <slug>`: the
+launcher's path, not the staged package's. So every kill was a silent no-op, the
+old panel stayed up, and the next `ccs --gui` did exactly what it is built to do
+— saw its own widget's panel already open and toggled it shut. Three rounds of
+"the panel will not open", with a log holding one harmless portal warning and no
+traceback, because nothing had gone wrong. The pattern to match on is `comm ==
+python3` plus `bin/ccs --gui`, which keeps the rule the old recipe was written
+for: name first, so a shell cannot be a candidate. A kill pattern that matches
+nothing fails exactly like one that matches too much, and it fails more quietly.

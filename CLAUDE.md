@@ -440,9 +440,16 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   be a candidate at all, then read each candidate's own cmdline:
 
   ```bash
-  ps -eo pid,args | awk '/share\/ccas\/bin/ && !/awk/ {print $1}' \
+  ps -eo pid,comm,args | awk '$2=="python3" && /bin\/ccs --gui/ {print $1}' \
     | while read p; do kill "$p"; done
   ```
+
+  Match what the process **is**, and check the pattern finds it before trusting
+  it. An earlier version of this recipe matched `share/ccas/bin`, which is where
+  the package is staged and not what the panel is called — it runs as `python3
+  /home/fixed/.local/bin/ccs --gui <slug>`. It therefore killed nothing, the old
+  panel stayed up, and the relaunch toggled it shut instead, which reads as a
+  panel that will not open. `docs/why.md` has that one.
 
   Keep the pattern specific — matching every `ccs` also kills a `ccs format` the
   user has open in another terminal.

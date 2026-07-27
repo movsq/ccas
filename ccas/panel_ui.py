@@ -22,7 +22,14 @@ MISSING_DEPS = ("ccs: the panel needs PyGObject, GTK4 and gtk4-layer-shell — "
 # Sized to its largest state rather than grown into it. A layer surface
 # negotiates its size at map time, so resizing the window is janky; anything
 # that moves has to move inside this.
-WIDTH, HEIGHT = 900, 620
+#
+# 620 until the format editor joined the drawer. The drawer is an overlay on a
+# fixed-height card and the chip scroller is the one child that can shrink, so
+# the whole shortfall landed there: the insert chips came out as a sliver with
+# the scrollbar drawn across them, which reads as a broken row rather than as a
+# card that is 20 px too short. The margin also covers the unknown-token line,
+# which appears only while a format names a token that does not exist.
+WIDTH, HEIGHT = 900, 670
 
 # How long the pointer probe waits for an answer it may never get. The enter
 # event resolves it the moment it arrives — about 5 ms after the probes map —
@@ -39,6 +46,14 @@ WIDTH, HEIGHT = 900, 620
 # pointer on DP-1; the enter arrived the instant the button came up. The number
 # is therefore how long a human might hold a mouse button, not a repaint budget.
 PROBE_MS = 1500
+
+# The insert chips' row, in px: a 22 px chip and the 15 px scrollbar under it.
+# It is a size request on the ScrolledWindow, not set_min_content_height() — a
+# vertical policy of NEVER makes the scrolled window propagate its child's
+# height and ignore the min-content one, so the widget asked for the chips' 22
+# and drew the scrollbar inside them. Measured: the row asked for 22 with
+# min_content_height(28) set.
+CHIP_ROW_H = 22 + 15
 
 # How long the colour sliders wait after the last movement before writing. Long
 # enough that a drag is one write rather than dozens, short enough that letting
@@ -979,6 +994,14 @@ def _build_format_editor(state, pick, ui_state):
     insert_caption.set_size_request(70, -1)
     scroller = Gtk.ScrolledWindow()
     scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+    # The scrollbar takes its own row instead of floating over the chips. GTK's
+    # overlay scrollbar fattens when the pointer comes near it, and the chip row
+    # is about as tall as the fattened bar — so hovering a chip to click it drew
+    # the scrollbar straight across every chip in the row. Measured on screen.
+    scroller.set_overlay_scrolling(False)
+    # And the row is tall enough to hold both, or the bar is drawn across the
+    # chips whether it overlays them or not — see CHIP_ROW_H.
+    scroller.set_size_request(-1, CHIP_ROW_H)
     scroller.set_hexpand(True)
     scroller.set_child(chips)
     insert_row.append(insert_caption)
@@ -1007,8 +1030,19 @@ def _build_format_editor(state, pick, ui_state):
     # flag left standing would yank the focus here on a ticked checkbox.
     if ui_state.get("focus_format"):
         ui_state["focus_format"] = False
-        entry.grab_focus()
-        entry.set_position(-1)
+        # On "map", not here. refresh_toggles() builds this whole subtree and
+        # only then appends it to the drawer, so at this point the entry is in
+        # no window at all and grab_focus() is dropped without saying so —
+        # measured on screen, the rebuilt entry came back unfocused and the
+        # next keystroke went nowhere. Mapping is the first moment it is really
+        # in the tree. One shot: the handler disconnects itself, or reopening
+        # the drawer later would pull the focus back here.
+        def take_focus(widget):
+            widget.disconnect(handler)
+            widget.grab_focus()
+            widget.set_position(-1)
+
+        handler = entry.connect("map", take_focus)
     return box
 
 
