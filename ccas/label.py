@@ -50,14 +50,15 @@ def render(account: dict, index: int, usage=None, now=None) -> str:
 def check_invisible_warning(account: dict) -> bool:
     """True when the caller should notify. Latches, and re-arms on exit.
 
-    "Invisible" used to be the hidden glyph plus the "icon only" mode. With the
-    modes retired the same combination is a format string that asks for the
-    glyph and nothing else — the test moved from a mode name to the string,
-    because that is where the answer now lives.
+    "Invisible" used to be the hidden glyph plus the "icon only" mode, then the
+    hidden glyph plus a format string holding nothing but `%icon`. With the
+    glyph no longer a token the test is simpler still: hide it and leave the
+    format empty and there is nothing on the bar at all. A `%icon` left in a
+    stored format is text now, and text is visible.
     """
     from . import format as fmt
     fmt_string = account.get("format") or fmt.DEFAULT_FORMAT
-    invisible = account["hide_icon"] and not fmt_string.replace("%icon", "").strip()
+    invisible = account["hide_icon"] and not fmt_string.strip()
     if not invisible:
         account["warned_invisible"] = False
         return False

@@ -1,6 +1,9 @@
 import ccas.format as fmt
 import ccas.label as label
 
+# The glyph render() prefixes every label with, in the fixture's own colour.
+ICON = "<span size='150%' rise='-800' color='#f38ba8'>✻</span>"
+
 
 def account(**kw):
     base = {
@@ -22,9 +25,8 @@ def test_display_name_prefers_nickname_then_email():
 def test_cleared_nickname_shows_nothing_on_the_bar():
     """Falling back to the email put a long address in the bar. A cleared
     nickname means "show no text", not "show something else"."""
-    icon = "<span size='150%' rise='-800' color='#ffffff'>✻</span>"
-    assert label.render(account(nickname=None, format="%icon %name"), 1) == icon
-    assert label.render(account(nickname="", format="%icon %name"), 1) == icon
+    assert label.render(account(nickname=None, format="%name"), 1) == ICON
+    assert label.render(account(nickname="", format="%name"), 1) == ICON
 
 
 def test_the_email_fallback_survives_where_identity_matters():
@@ -35,70 +37,84 @@ def test_the_email_fallback_survives_where_identity_matters():
 
 def test_render_delegates_every_account_to_the_format():
     """One mode means one code path: the label is whatever the format string
-    says, and 'icon only' is now the string '%icon' rather than a mode."""
-    a = account(format="%icon", color="#89b4fa")
+    says, with the widget's own glyph in front of it."""
+    a = account(format="%name", color="#89b4fa")
     assert label.render(a, 1) == fmt.render(a, 1)
 
 
-def test_hide_icon_uses_alpha_not_removal():
-    out = label.render(account(hide_icon=True, format="%icon %name"), 1)
-    assert "alpha='1'" in out
-    assert "✻" in out, "glyph must stay so the module keeps its width"
-    assert out.endswith("<span size='110%' color='#ffffff'>work</span>")
-
-
-def test_fully_invisible_combination_still_emits_a_glyph():
-    out = label.render(account(hide_icon=True, format="%icon"), 1)
-    assert out == "<span size='150%' rise='-800' alpha='1'>✻</span>"
-    assert out.strip() != "", "an empty label would collapse the module and break clicking"
+def test_hide_icon_removes_the_glyph_and_leaves_the_text():
+    """No alpha='1' spacer any more. The glyph is not named in the format
+    string, so an invisible one would reserve its width in exactly the labels
+    that asked not to have one."""
+    out = label.render(account(hide_icon=True, format="%name"), 1)
+    assert "✻" not in out
+    assert out == "<span size='110%' color='#ffffff'>work</span>"
 
 
 def test_nickname_is_pango_escaped():
-    out = label.render(account(nickname="a & b <c>", format="%icon %name"), 1)
+    out = label.render(account(nickname="a & b <c>", format="%name"), 1)
     assert "a &amp; b &lt;c&gt;" in out
     assert "<c>" not in out
 
 
 def test_the_account_colour_reaches_the_glyph():
-    """Through %icon's `account`, which is what a new account is written with —
-    the glyph is a token like any other now, not the one the widget's colour
-    always leaked into."""
-    colors = dict(fmt.DEFAULT_FORMAT_COLORS)
-    assert "#fab387" in label.render(
-        account(color="#fab387", format_colors=colors), 1)
-    assert "#f5c2e7" in label.render(
-        account(color="#f5c2e7", format_colors=colors), 1)
+    """By definition rather than through a token: the ✻ is the widget's own
+    mark, so there is no format_colors entry that could disagree with it."""
+    assert "#fab387" in label.render(account(color="#fab387"), 1)
+    assert "#f5c2e7" in label.render(account(color="#f5c2e7"), 1)
+
+
+def test_a_hidden_glyph_and_an_empty_format_is_the_invisible_case():
+    """The glyph is no longer a token, so the test is the format string being
+    empty rather than being nothing but %icon."""
+    a = account(hide_icon=True, format="   ")
+    assert label.check_invisible_warning(a) is True
+    assert label.render(a, 1) == ""
+
+
+def test_a_hidden_glyph_with_text_left_is_not_invisible():
+    a = account(hide_icon=True, format="%name", nickname="n")
+    assert label.check_invisible_warning(a) is False
+
+
+def test_a_retired_icon_token_is_visible_text_and_warns_about_nothing():
+    """The warning used to strip `%icon` out of the format before asking, back
+    when it named the glyph. It names nothing now — it renders as its own four
+    characters, which is a label the user can see and read."""
+    a = account(hide_icon=True, format="%icon")
+    assert label.render(a, 1) == "%icon"
+    assert label.check_invisible_warning(a) is False
 
 
 def test_warning_fires_once_on_entering_the_combination():
-    a = account(hide_icon=True, format="%icon")
+    a = account(hide_icon=True, format="   ")
     assert label.check_invisible_warning(a) is True
     assert a["warned_invisible"] is True
     assert label.check_invisible_warning(a) is False
 
 
 def test_warning_rearms_after_leaving_the_combination():
-    a = account(hide_icon=True, format="%icon")
+    a = account(hide_icon=True, format="   ")
     assert label.check_invisible_warning(a) is True
-    a["format"] = "%icon %name"
+    a["format"] = "%name"
     assert label.check_invisible_warning(a) is False
     assert a["warned_invisible"] is False
-    a["format"] = "%icon"
+    a["format"] = "   "
     assert label.check_invisible_warning(a) is True
 
 
 def test_warning_never_fires_outside_the_combination():
-    """A hidden glyph beside anything else is still a visible module, and a
-    format of just %icon with the glyph shown is the ordinary case."""
+    """A hidden glyph beside anything else is still a visible module, and an
+    empty format with the glyph shown is the "icon only" case, not a fault."""
     assert label.check_invisible_warning(
-        account(hide_icon=True, format="%icon %name")) is False
-    assert label.check_invisible_warning(account(format="%icon")) is False
+        account(hide_icon=True, format="%name")) is False
+    assert label.check_invisible_warning(account(format="   ")) is False
 
 
 def test_icon_is_larger_than_the_bar_text():
     """The glyph is the thing you aim at; the nickname beside it stays at the
     bar's font size."""
-    out = label.render(account(format="%icon %name"), 1)
+    out = label.render(account(format="%name"), 1)
     assert out.startswith(f"<span size='{label.ICON_SIZE}'")
     assert "work" in out.split("</span>")[1]
 
