@@ -30,7 +30,7 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `poll.py` | the session-free usage fetch: the credential read, the freshness gate, the request. Its fetcher is injected, so no test opens a socket. |
 | `pickers.py` | the terminal front-ends (fzf, `input()`), and `is_gui()`. |
 | `panel.py` | the GTK panel's state: `build_state`, `filter_state`, the open-panel lock, which output. No GTK. |
-| `panel_ui.py` | the panel's widget tree. The only module that touches GTK, and it decides nothing. |
+| `panel_ui.py` | the panel's widget tree. The only module that touches GTK. It decides nothing except *when* a colour is written — the settle timer, which is what `test_panel_ui.py` covers. |
 | `launch.py` | resolving a launch request into a cwd and argv. |
 | `doctor.py` | the read-only audit. |
 | `cli.py` | argument dispatch and the command bodies. |
@@ -96,8 +96,12 @@ directly rather than through `paths.py`.
 accounts rather than being carried across a rename. `registry.load()` defaults
 the keys every read path needs and does nothing else; a stored value that is no
 longer valid — a `format_colors` entry of `auto`, `dim` or `account` — reads as
-absent and renders `format.DEFAULT_COLOR`. When something is retired, delete it;
-do not grow a read path that understands both. A stored *format string* naming a
+absent and renders `format.DEFAULT_COLOR`. **Tolerated on read means tolerated on
+write**: `set_field` drops a non-hex entry rather than rejecting the dict holding
+it, because both callers read the stored colours, change one key and hand the
+whole thing back — validating the lot made one retired value freeze every *other*
+token in that account, silently, with `doctor` green. When something is retired,
+delete it; do not grow a read path that understands both. A stored *format string* naming a
 retired token is not rewritten either: `%icon` prints as its own four characters
 until someone runs `ccs format <slug> …`, which is visible and self-explaining
 where a silent rewrite is neither.
@@ -336,6 +340,12 @@ existed. Four things about it are load-bearing and were each a bug first:
   GTK4 at all, so anything wanting commit-on-release uses the `SETTLE_MS` timer
   rearmed on `value-changed` instead. That still honours write-only-on-a-change
   with `waybar.signal()` riding on the write, and covers the keyboard for free.
+  **A pending timer must be flushed before the target it belongs to changes.**
+  `seed()` cancels it and the seeding flag stops it being rearmed, so without
+  `flush()` a finished drag is thrown away by a chip click inside `SETTLE_MS` —
+  previewed everywhere, written nowhere. Anything else that seeds the sliders
+  owes the same flush, and it commits against the *old* target, so `_commit`
+  takes one explicitly.
 
 The open panel writes its pid, slug **and connector** to `paths.panel_lock()`.
 Waybar draws every module on every bar, so one account has one widget per
