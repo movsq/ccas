@@ -793,13 +793,19 @@ by hand afterwards, which is the same habit `ccs doctor` exists to automate.
 Also 2026-07-27, verifying the poll end to end. The plan's last step asks for
 `grim` before and after a poll that changed a number. Both screenshots were
 identical — and the reason was not the feature. `grim -o HDMI-A-1` returned
-2073600 pixels of a single colour, pure black, and so did DP-1: at six in the
-morning both displays were blank, so there was no bar in either frame to differ.
+2073600 pixels of a single colour, pure black, and so did DP-1. **The session
+was locked**: the user was out and sway's lock screen was up, so `grim` captured
+the lock surface covering every output and there was no bar in either frame to
+differ.
 
 Worth writing down because the first reading of "the two screenshots match" is
 "the bar did not repaint", which would have been a bug report about working
 code. The null case — is there *anything* on this screen — costs one call and
-settles it. `getcolors()` returning a list of length one is the whole test.
+settles it. `getcolors()` returning a list of length one is the whole test, and
+it is the first thing to run whenever a `grim` comparison comes back empty:
+`swaymsg -t get_outputs` will happily report both outputs `active` with
+`dpms: true` while a lock surface hides everything, so the output list does not
+answer this question and the pixels do.
 
 Note also that `CLAUDE.md`'s "Waybar is on HDMI-A-1 (x 2560–4480)" is now only
 half right: HDMI-A-1 still starts at x 2560 but is 1920 wide, not 1920 tall at
