@@ -140,21 +140,20 @@ def color_targets(account: dict) -> list:
     widget leads because it is what the tokens on `auto` and `account` point at,
     and it is the only entry that is always present.
 
-    `color` is what the sliders should open at. dim has no hue to show and auto
-    and account both resolve to the widget's, so all three seed from the widget
-    — the sliders start where the eye already is instead of at an arbitrary red.
+    `color` is what the sliders should open at. `account` has no hue of its own
+    — it resolves to the widget's — so it seeds from the widget, and so does a
+    token holding nothing, or a retired `auto`/`dim`: the sliders start where
+    the eye already is instead of at an arbitrary red.
     """
     own = account.get("color") or paths.PALETTE[0][1]
     colors = account.get("format_colors") or {}
-    targets = [{"token": None, "label": "the widget", "color": own,
-                "chips": False}]
+    targets = [{"token": None, "label": "the widget", "color": own}]
     for token in fmt.tokens_in(account.get("format") or fmt.DEFAULT_FORMAT):
-        value = colors.get(token, fmt.AUTO)
+        value = colors.get(token) or ""
         targets.append({
             "token": token,
             "label": token,
-            "color": value if fmt.HEX.match(value or "") else own,
-            "chips": True,
+            "color": value if fmt.HEX.match(value) else own,
         })
     return targets
 

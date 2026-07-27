@@ -498,6 +498,9 @@ def test_mode_menu_offers_colour_and_hide(monkeypatch):
 
 def test_colour_submenu_marks_the_current_colour_and_sets_the_new_one(monkeypatch):
     make_account("work")
+    # A palette colour on purpose: a new account gets a random one, which is
+    # not in the list this submenu marks.
+    cli.main(["color", "work", paths.PALETTE[0][1]])
     target = paths.PALETTE[5][0]
     seen = []
 
@@ -539,9 +542,10 @@ def test_a_cancelled_submenu_changes_nothing(monkeypatch):
         calls.append(options)
         return "Color…" if len(calls) == 1 else None
 
+    before = registry.find(registry.load(), "work")["color"]
     monkeypatch.setattr(cli.pickers, "choose", fake_choose)
     assert cli.cmd_mode_menu("work", False) == 0
-    assert registry.find(registry.load(), "work")["color"] == paths.PALETTE[0][1]
+    assert registry.find(registry.load(), "work")["color"] == before
 
 
 def test_a_leading_flag_is_passed_through_to_claude(monkeypatch):
@@ -1032,10 +1036,10 @@ def test_statusline_signals_the_bar_only_when_the_reading_changed(monkeypatch, t
 
 
 def test_render_puts_the_recorded_reading_on_the_bar(monkeypatch):
-    """The 30 s tick is what keeps the clock on screen when no signal fired.
+    """The 30 s tick is what keeps the reading on screen when no signal fired.
 
     Usage lives in the format string's tokens, which is the only place it can
-    be asked for at all.
+    be asked for at all — %5hused, in the default format.
     """
     make_account()
     payload = json.dumps({"rate_limits": {"five_hour": {
@@ -1046,7 +1050,7 @@ def test_render_puts_the_recorded_reading_on_the_bar(monkeypatch):
     out = io.StringIO()
     monkeypatch.setattr(cli.sys, "stdout", out)
     assert cli.main(["render", "work"]) == 0
-    assert time.strftime("%H:%M", time.localtime(time.time() + 3600)) in out.getvalue()
+    assert "94%" in out.getvalue()
 
 
 def test_the_mode_picker_says_where_the_account_stands(monkeypatch):
@@ -1541,17 +1545,26 @@ def test_format_warns_about_an_unknown_token_but_still_sets_it(capsys):
 
 def test_format_sets_one_tokens_colour():
     make_account()
-    assert cli.main(["format", "work", "--color", "%name", "dim"]) == 0
-    assert registry.find(registry.load(), "work")["format_colors"]["%name"] == "dim"
+    assert cli.main(["format", "work", "--color", "%name", "#89b4fa"]) == 0
+    assert registry.find(registry.load(), "work")["format_colors"]["%name"] \
+        == "#89b4fa"
 
 
-def test_setting_a_colour_to_auto_deletes_the_key():
-    """Absent means auto, so the dict only ever holds deviations — an untouched
-    account carries no colour state at all."""
+def test_setting_a_colour_to_a_dash_deletes_the_key():
+    """Absent is a value the dict can hold and typing it is not, so '-' is how
+    a token is put back to format.DEFAULT_COLOR."""
     make_account()
-    cli.main(["format", "work", "--color", "%name", "dim"])
-    cli.main(["format", "work", "--color", "%name", "auto"])
+    cli.main(["format", "work", "--color", "%name", "#89b4fa"])
+    cli.main(["format", "work", "--color", "%name", "-"])
     assert "%name" not in registry.find(registry.load(), "work")["format_colors"]
+
+
+def test_format_rejects_the_retired_colour_names():
+    """auto and dim were removed rather than migrated; the door they were typed
+    at has to say so."""
+    make_account()
+    assert cli.main(["format", "work", "--color", "%name", "auto"]) == 1
+    assert cli.main(["format", "work", "--color", "%name", "dim"]) == 1
 
 
 def test_format_rejects_a_bad_colour():

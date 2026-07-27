@@ -29,12 +29,12 @@ def test_load_returns_empty_registry_when_absent():
 def test_add_assigns_colour_signal_and_default():
     reg = registry.load()
     a = registry.add(reg, "personal", "p@example.com", None)
-    assert a["color"] == paths.PALETTE[0][1] and a["signal"] == 1
+    assert fmt.valid_color(a["color"]) and a["signal"] == 1
     assert "display" not in a and a["hide_icon"] is False
     assert a["warned_invisible"] is False
     assert reg["default"] == "personal"
     b = registry.add(reg, "work", "w@example.com", "work")
-    assert b["color"] == paths.PALETTE[1][1] and b["signal"] == 2
+    assert fmt.valid_color(b["color"]) and b["signal"] == 2
     assert reg["default"] == "personal"
 
 
@@ -88,12 +88,13 @@ def test_set_field_rejects_invalid_values():
         registry.set_field(reg, "a", "color", 99)
 
 
-def test_colour_assignment_wraps_past_palette_end():
+def test_colour_assignment_never_runs_out():
+    """It used to walk paths.PALETTE and there were eight of them. A random hue
+    has no end to reach, which is the point of it."""
     reg = registry.load()
     for i in range(10):
         registry.add(reg, f"a{i}", f"a{i}@example.com", None)
-    assert all(a["color"] in [h for _n, h in paths.PALETTE]
-               for a in reg["accounts"])
+    assert all(fmt.valid_color(a["color"]) for a in reg["accounts"])
 
 
 def test_load_backfills_the_headless_flag_on_older_registries():
@@ -216,15 +217,14 @@ def _write_registry(reg: dict) -> None:
     paths.registry_file().write_text(json.dumps(reg), encoding="utf-8")
 
 
-def test_add_assigns_an_unused_palette_hex():
-    """New accounts still walk the palette, but store what they picked rather
-    than where it sat: paths.PALETTE is a table of starting points now, not an
-    index space."""
+def test_add_gives_each_account_its_own_colour():
+    """Not the next palette entry: with eight of them and two accounts that was
+    a fixed pair, and the sliders made the palette a table of starting points
+    rather than the set of colours an account can have."""
     reg = {"default": None, "accounts": []}
-    first = registry.add(reg, "a", "a@x", None)
-    second = registry.add(reg, "b", "b@x", None)
-    assert first["color"] == paths.PALETTE[0][1]
-    assert second["color"] == paths.PALETTE[1][1]
+    colors = {registry.add(reg, f"a{i}", f"a{i}@x", None)["color"]
+              for i in range(12)}
+    assert len(colors) == 12
 
 
 def test_set_field_accepts_a_hex_colour():
@@ -252,62 +252,13 @@ def test_set_field_rejects_a_token_colour_value():
             registry.set_field(reg, "a", "color", bad)
 
 
-def test_load_normalises_an_integer_colour_written_by_the_old_code():
-    """A registry on disk from before this change is read, not rewritten: the
-    normalisation is on the read path so nothing has to migrate at install."""
-    _write_registry({"default": "a", "accounts": [
-        {"slug": "a", "email": "a@x", "nickname": None, "color": 2,
-         "hide_icon": False, "format": "%icon", "format_colors": {},
-         "signal": 1},
-    ]})
-    reg = registry.load()
-    assert reg["accounts"][0]["color"] == paths.PALETTE[2][1]
 
 
-def test_load_migrates_an_account_off_a_retired_display_mode():
-    """Its stored format was never rendered — the mode decided the label — so
-    it is replaced by the default rather than trusted."""
-    _write_registry({"default": "a", "accounts": [
-        {"slug": "a", "email": "a@x", "nickname": None, "color": "#89b4fa",
-         "display": "nickname", "hide_icon": False,
-         "format": registry.OLD_DEFAULT_FORMAT, "format_colors": {},
-         "signal": 1},
-    ]})
-    a = registry.load()["accounts"][0]
-    assert "display" not in a
-    assert a["format"] == fmt.DEFAULT_FORMAT
-    assert a["format_colors"] == fmt.DEFAULT_FORMAT_COLORS
-
-
-def test_load_keeps_a_format_the_user_typed():
-    """Only a format still equal to the old default is assumed unchosen. One
-    the user actually wrote survives the migration — a value we did not capture
-    is a value we cannot restore."""
-    _write_registry({"default": "a", "accounts": [
-        {"slug": "a", "email": "a@x", "nickname": None, "color": "#89b4fa",
-         "display": "index", "hide_icon": False,
-         "format": "%index %7d", "format_colors": {}, "signal": 1},
-    ]})
-    a = registry.load()["accounts"][0]
-    assert "display" not in a
-    assert a["format"] == "%index %7d"
-
-
-def test_load_leaves_an_account_already_on_custom_alone():
-    _write_registry({"default": "a", "accounts": [
-        {"slug": "a", "email": "a@x", "nickname": None, "color": "#89b4fa",
-         "display": "custom", "hide_icon": False,
-         "format": "%icon %name", "format_colors": {"%name": "dim"},
-         "signal": 1},
-    ]})
-    a = registry.load()["accounts"][0]
-    assert "display" not in a
-    assert a["format"] == "%icon %name"
-    assert a["format_colors"] == {"%name": "dim"}
 
 
 def test_set_field_rejects_display():
-    """The field is retired; writing it would put a key back that load() strips."""
+    """The field is retired, and nothing strips it on read any more — so the
+    one place it could still get back in is the one that has to refuse it."""
     reg = {"default": None, "accounts": []}
     registry.add(reg, "a", "a@x", None)
     with pytest.raises(ValueError):

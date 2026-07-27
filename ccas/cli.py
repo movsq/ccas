@@ -173,11 +173,13 @@ def cmd_format(rest) -> int:
         return _format_edit(reg, slug, account)
 
     if rest[0] == "--color":
-        if len(rest) < 3 or not fmt.valid_color(rest[2]):
+        # '-' clears, because absent is a value the dict can hold and typing it
+        # is not: it means format.DEFAULT_COLOR, the same white every token
+        # starts at.
+        if len(rest) < 3 or not (rest[2] == "-" or fmt.valid_color(rest[2])):
             return 1
         colors = dict(account.get("format_colors") or {})
-        if rest[2] == fmt.AUTO:
-            # Absent means auto, so the dict only ever holds deviations.
+        if rest[2] == "-":
             colors.pop(rest[1], None)
         else:
             colors[rest[1]] = rest[2]
@@ -272,10 +274,7 @@ def dispatch_panel(action):
         if account is None:
             return 1
         colors = dict(account.get("format_colors") or {})
-        if color == fmt.AUTO:
-            colors.pop(token, None)
-        else:
-            colors[token] = color
+        colors[token] = color
         return _mutate(slug, "format_colors", colors)
     # "format" is deliberately not a branch: the panel cannot prompt for free
     # text, so the button spawns a terminal running the command instead.

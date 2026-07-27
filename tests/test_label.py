@@ -22,7 +22,7 @@ def test_display_name_prefers_nickname_then_email():
 def test_cleared_nickname_shows_nothing_on_the_bar():
     """Falling back to the email put a long address in the bar. A cleared
     nickname means "show no text", not "show something else"."""
-    icon = "<span size='150%' rise='-800' color='#f38ba8'>✻</span>"
+    icon = "<span size='150%' rise='-800' color='#ffffff'>✻</span>"
     assert label.render(account(nickname=None, format="%icon %name"), 1) == icon
     assert label.render(account(nickname="", format="%icon %name"), 1) == icon
 
@@ -44,7 +44,7 @@ def test_hide_icon_uses_alpha_not_removal():
     out = label.render(account(hide_icon=True, format="%icon %name"), 1)
     assert "alpha='1'" in out
     assert "✻" in out, "glyph must stay so the module keeps its width"
-    assert out.endswith("<span size='110%'>work</span>")
+    assert out.endswith("<span size='110%' color='#ffffff'>work</span>")
 
 
 def test_fully_invisible_combination_still_emits_a_glyph():
@@ -60,8 +60,14 @@ def test_nickname_is_pango_escaped():
 
 
 def test_the_account_colour_reaches_the_glyph():
-    assert "#fab387" in label.render(account(color="#fab387"), 1)
-    assert "#f5c2e7" in label.render(account(color="#f5c2e7"), 1)
+    """Through %icon's `account`, which is what a new account is written with —
+    the glyph is a token like any other now, not the one the widget's colour
+    always leaked into."""
+    colors = dict(fmt.DEFAULT_FORMAT_COLORS)
+    assert "#fab387" in label.render(
+        account(color="#fab387", format_colors=colors), 1)
+    assert "#f5c2e7" in label.render(
+        account(color="#f5c2e7", format_colors=colors), 1)
 
 
 def test_warning_fires_once_on_entering_the_combination():

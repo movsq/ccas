@@ -46,11 +46,11 @@ def test_build_state_names_an_account_the_way_the_bar_does(reg):
     assert state["accounts"][1]["name"] == "two@example.com"
 
 
-def test_build_state_resolves_the_colour_index_to_a_hex(reg):
-    """The widget tree sets a CSS colour; it must not have to know that the
-    registry stores an index into paths.PALETTE."""
+def test_build_state_carries_each_accounts_colour(reg):
+    """The widget tree sets a CSS colour, so it gets one — whatever the account
+    happens to hold."""
     state = panel.build_state("one")
-    assert state["accounts"][0]["color"] == paths.PALETTE[0][1]
+    assert state["accounts"][0]["color"] == reg["accounts"][0]["color"]
 
 
 def test_build_state_carries_the_three_toggles(reg):
@@ -824,7 +824,7 @@ def test_color_targets_lead_with_the_widget():
                "format_colors": {}}
     targets = panel.color_targets(account)
     assert targets[0] == {"token": None, "label": "the widget",
-                          "color": "#89b4fa", "chips": False}
+                          "color": "#89b4fa"}
 
 
 def test_color_targets_then_follow_the_format_string():

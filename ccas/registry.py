@@ -8,11 +8,6 @@ import unicodedata
 # No cycle: format imports label and paths, neither of which imports registry.
 from . import format, paths
 
-# What DEFAULT_FORMAT was before the display modes were retired. A stored format
-# still equal to it was never chosen by anyone — it is what add() wrote — so the
-# migration may replace it. Anything else the user typed, and it survives.
-OLD_DEFAULT_FORMAT = "%icon %name %5h"
-
 
 def slugify(text: str) -> str:
     text = text.split("@", 1)[0]
@@ -30,27 +25,13 @@ def load() -> dict:
         reg = json.load(fh)
     reg.setdefault("default", None)
     reg.setdefault("accounts", [])
+    # No migrations. There is one user and one installation, and every read
+    # path here defaults what it needs with .get — a registry written by an
+    # older CCAS is not something this has to carry, and carrying it was a
+    # standing invitation to rewrite accounts.json to fix a field.
     for account in reg["accounts"]:
-        # Added after the first release; every read path assumes it is present.
         account.setdefault("headless", False)
         account.setdefault("dangerous", False)
-        # Written as an index before colours became continuous. Normalised on
-        # read so no pass over accounts.json is needed at install — rewriting a
-        # whole registry to fix a field is the blind overwrite that "read the
-        # live state before you write it" exists to prevent.
-        if isinstance(account.get("color"), int):
-            index = account["color"]
-            account["color"] = paths.PALETTE[index][1] \
-                if 0 <= index < len(paths.PALETTE) else paths.PALETTE[0][1]
-        # The mode is retired. An account that was not on "custom" had its
-        # label built by the mode, so its stored format is whatever add() wrote
-        # and is replaced; one the user typed is kept. The key is dropped either
-        # way, and only on the read path — nothing rewrites accounts.json here.
-        if "display" in account:
-            if account.pop("display") != "custom" and \
-                    account.get("format", OLD_DEFAULT_FORMAT) == OLD_DEFAULT_FORMAT:
-                account["format"] = format.DEFAULT_FORMAT
-                account["format_colors"] = dict(format.DEFAULT_FORMAT_COLORS)
     return reg
 
 
@@ -91,14 +72,14 @@ def _renumber(reg: dict) -> None:
 def add(reg: dict, slug: str, email: str, nickname):
     if find(reg, slug):
         raise ValueError(f"account already exists: {slug}")
-    used = {a["color"] for a in reg["accounts"]}
-    color = next((h for _name, h in paths.PALETTE if h not in used),
-                 paths.PALETTE[0][1])
     account = {
         "slug": slug,
         "nickname": nickname,
         "email": email,
-        "color": color,
+        # Random, and the format's glyph and percentage follow it: a new
+        # account looks like itself from the first paint, and one hue drag
+        # still moves the pair together.
+        "color": format.random_color(),
         "hide_icon": False,
         "format": format.DEFAULT_FORMAT,
         "format_colors": dict(format.DEFAULT_FORMAT_COLORS),

@@ -9,6 +9,7 @@ only colours that reach the pango are the three validated shapes valid_color
 accepts, so nothing a user types can produce a span attribute.
 """
 import colorsys
+import random
 import re
 import time
 
@@ -17,22 +18,43 @@ import time
 from . import paths, usage as usage_mod
 from .label import ICON_RISE, ICON_SIZE, TEXT_SIZE, pango_escape
 
-AUTO, DIM, ACCOUNT = "auto", "dim", "account"
+ACCOUNT = "account"
 
-DEFAULT_FORMAT = "%icon %5hreset %5hquotaleft"
-# The glyph and the remaining percentage in the widget's colour, the reset time
-# dim between them. ACCOUNT rather than a literal hex so the pair follows the
-# hue slider instead of drifting away from it the first time it moves.
-DEFAULT_FORMAT_COLORS = {"%5hreset": DIM, "%5hquotaleft": ACCOUNT}
+# What a token with no colour of its own renders as. Plain white, and the same
+# answer for every token: `auto` used to make that answer depend on which token
+# it was — a usage ramp here, the account's colour there — so the one thing a
+# format string could not tell you was what it would look like. Two ways to say
+# "no colour in particular" is one too many.
+DEFAULT_COLOR = "#ffffff"
+
+# Grey rather than the ramp's dim alpha: an alpha is a *dimmer* of whatever is
+# underneath, so it could not survive `dim` being retired as a colour.
+GREY = "#9399b2"
+
+DEFAULT_FORMAT = "%icon %email %5hused"
+# The glyph and the used percentage in the widget's colour, the address grey
+# between them. ACCOUNT rather than a literal hex so the pair follows the hue
+# slider instead of drifting away from it the first time it moves.
+DEFAULT_FORMAT_COLORS = {"%icon": ACCOUNT, "%email": GREY, "%5hused": ACCOUNT}
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def valid_color(value) -> bool:
-    """The only four shapes that may reach a pango attribute. This is what
+    """The only two shapes that may reach a pango attribute. This is what
     makes the format string layout rather than markup — nothing else a user
     types ever lands inside a span tag."""
-    return value in (AUTO, DIM, ACCOUNT) or \
-        bool(isinstance(value, str) and HEX.match(value))
+    return value == ACCOUNT or bool(isinstance(value, str) and HEX.match(value))
+
+
+def random_color() -> str:
+    """A colour for a new account: any hue, at the palette's own lightness and
+    a saturation inside the band its eight colours occupy.
+
+    Random rather than the next free palette entry, because the palette stopped
+    being the set of possible colours the moment the sliders arrived — with
+    eight of them and two accounts, "the next free one" was just a fixed pair.
+    """
+    return hs_to_hex(random.uniform(0, 360), random.uniform(0.55, 0.92))
 
 
 # Measured from paths.PALETTE, not chosen: its eight colours span 73.3%-86.1%
@@ -61,25 +83,25 @@ def hs_to_hex(hue: float, saturation: float, lightness: float = LIGHTNESS) -> st
 
 
 def _chosen(account: dict, token: str) -> str:
-    value = (account.get("format_colors") or {}).get(token, AUTO)
-    return value if valid_color(value) else AUTO
+    """The token's colour, resolved. An unset one — and a stored `auto` or
+    `dim` from before they were retired — is DEFAULT_COLOR; nothing migrates."""
+    value = (account.get("format_colors") or {}).get(token)
+    return value if valid_color(value) else DEFAULT_COLOR
+
+
+def _resolve(chosen: str, ctx) -> str:
+    """A stored colour as a hex. ACCOUNT is the one indirection left."""
+    return ctx["account"]["color"] if chosen == ACCOUNT else chosen
 
 
 def _icon(ctx) -> str:
     # hide_icon deliberately wins over a colour override: it is the invisibility
     # toggle, and a colour that resurrected the glyph would make the panel's
     # checkbox lie.
-    chosen = _chosen(ctx["account"], "%icon")
     if ctx["account"]["hide_icon"]:
         attrs = "alpha='1'"
-    elif chosen in (AUTO, ACCOUNT):
-        # For the glyph the two mean the same thing, so they agree rather
-        # than compete.
-        attrs = f"color='{ctx['account']['color']}'"
-    elif chosen == DIM:
-        attrs = f"alpha='{usage_mod.DIM}'"
     else:
-        attrs = f"color='{chosen}'"
+        attrs = f"color='{_resolve(_chosen(ctx['account'], '%icon'), ctx)}'"
     # Not pango_escape'd and not wrapped by the caller: the glyph carries its own
     # measured size and rise, and is the one token that is markup by nature.
     return f"<span size='{ICON_SIZE}' rise='{ICON_RISE}' {attrs}>{paths.GLYPH}</span>"
@@ -135,50 +157,37 @@ def _percent(key, remaining):
     return text
 
 
-def _ramp(key):
-    """The auto colour for a usage token: the ramp, or dim below it. The same
-    decision usage.bar() makes, so a hand-written format and the smart token
-    agree about pressure."""
-    def attrs(ctx):
-        st = _state(ctx, key)
-        if st.percent is None:
-            return ""
-        value = usage_mod.color(st.percent)
-        return f"color='{value}'" if value else f"alpha='{usage_mod.DIM}'"
-    return attrs
-
-
 def _smart(ctx):
     return (usage_mod.bar(ctx["usage"], ctx["now"]) or ("", ""))[0]
 
 
-def _smart_attrs(ctx):
-    return (usage_mod.bar(ctx["usage"], ctx["now"]) or ("", ""))[1]
-
-
-# token -> (text_fn(ctx) -> str, auto_attrs_fn(ctx) -> str)
+# token -> text_fn(ctx) -> str
 # The text is plain and gets wrapped in a TEXT_SIZE span by _emit; %icon is the
-# exception and returns finished markup, flagged by the None pair below.
+# exception and returns finished markup, flagged by the None below.
+#
+# One function per token, not two: the second used to be the token's `auto`
+# colour — the usage ramp for the windowed ones, nothing for the rest — and
+# with auto retired a token's colour comes from the account dict alone.
 TOKENS = {
-    "%icon": (None, None),
-    "%name": (lambda ctx: ctx["account"].get("nickname") or "", lambda ctx: ""),
-    "%email": (lambda ctx: ctx["account"]["email"], lambda ctx: ""),
-    "%index": (lambda ctx: str(ctx["index"]), lambda ctx: ""),
+    "%icon": None,
+    "%name": lambda ctx: ctx["account"].get("nickname") or "",
+    "%email": lambda ctx: ctx["account"]["email"],
+    "%index": lambda ctx: str(ctx["index"]),
 
-    "%5hreset": (_reset("five_hour", False), _ramp("five_hour")),
-    "%5htimeleft": (_timeleft_token("five_hour"), _ramp("five_hour")),
-    "%5hused": (_percent("five_hour", False), _ramp("five_hour")),
-    "%5hquotaleft": (_percent("five_hour", True), _ramp("five_hour")),
+    "%5hreset": _reset("five_hour", False),
+    "%5htimeleft": _timeleft_token("five_hour"),
+    "%5hused": _percent("five_hour", False),
+    "%5hquotaleft": _percent("five_hour", True),
     # %5h and %7d share _smart: usage.bar() already decides between the windows,
     # so having both names is a convenience for reading the format string, not
     # two behaviours.
-    "%5h": (_smart, _smart_attrs),
+    "%5h": _smart,
 
-    "%7dreset": (_reset("seven_day", True), _ramp("seven_day")),
-    "%7dtimeleft": (_timeleft_token("seven_day"), _ramp("seven_day")),
-    "%7dused": (_percent("seven_day", False), _ramp("seven_day")),
-    "%7dquotaleft": (_percent("seven_day", True), _ramp("seven_day")),
-    "%7d": (_smart, _smart_attrs),
+    "%7dreset": _reset("seven_day", True),
+    "%7dtimeleft": _timeleft_token("seven_day"),
+    "%7dused": _percent("seven_day", False),
+    "%7dquotaleft": _percent("seven_day", True),
+    "%7d": _smart,
 }
 
 
@@ -210,21 +219,11 @@ def unknown_tokens(fmt: str) -> list:
 def _emit(token: str, ctx) -> str:
     if token == "%icon":
         return _icon(ctx)
-    text_fn, auto_fn = TOKENS[token]
-    text = text_fn(ctx)
+    text = TOKENS[token](ctx)
     if not text:
         return ""
-    chosen = _chosen(ctx["account"], token)
-    if chosen == AUTO:
-        attrs = auto_fn(ctx)
-    elif chosen == DIM:
-        attrs = f"alpha='{usage_mod.DIM}'"
-    elif chosen == ACCOUNT:
-        attrs = f"color='{ctx['account']['color']}'"
-    else:
-        attrs = f"color='{chosen}'"
-    return f"<span size='{TEXT_SIZE}'{' ' + attrs if attrs else ''}>" \
-           f"{pango_escape(text)}</span>"
+    attrs = f"color='{_resolve(_chosen(ctx['account'], token), ctx)}'"
+    return f"<span size='{TEXT_SIZE}' {attrs}>{pango_escape(text)}</span>"
 
 
 def render(account: dict, index: int, usage=None, now=None,
