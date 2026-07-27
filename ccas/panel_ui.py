@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 
-from . import panel, paths
+from . import format as fmt, panel, paths
 
 MISSING_DEPS = ("ccs: the panel needs PyGObject, GTK4 and gtk4-layer-shell — "
                 "install with: sudo pacman -S python-gobject gtk4 "
@@ -39,6 +39,11 @@ WIDTH, HEIGHT = 900, 620
 # pointer on DP-1; the enter arrived the instant the button came up. The number
 # is therefore how long a human might hold a mouse button, not a repaint budget.
 PROBE_MS = 1500
+
+# How long the colour sliders wait after the last movement before writing. Long
+# enough that a drag is one write rather than dozens, short enough that letting
+# go and looking at the bar shows the new colour already there.
+SETTLE_MS = 300
 
 # GSK's renderer for the panel's first surface. The default here is vulkan and
 # initialising it costs ~180 ms before anything is on screen; cairo costs ~2 ms
@@ -823,72 +828,146 @@ def _build_toggles(state, pick):
                  lambda _b: pick(panel.Action("edit_format", slug, None)))
     bottom.append(edit)
 
-    # Named now that a second colour row sits under it: this one is the
-    # account's colour, "Colour of" below is one token's.
-    bottom.append(Gtk.Label(label="Colour", xalign=0))
-    swatches = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    swatches.set_valign(Gtk.Align.CENTER)
-    current = next((a for a in state["accounts"] if a["current"]), None)
-    for _name, hexcolor in paths.PALETTE:
-        swatch = Gtk.Button()
-        swatch.add_css_class("ccas-swatch")
-        swatch.add_css_class(_tint(hexcolor))
-        if current and current["color"] == hexcolor:
-            swatch.add_css_class("current")
-        swatch.connect("clicked", lambda _b, h=hexcolor:
-                       pick(panel.Action("color", slug, h)))
-        swatches.append(swatch)
-    bottom.append(swatches)
     box.append(bottom)
-    box.append(_build_token_colors(state, pick))
+    box.append(_build_color_editor(state, pick))
     return box
 
 
-def _build_token_colors(state, pick):
-    """Which token, and what colour. The tokens come precomputed in
-    state["format_tokens"] — this parses nothing."""
-    from gi.repository import Gtk
+def _build_color_editor(state, pick):
+    """One dropdown, two sliders, one preview. The two colour rows this replaces
+    showed the same eight swatches under the word Colour and meant different
+    things — the account's colour and one token's — which is what made the
+    section unreadable.
+
+    Nothing is parsed here: state["color_targets"] arrives decided.
+    """
+    from gi.repository import GLib, Gtk
 
     slug = state["slug"]
-    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-    row.add_css_class("ccas-token-colors")
-    row.append(Gtk.Label(label="Colour of", xalign=0))
+    targets = state["color_targets"]
+    # Write once the drag settles, never per motion event: usage.py's rule is
+    # write only on a change with waybar.signal() riding on the write, and a
+    # live drag would fire both continuously.
+    #
+    # Not a release event, which is what this looked like it wanted. Gtk.Scale
+    # has no "released" signal in GTK4; a GestureClick added to one claims the
+    # event sequence and denies the scale's own drag, so the knob stops
+    # tracking the pointer entirely, and EventControllerLegacy's handler is
+    # passed a None event. Both measured on screen. A settle timer needs
+    # neither, and it gives keyboard adjustment the same single write.
+    settling = {"source": None, "seeding": False}
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    box.add_css_class("ccas-color-editor")
 
-    tokens = state["format_tokens"] or ["%name"]
-    picker = Gtk.DropDown.new_from_strings(tokens)
-    row.append(picker)
+    top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+    top.append(Gtk.Label(label="Colour of", xalign=0))
+    picker = Gtk.DropDown.new_from_strings([t["label"] for t in targets])
+    top.append(picker)
 
-    def chosen():
-        return tokens[picker.get_selected()]
+    def target():
+        return targets[min(picker.get_selected(), len(targets) - 1)]
 
-    for name in ("auto", "dim"):
+    # A colour halfway through a drag is in neither set _load_tints() built the
+    # CSS classes from, so _tint() would name a class that does not exist and
+    # the swatch would show nothing. Its own provider, updated per motion.
+    preview = Gtk.Box()
+    preview.add_css_class("ccas-preview")
+    provider = Gtk.CssProvider()
+    # Above PRIORITY_USER, not APPLICATION: _load_css() installs menu.css at
+    # PRIORITY_USER, so its `.ccas-preview { background: #353535 }` fallback
+    # outranks an application-priority rule and the swatch stays bar-grey
+    # whatever the sliders say. Measured on screen, not reasoned about.
+    preview.get_style_context().add_provider(
+        provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
+
+    chips = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    for name in (fmt.AUTO, fmt.DIM, fmt.ACCOUNT):
         chip = Gtk.Button(label=name)
         # Its own class, not the header's .ccas-chip: they are the same shape
         # but the account chip is a row and this is a button the size of a
         # swatch, and sharing the name had the two rules overriding each other.
         chip.add_css_class("ccas-color-chip")
-        chip.connect("clicked", lambda _b, v=name:
-                     pick(panel.Action("format_color", slug, (chosen(), v))))
-        row.append(chip)
+        chip.connect("clicked", lambda _b, v=name: _commit(v))
+        chips.append(chip)
+    top.append(chips)
+    top.append(preview)
+    box.append(top)
 
-    swatches = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    swatches.set_valign(Gtk.Align.CENTER)
-    for _name, hexcolor in paths.PALETTE:
-        swatch = Gtk.Button()
-        swatch.add_css_class("ccas-swatch")
-        swatch.add_css_class(_tint(hexcolor))
-        swatch.connect("clicked", lambda _b, v=hexcolor:
-                       pick(panel.Action("format_color", slug, (chosen(), v))))
-        swatches.append(swatch)
-    row.append(swatches)
+    hue = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 360, 1)
+    sat = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 1, 0.01)
+    for scale, name in ((hue, "hue"), (sat, "saturation")):
+        scale.set_draw_value(False)
+        scale.set_hexpand(True)
+        scale.add_css_class("ccas-slider")
+        scale.add_css_class(f"ccas-slider-{name}")
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        label_widget = Gtk.Label(label=name, xalign=0)
+        label_widget.set_size_request(70, -1)
+        row.append(label_widget)
+        row.append(scale)
+        box.append(row)
+
+    def current_hex():
+        return fmt.hs_to_hex(hue.get_value(), sat.get_value())
+
+    def paint(value):
+        # The bar's own background, so an uncommitted preview is still honest
+        # about what the label will look like once it lands.
+        provider.load_from_string(f".ccas-preview {{ background: {value}; }}")
+
+    def repaint(*_a):
+        paint(current_hex())
+
+    def _commit(value=None):
+        entry_value = current_hex() if value is None else value
+        chosen = target()
+        if chosen["token"] is None:
+            pick(panel.Action("color", slug, entry_value))
+        else:
+            pick(panel.Action("format_color", slug,
+                              (chosen["token"], entry_value)))
+
+    def seed(*_a):
+        """Slider positions for the selected target, without committing: setting
+        a Gtk.Scale emits value-changed, and acting on it would write the
+        registry every time the dropdown moved."""
+        settling["seeding"] = True
+        h, s = fmt.hex_to_hs(target()["color"])
+        hue.set_value(h)
+        sat.set_value(s)
+        settling["seeding"] = False
+        chips.set_visible(target()["chips"])
+        # The stored colour, not current_hex(): the sliders pin lightness at
+        # LIGHTNESS and this one may not be there yet. Nothing shifts merely
+        # because the editor opened — the first drag is what snaps it.
+        paint(target()["color"])
+
+    def on_value(*_a):
+        repaint()
+        if settling["source"] is not None:
+            GLib.source_remove(settling["source"])
+        # Never while seed() is moving the sliders: that is the dropdown
+        # changing target, not the user choosing a colour.
+        if not settling["seeding"]:
+            settling["source"] = GLib.timeout_add(SETTLE_MS, on_settled)
+
+    def on_settled():
+        settling["source"] = None
+        _commit()
+        return False
+
+    hue.connect("value-changed", on_value)
+    sat.connect("value-changed", on_value)
+    picker.connect("notify::selected", seed)
 
     entry = Gtk.Entry(placeholder_text="#rrggbb", max_length=7, width_chars=8)
-    # activate only: a colour is a small enough commitment for Enter-then-close,
-    # where a rename is not — that one still goes to a terminal.
-    entry.connect("activate", lambda e:
-                  pick(panel.Action("format_color", slug, (chosen(), e.get_text()))))
-    row.append(entry)
-    return row
+    # The escape hatch for a colour the sliders cannot reach: they hold
+    # lightness at format.LIGHTNESS, and format_colors accepts any hex.
+    entry.connect("activate", lambda e: _commit(e.get_text()))
+    top.append(entry)
+
+    seed()
+    return box
 
 
 def _build_manage(state, pick):

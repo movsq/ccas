@@ -179,7 +179,6 @@ def build_state(slug: str, now=None) -> dict:
         # Precomputed so panel_ui parses nothing: the widget tree renders the
         # list it is handed. Ordered and de-duplicated, so the dropdown reads
         # left to right the way the label does.
-        "format_tokens": fmt.tokens_in(account.get("format") or fmt.DEFAULT_FORMAT),
         "color_targets": color_targets(account),
         "hide_icon": bool(account.get("hide_icon")),
         "headless": bool(account.get("headless")),

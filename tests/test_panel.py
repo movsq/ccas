@@ -753,14 +753,16 @@ def test_the_probe_outlasts_a_held_mouse_button(monkeypatch):
 
 # ── the custom format ─────────────────────────────────────────────────────────
 
-def test_build_state_carries_the_format_and_its_tokens(reg):
-    """format_tokens is precomputed here so panel_ui never parses a format
-    string — the widget tree renders what it is handed and decides nothing."""
+def test_build_state_carries_the_format_and_its_targets(reg):
+    """The colour targets are precomputed here so panel_ui never parses a
+    format string — the widget tree renders what it is handed and decides
+    nothing. color_targets replaced format_tokens with its last reader."""
     registry.set_field(reg, "one", "format", "%icon %name %icon %5h")
     registry.save(reg)
     state = panel.build_state("one")
     assert state["format"] == "%icon %name %icon %5h"
-    assert state["format_tokens"] == ["%icon", "%name", "%5h"]
+    assert [t["token"] for t in state["color_targets"]] == \
+        [None, "%icon", "%name", "%5h"]
 
 
 def test_build_state_defaults_the_format_for_an_old_account(reg):
@@ -770,7 +772,8 @@ def test_build_state_defaults_the_format_for_an_old_account(reg):
     registry.save(reg)
     state = panel.build_state("one")
     assert state["format"] == fmt.DEFAULT_FORMAT
-    assert state["format_tokens"] == fmt.tokens_in(fmt.DEFAULT_FORMAT)
+    assert [t["token"] for t in state["color_targets"]][1:] == \
+        fmt.tokens_in(fmt.DEFAULT_FORMAT)
 
 
 def test_a_setting_is_applied_without_shutting_the_panel():

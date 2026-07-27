@@ -132,3 +132,17 @@
 
 .ccas-manage        { padding: 8px 16px; }
 .ccas-danger        { color: #f38ba8; }
+
+/* The preview sits on the bar's own background rather than the panel's, so an
+ * uncommitted colour is judged against what will actually draw it. */
+.ccas-preview      { min-width: 22px; min-height: 22px; border-radius: 999px;
+                     background: #353535; }
+.ccas-color-editor { padding: 2px 0 8px 0; }
+.ccas-color-editor > box > label,
+.ccas-color-editor label { color: #9399b2; }
+.ccas-slider trough { min-height: 8px; border-radius: 999px; }
+.ccas-slider-hue trough {
+  background: linear-gradient(to right, #f38ba8 0%, #f9e2af 17%, #a6e3a1 33%,
+              #94e2d5 50%, #89b4fa 67%, #cba6f7 83%, #f38ba8 100%); }
+.ccas-slider slider { min-width: 14px; min-height: 14px; border-radius: 999px;
+                      background: #cdd6f4; }
