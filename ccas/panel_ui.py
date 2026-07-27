@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 
-from . import format as fmt, panel, paths
+from . import format as fmt, panel, paths, usage
 
 MISSING_DEPS = ("ccs: the panel needs PyGObject, GTK4 and gtk4-layer-shell — "
                 "install with: sudo pacman -S python-gobject gtk4 "
@@ -383,10 +383,14 @@ def _usage_text(row):
     than drawing an empty bar, which is indistinguishable from a bar at zero and
     means the opposite.
     """
-    if row["kind"] == "absent":
+    if row["kind"] == usage.ABSENT:
         return "no data"
-    if row["kind"] == "open":
-        return f"clears {row['resets']}"
+    if row["kind"] == usage.IDLE:
+        # A measurement, not a gap: the window is not running, so nothing has
+        # been spent in it. "no data" here was the panel's half of the bug that
+        # emptied an idle account's label — it belongs to an account nothing has
+        # ever recorded for, where doctor's hook and timer checks are the answer.
+        return usage.IDLE_TEXT
     return f"≥{row['percent']:.0f}%  clears {row['resets']}"
 
 

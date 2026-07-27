@@ -165,13 +165,26 @@ def test_an_absent_window_renders_every_one_of_its_tokens_empty():
                           format_override=token) == ""
 
 
-def test_an_open_window_has_no_clock_but_keeps_its_percentage():
+def test_an_idle_window_has_no_clock_and_nothing_spent_in_it():
     """resets_at in the past means the window rolled over, so the clock is
-    meaningless — but the recorded percentage is still the last thing known."""
+    meaningless — and so is the percentage it was at, which used to be kept as
+    "the last thing known". It is not known any more: the window refilled. An
+    idle account rendered its dead 62% until the endpoint dropped the window
+    entirely, at which point the label vanished mid-afternoon."""
     r = reading(five_at=NOW - 60)
     assert bare({}, "%5hreset", r) == ""
     assert bare({}, "%5htimeleft", r) == ""
-    assert bare({}, "%5hused", r) == "62%"
+    assert bare({}, "%5hused", r) == "0%"
+    assert bare({}, "%5hquotaleft", r) == "100%"
+
+
+def test_a_window_the_payload_never_named_renders_the_same_as_a_rolled_over_one():
+    """The measured bug, at the token: the poller reported no 5-hour window at
+    all for an idle account, and a label built from 5h tokens emptied."""
+    r = reading(five_pct=None, seven_pct=11.0, seven_at=NOW + 86400)
+    assert bare({}, "%5hused", r) == "0%"
+    assert bare({}, "%5hquotaleft", r) == "100%"
+    assert bare({}, "%5hreset", r) == ""
 
 
 def test_the_smart_tokens_are_usage_bar():

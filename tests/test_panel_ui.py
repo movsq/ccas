@@ -13,6 +13,7 @@ import pytest
 import ccas.format as fmt
 import ccas.panel as panel
 import ccas.panel_ui as panel_ui
+import ccas.usage as usage
 
 
 @pytest.fixture
@@ -127,3 +128,17 @@ def test_switching_target_does_not_remove_a_dead_timer(gtk, monkeypatch):
         chips[2].emit("clicked")
         _settle()
     assert not [w for w in caught if "Source ID" in str(w.message)]
+
+
+def test_usage_text_separates_an_idle_window_from_an_unknown_one():
+    """"no data" belongs to the account nothing has ever recorded for, where
+    doctor's hook and timer checks are the answer. It was also what an account
+    idle past its reset got, which is not missing data — it is a measured empty
+    window. Pure string work: no GTK fixture, since _usage_text builds no widget.
+    """
+    idle = {"kind": usage.IDLE, "percent": 0.0, "resets": ""}
+    absent = {"kind": usage.ABSENT, "percent": None, "resets": ""}
+    bounded = {"kind": usage.BOUNDED, "percent": 61.0, "resets": "19:30"}
+    assert panel_ui._usage_text(idle) == "0% used"
+    assert panel_ui._usage_text(absent) == "no data"
+    assert panel_ui._usage_text(bounded) == "≥61%  clears 19:30"

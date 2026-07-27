@@ -234,6 +234,18 @@ one costs real quota. Four rules hold the feature up:
 - **Write only on a change**, and let `waybar.signal()` ride on the write. The
   hook fires every few hundred milliseconds; the numbers move every few minutes.
 
+**An idle window is a measurement, not a gap.** `usage.state()` has three kinds:
+`BOUNDED` (running, reset ahead), `IDLE` (there is a reading and this window is
+not running — the payload named no window, *or* its reset has passed), and
+`ABSENT` (no reading at all). The first two were one state once, and an account
+left alone lost its entire label the second its window rolled over, with the
+panel calling it "no data". `IDLE` carries a percent of `0.0`, not `None` —
+that is the fact, it is what keeps `%5hused` rendering, and it makes a panel bar
+at zero *mean* zero. Said as `usage.IDLE_TEXT` (`0% used`) wherever it is said;
+"no data" survives only for `ABSENT`, where doctor's hook and timer checks are
+the answer. `usage.bar()` still answers `None` for anything but `BOUNDED`: it
+warns, and an idle window has nothing to warn about.
+
 The display is the **reset time, not the percentage**: `resets_at` is an absolute
 anchor, so past means the window rolled over and future makes the recorded
 percentage a lower bound (`≥`). That is also why there is no staleness cutoff

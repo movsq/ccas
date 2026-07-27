@@ -130,8 +130,37 @@ def test_a_past_reset_means_the_window_rolled_over():
     """No age cutoff anywhere: a 5-hour reading older than five hours must have
     a reset in the past, so staleness and rollover are the same test."""
     reading = usage.from_statusline(statusline(five=(94.0, 2000)), now=1000.0)
-    assert usage.state(reading, "five_hour", now=999999.0).kind == usage.OPEN
+    assert usage.state(reading, "five_hour", now=999999.0).kind == usage.IDLE
     assert usage.state(None, "five_hour", now=1.0).kind == usage.ABSENT
+
+
+def test_a_reading_that_names_no_window_is_idle_not_absent():
+    """The bug: an account left alone long enough stops being reported a 5-hour
+    window at all, and the label built from 5h tokens vanished. A reading that
+    says the window is not running is information — the quota refilled — where
+    no reading at all is ignorance."""
+    reading = usage.from_statusline(statusline(five=None, seven=(11.0, 900000)),
+                                    now=1000.0)
+    assert usage.state(reading, "five_hour", now=1000.0).kind == usage.IDLE
+    assert usage.state(None, "five_hour", now=1000.0).kind == usage.ABSENT
+
+
+def test_an_idle_window_reads_as_nothing_used():
+    """0.0, not None: the percentage is the fact — a rolled-over window has had
+    nothing spent in it — and it is what keeps %5hused rendering. The dead
+    pre-reset number is not carried across."""
+    reading = usage.from_statusline(statusline(five=(94.0, 2000)), now=1000.0)
+    st = usage.state(reading, "five_hour", now=999999.0)
+    assert st.percent == 0.0
+    assert st.resets_at is None
+    assert usage.state(None, "five_hour", now=1.0).percent is None
+
+
+def test_open_is_gone():
+    """Folded into IDLE rather than kept beside it: a payload that omits the
+    window and a reset that has passed are one fact, and this repo retires a
+    value instead of growing a read path that understands both."""
+    assert not hasattr(usage, "OPEN")
 
 
 # ── recording ─────────────────────────────────────────────────────────────────
@@ -249,7 +278,7 @@ def test_the_lines_name_the_state_in_words():
     bounded = usage.from_statusline(statusline(five=(94.0, 2000), seven=None), now=0)
     assert usage.lines(bounded, now=1000.0) == [
         f"5h ≥94% · clears {usage.reset_time(2000, 1000.0)}"]
-    assert usage.lines(bounded, now=999999.0) == ["5h window open"]
+    assert usage.lines(bounded, now=999999.0) == ["5h 0% used"]
     assert usage.lines(None, now=1000.0) == [usage.NOT_WIRED]
 
 
@@ -270,3 +299,20 @@ def test_reset_time_names_the_day_only_when_it_is_another_one():
     assert usage.reset_time(noon + 3600, noon) == "13:00"
     assert usage.reset_time(noon + 86400, noon) == _time.strftime(
         "%a %H:%M", _time.localtime(noon + 86400))
+
+
+def test_the_column_says_an_idle_window_and_an_unknown_one_differently():
+    """`ccs usage` shows both windows however quiet either is, so it is the one
+    place the two must not read alike: 0% used is a measurement, — is not."""
+    idle = usage.from_statusline(statusline(five=None, seven=(11.0, 900000)),
+                                 now=1000.0)
+    assert usage.column(idle, "five_hour", 1000.0) == "5h 0% used"
+    assert usage.column(None, "five_hour", 1000.0) == "5h —"
+
+
+def test_an_idle_window_still_has_nothing_to_warn_about():
+    """bar() exists to warn, so IDLE keeps answering None — %5h and %7d stay
+    blank rather than announcing that everything is fine."""
+    idle = usage.from_statusline(statusline(five=None, seven=(11.0, 900000)),
+                                 now=1000.0)
+    assert usage.bar(idle, now=1000.0) is None

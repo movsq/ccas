@@ -1053,3 +1053,43 @@ Found by building the editor in a test harness and emitting the signals a pointe
 would emit, rather than by clicking it: the module had no test file, on the
 grounds that it decides nothing, and this is the part of it that decides. It has
 one now — no window is mapped, so it needs a display but not the user's screen.
+
+## The label an idle account loses at its reset (2026-07-27)
+
+The user's second account was showing `✻ 14:50 100%` at 14:14 — its 5-hour
+window exhausted, clearing at 14:50. At 14:50:32 the poller wrote a payload with
+`"five_hour": null`, and the label collapsed to a bare glyph. The panel's 5h row
+read **no data**. The format string was `%5hreset %5hquotaleft`, untouched, and
+`ccs doctor` was green on every check.
+
+Two facts had been sharing one state. `usage.state()` returned `ABSENT` both for
+*no reading* and for *a fresh reading naming no window*, and every caller treated
+that as ignorance: the tokens rendered nothing, `ccs usage` printed `5h —`, the
+panel said "no data". But the endpoint drops the 5-hour window for an account
+that has not been using it, so the second case is a measurement, and it says the
+opposite of nothing-known — the quota refilled. It arrives exactly when a window
+rolls over, which is precisely when an account is idle, so the cost was the
+label of every account not currently in use.
+
+`OPEN` — a reading whose reset had passed — was the same fact learned a different
+way, and was rendered nearly as badly: no clock, and the percentage from *before*
+the reset, presented as "the last thing known". It was not known any more.
+
+So `OPEN` is gone, folded into a new `IDLE` that covers both, carrying `0.0`
+rather than the dead number. `ABSENT` narrowed to no reading at all, which is
+where "no data" is true and where doctor's hook and timer checks are the answer.
+`IDLE` carrying a real zero is what does the work: `format._percent` already
+returned "" only for a `None` percent, so `%5hused` and `%5hquotaleft` render
+`0%` and `100%` with no branch added, and a panel bar at zero now *means* zero —
+the ambiguity `panel.usage_rows` was written to dodge only existed because
+ignorance had no kind of its own.
+
+Said as `0% used` everywhere it is said. Not "full", which reads backwards: full
+of usage, or full of quota?
+
+It was reported as "it poofed", and the first diagnosis — correct as far as it
+went — was that the code had done nothing wrong and this was the design working.
+That is the trap. The design was working exactly as written, and what it wrote
+was the bug. The user's own screenshot, timestamped 14:14, is what pinned the
+before-state against the 14:50:32 mtime; CCAS writes only on a change, so that
+mtime is not when a file was touched, it is the second the fact changed.

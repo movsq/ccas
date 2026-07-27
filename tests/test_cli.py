@@ -1157,12 +1157,12 @@ def test_usage_can_be_asked_about_one_account(monkeypatch, capsys):
     assert cli.main(["usage", "ghost"]) == 1
 
 
-def test_usage_says_a_rolled_over_window_is_open(monkeypatch, capsys):
+def test_usage_says_a_rolled_over_window_has_nothing_spent_in_it(monkeypatch, capsys):
     make_account("a")
     _record(monkeypatch, "a", five=(94.0, time.time() - 60))
     capsys.readouterr()
     cli.main(["usage"])
-    assert "5h window open" in capsys.readouterr().out
+    assert "5h 0% used" in capsys.readouterr().out
 
 
 # ── the poll ──────────────────────────────────────────────────────────────────

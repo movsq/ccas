@@ -91,7 +91,7 @@ def test_build_state_reads_a_bounded_window(reg):
     assert five["resets"] == usage.reset_time(int(now + 3600), now)
 
 
-def test_build_state_reads_a_rolled_over_window_as_open(reg):
+def test_build_state_reads_a_rolled_over_window_as_idle(reg):
     """A reset in the past means the window rolled over, which is the good state
     and must not be rendered as pressure."""
     now = 1_700_000_000.0
@@ -101,7 +101,8 @@ def test_build_state_reads_a_rolled_over_window_as_open(reg):
         "seven_day": None,
     }))
     state = panel.build_state("one", now=now)
-    assert state["usage"][0]["kind"] == usage.OPEN
+    assert state["usage"][0]["kind"] == usage.IDLE
+    assert state["usage"][0]["percent"] == 0.0
 
 
 def test_build_state_survives_an_unknown_slug(reg):

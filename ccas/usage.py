@@ -39,10 +39,13 @@ SEVEN_DAY_TAKES_OVER = 90
 NOT_WIRED = "usage — statusline hook not wired"
 # The same fact where the command itself already says the subject is usage.
 NO_DATA = "no data — statusline hook not wired"
+# How an IDLE window is said, wherever it is said. Not "full": that reads
+# backwards, as full of usage rather than full of quota.
+IDLE_TEXT = "0% used"
 
 WINDOWS = ("five_hour", "seven_day")
 
-ABSENT, OPEN, BOUNDED = "absent", "open", "bounded"
+ABSENT, IDLE, BOUNDED = "absent", "idle", "bounded"
 State = namedtuple("State", "kind percent resets_at")
 
 
@@ -210,13 +213,25 @@ def state(reading, key: str, now=None) -> State:
     A 5-hour reading older than five hours necessarily has a reset in the past,
     so "stale" and "rolled over" are the same test — there is no threshold to
     pick and none to get wrong.
+
+    ABSENT is *no reading*, and nothing else. A reading that names no window is
+    IDLE: the endpoint stops reporting a window an account has not been using,
+    which is not ignorance — it says the quota refilled. Both were ABSENT once,
+    and an account left alone lost its whole label at the moment its window
+    rolled over, with the panel calling a measurement "no data".
+
+    IDLE carries 0.0, not None, because that is the fact: nothing has been spent
+    in a window that is not running. It is also what keeps `%5hused` rendering,
+    and it makes a bar at zero *mean* zero — ignorance is a separate kind now.
+    The percentage from before the reset is not carried across; it is dead the
+    moment the window rolls over.
     """
     now = time.time() if now is None else now
-    window = (reading or {}).get(key)
-    if not window:
+    if reading is None:
         return State(ABSENT, None, None)
-    if window["resets_at"] <= now:
-        return State(OPEN, window["percent"], window["resets_at"])
+    window = reading.get(key)
+    if not window or window["resets_at"] <= now:
+        return State(IDLE, 0.0, None)
     return State(BOUNDED, window["percent"], window["resets_at"])
 
 
@@ -268,8 +283,8 @@ def bar(reading, now=None):
 
 def _line(key: str, st: State, now: float) -> str:
     short = "5h" if key == "five_hour" else "7d"
-    if st.kind == OPEN:
-        return f"{short} window open"
+    if st.kind == IDLE:
+        return f"{short} {IDLE_TEXT}"
     # ≥ because usage only climbs within a window: the recorded percentage is a
     # lower bound for as long as its reset is still ahead.
     return f"{short} ≥{st.percent:.0f}% · clears {reset_time(st.resets_at, now)}"
@@ -282,8 +297,8 @@ def column(reading, key: str, now: float) -> str:
     short = "5h" if key == "five_hour" else "7d"
     if st.kind == ABSENT:
         return f"{short} —"
-    if st.kind == OPEN:
-        return f"{short} window open"
+    if st.kind == IDLE:
+        return f"{short} {IDLE_TEXT}"
     return f"{short} ≥{st.percent:.0f}% clears {reset_time(st.resets_at, now)}"
 
 
