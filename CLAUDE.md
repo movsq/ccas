@@ -408,6 +408,10 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   diffing before/after screenshots, which anything else moving on screen ruins.
   Aim at a row that is *not* the highlighted first one, or a stray keypress is
   indistinguishable from a successful click.
+- **A change to `assets/menu.css` does not reach the live panel.** `install.sh`
+  copies it to `~/.config/ccas/menu.css` once and never again — it is the
+  user's after that. Copy it across by hand to test a stylesheet fix, and back
+  up the live one first in case they have edited it.
 - **`ccs` runs the installed copy, not this repo.** `install.sh` stages the
   package into `~/.local/share/ccas`, so any test that goes through the `ccs`
   command exercises the code as of the last install. Editing a module and then
