@@ -78,6 +78,11 @@ Second reason to stay away even if policy allowed it: the bundle calls this with
 `.credentials.json` would break that account's login. CCAS must never refresh
 and never write credentials.
 
+That last sentence still holds for *CCAS doing it*. It does not mean the token
+can never be renewed: since 2026-07-27 `poll.renew()` asks `claude auth status`
+to renew, which leaves the writing to the program that owns the file. See
+`docs/why.md`, "The eight-hour horizon was a horizon, not a law".
+
 ### D — the statusline hook (documented, the one to build on)
 
 Claude Code passes JSON on stdin to the statusline command, and it includes the

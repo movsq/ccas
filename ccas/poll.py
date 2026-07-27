@@ -9,12 +9,13 @@ why that route, and `docs/usage-limits-research.md` has the three that lost.
 
 Two rules hold it up:
 
-- **Read the credentials, never write them.** No refresh, ever: rotating a token
-  risks that account's login, and can invalidate the one a live session holds.
-  An expired token means no fetch — never a renewal. The horizon that buys is
-  about eight hours, and it is the right trade: an account idle that long has
-  rolled its five-hour window over, which `usage.state()` reports from the
-  timestamp alone with no fetch at all.
+- **Read the credentials, never write them.** CCAS does not hold the refresh
+  token to the fire itself: rotating one behind Claude Code's back risks that
+  account's login and can invalidate the token a live session holds. An expired
+  token is instead handed *back* to Claude Code — `claude auth status` renews it
+  on the way past, under its own cross-process lock — and the fresh one is read
+  off disk. `CCAS_NO_TOKEN_REFRESH=1` takes that away again and restores the
+  eight-hour horizon this had before, where an idle account simply went quiet.
 - **Never fetch what the hook already knows.** `due()` skips an account recorded
   more recently than the interval, so the account being used stays the hook's
   and the timer serves the idle one.
@@ -22,13 +23,14 @@ Two rules hold it up:
 No signalling here. The caller owns the bar, the same way `cmd_statusline` does.
 """
 import json
+import os
 import subprocess
 import time
 import urllib.error
 import urllib.request
 from collections import namedtuple
 
-from . import paths, usage
+from . import accounts, paths, usage
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
@@ -62,6 +64,33 @@ def access_token(slug: str):
     if not token or not expires:
         return None
     return token, expires / 1000.0  # the file is milliseconds, CCAS is seconds
+
+
+def renewal_wanted() -> bool:
+    """The off switch, read at the point of use so a unit override takes hold
+    without an install. `CCAS_NO_TOKEN_REFRESH=1` and the poll is back to what
+    it was: an expired token is the end of the attempt."""
+    return os.environ.get("CCAS_NO_TOKEN_REFRESH") != "1"
+
+
+def renew(slug: str, asker=None):
+    """Ask Claude Code to renew this account's token; re-read what it left.
+
+    `(token, expires_at)` if a usable one is now on disk, else None. CCAS writes
+    nothing here — `claude auth status` reads the credentials for that account
+    and refreshes an expired token on its way, which is the whole point of
+    routing through it rather than posting to the token endpoint ourselves.
+
+    Never raises: the timer runs unattended, and a claude that is missing, slow
+    or logged out is the same event as far as the caller is concerned — no fresh
+    token this time.
+    """
+    asker = accounts.auth_status if asker is None else asker
+    try:
+        asker(slug)
+    except Exception:  # noqa: BLE001 — see the docstring
+        return None
+    return access_token(slug)
 
 
 def due(slug: str, now: float, interval: float = INTERVAL) -> bool:
@@ -106,8 +135,9 @@ def fetch(token: str, opener=None):
         return None, f"{type(exc).__name__}: {exc}"
 
 
-def poll_account(slug: str, now=None, fetcher=None, force=False) -> Outcome:
-    """One account: decide, fetch, record. Reports; never raises."""
+def poll_account(slug: str, now=None, fetcher=None, force=False,
+                 renewer=None) -> Outcome:
+    """One account: decide, renew if it must, fetch, record. Never raises."""
     now = time.time() if now is None else now
     fetcher = fetch if fetcher is None else fetcher
 
@@ -122,7 +152,14 @@ def poll_account(slug: str, now=None, fetcher=None, force=False) -> Outcome:
     if expires_at <= now + LEEWAY:
         when = (f"expired {age(now - expires_at)} ago" if expires_at <= now
                 else "expires within the minute")
-        return Outcome(slug, EXPIRED, f"token {when} — no fetch, and CCAS never renews")
+        if not renewal_wanted():
+            return Outcome(slug, EXPIRED,
+                           f"token {when} — no fetch; renewal is switched off")
+        renewed = renew(slug, renewer)
+        if renewed is None or renewed[1] <= now + LEEWAY:
+            return Outcome(slug, EXPIRED,
+                           f"token {when} — claude did not renew it; is it logged in?")
+        token, expires_at = renewed
 
     payload, error = fetcher(token)
     if payload is None:
@@ -153,7 +190,7 @@ def timer_state(runner=None) -> str:
     return (getattr(proc, "stdout", "") or "").strip() or "unknown"
 
 
-def poll(slugs, now=None, fetcher=None, force=False) -> list:
+def poll(slugs, now=None, fetcher=None, force=False, renewer=None) -> list:
     """Every account, one outcome each. The timer runs this unattended, so one
     broken account may not stop the rest."""
-    return [poll_account(slug, now, fetcher, force) for slug in slugs]
+    return [poll_account(slug, now, fetcher, force, renewer) for slug in slugs]

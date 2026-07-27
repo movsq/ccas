@@ -118,23 +118,100 @@ def test_force_polls_a_fresh_account_anyway(monkeypatch, tmp_path):
 
 # ── the expiry horizon ────────────────────────────────────────────────────────
 
-def test_an_expired_token_is_not_fetched_with_and_not_renewed(monkeypatch, tmp_path):
-    """A token lives ~8h and only Claude Code renews it. Past that the account
-    goes quiet until it is next used — deliberately, because renewing is the one
-    thing this must never do."""
+def renewing(tmp_path, to=None, token="sk-fresh"):
+    """A renewer standing in for `claude auth status`.
+
+    The real one renews by *rewriting the credentials file* — CCAS never writes
+    it — so the stub does that and nothing else. What the poll then fetches with
+    is read back off disk, which is the behaviour under test.
+    """
+    calls = []
+
+    def asker(slug):
+        calls.append(slug)
+        if to is not None:
+            credentials(tmp_path, expires_at_ms=int(to * 1000), token=token)
+        return {"loggedIn": True}
+    asker.calls = calls
+    return asker
+
+
+def test_an_expired_token_is_handed_to_claude_and_the_fresh_one_is_used(
+        monkeypatch, tmp_path):
+    """The eight-hour horizon, closed. CCAS still never writes the credentials:
+    it asks `claude auth status`, which renews on the way, then re-reads."""
     env(monkeypatch, tmp_path)
     credentials(tmp_path, expires_at_ms=int((NOW - 60) * 1000))
+    asker = renewing(tmp_path, to=NOW + 8 * 3600)
     fetcher = answering(body())
-    outcome = poll.poll_account("work", now=NOW, fetcher=fetcher)
+    outcome = poll.poll_account("work", now=NOW, fetcher=fetcher, renewer=asker)
+    assert asker.calls == ["work"]
+    assert fetcher.seen == ["sk-fresh"]
+    assert outcome.status == poll.OK
+
+
+def test_a_renewal_that_does_not_take_reports_expired_and_never_fetches(
+        monkeypatch, tmp_path):
+    """Logged out, offline, or claude simply declined: the account goes quiet
+    exactly as it did before, rather than the poll spending a request on a
+    token it has already read as dead."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW - 60) * 1000))
+    asker = renewing(tmp_path)  # answers, renews nothing
+    fetcher = answering(body())
+    outcome = poll.poll_account("work", now=NOW, fetcher=fetcher, renewer=asker)
+    assert asker.calls == ["work"]
     assert outcome.status == poll.EXPIRED
     assert fetcher.seen == []
 
 
-def test_a_token_inside_the_leeway_counts_as_expired(monkeypatch, tmp_path):
-    """A token with thirty seconds left will not survive the request."""
+def test_the_renewal_can_be_put_away_with_one_variable(monkeypatch, tmp_path):
+    """CCAS_NO_TOKEN_REFRESH=1 restores the eight-hour horizon whole: claude is
+    not asked at all, which is the point — the switch has to be provable from
+    outside, not just quieter."""
+    env(monkeypatch, tmp_path)
+    monkeypatch.setenv("CCAS_NO_TOKEN_REFRESH", "1")
+    credentials(tmp_path, expires_at_ms=int((NOW - 60) * 1000))
+    asker = renewing(tmp_path, to=NOW + 8 * 3600)
+    fetcher = answering(body())
+    outcome = poll.poll_account("work", now=NOW, fetcher=fetcher, renewer=asker)
+    assert asker.calls == []
+    assert outcome.status == poll.EXPIRED
+    assert fetcher.seen == []
+
+
+def test_a_live_token_is_never_handed_to_claude(monkeypatch, tmp_path):
+    """The renewal is the expired path's alone. Asking on every poll would spawn
+    a claude every five minutes for an account that needs nothing."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 3600) * 1000))
+    asker = renewing(tmp_path, to=NOW + 8 * 3600)
+    poll.poll_account("work", now=NOW, fetcher=answering(body()), renewer=asker)
+    assert asker.calls == []
+
+
+def test_a_renewal_that_raises_is_reported_rather_than_raised(monkeypatch, tmp_path):
+    """The timer runs this unattended; a broken claude may not stop the poll."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW - 60) * 1000))
+
+    def asker(slug):
+        raise OSError("no such binary")
+
+    outcome = poll.poll_account("work", now=NOW, fetcher=answering(body()),
+                                renewer=asker)
+    assert outcome.status == poll.EXPIRED
+
+
+def test_a_token_inside_the_leeway_is_renewed_too(monkeypatch, tmp_path):
+    """A token with thirty seconds left will not survive the request, so it is
+    the same case as an expired one rather than a fetch worth trying."""
     env(monkeypatch, tmp_path)
     credentials(tmp_path, expires_at_ms=int((NOW + 30) * 1000))
-    outcome = poll.poll_account("work", now=NOW, fetcher=answering(body()))
+    asker = renewing(tmp_path)
+    outcome = poll.poll_account("work", now=NOW, fetcher=answering(body()),
+                                renewer=asker)
+    assert asker.calls == ["work"]
     assert outcome.status == poll.EXPIRED
 
 

@@ -261,13 +261,20 @@ user timer runs `ccs poll` every five minutes. Four rules there:
 - **The cadence lives in the unit and nowhere else.** No CCAS setting to drift
   out of sync with systemd; `systemctl --user edit ccas-poll.timer` retimes it.
   `install.sh` writes both units and trashes any existing one first.
-- **Never write `.credentials.json`, and never refresh a token.** Read the
-  access token, use it, treat expiry as "no fetch" — never as "renew". A
-  rotation risks that account's login and can invalidate the token a live
-  session is holding. The horizon that buys is about eight hours, after which
-  the account goes quiet until it is next used. That is a degradation, not a
-  hole: an account idle that long has rolled its 5-hour window over, which
-  `usage.state()` reports from the timestamp alone.
+- **Never write `.credentials.json`, and never post to the token endpoint.**
+  Rotating a refresh token behind Claude Code's back risks that account's login
+  and can invalidate the token a live session is holding. An expired token is
+  handed *back* to the program that owns the file — `poll.renew()` runs
+  `claude auth status` under that account's `CLAUDE_CONFIG_DIR`, which refreshes
+  on its way past under its own cross-process lock, and CCAS re-reads the
+  result. It costs no model quota. **`CCAS_NO_TOKEN_REFRESH=1` puts the whole
+  thing away**: the poll then treats expiry as "no fetch" again and the account
+  goes quiet after about eight hours until it is next used, which was the
+  behaviour before 2026-07-27 and is still a degradation rather than a hole —
+  an account idle that long has rolled its 5-hour window over, which
+  `usage.state()` reports from the timestamp alone. The renewal is the expired
+  path's alone; a live token is never handed to claude, or the timer would spawn
+  a process every five minutes for an account that needs nothing.
 - **`due()` skips an account the hook is already keeping fresh**, so a live
   session is never polled for and the request is spent on the idle account.
 - **The signal still rides on the write.** `record_reading` is the half of

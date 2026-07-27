@@ -1145,3 +1145,21 @@ traceback, because nothing had gone wrong. The pattern to match on is `comm ==
 python3` plus `bin/ccs --gui`, which keeps the rule the old recipe was written
 for: name first, so a shell cannot be a candidate. A kill pattern that matches
 nothing fails exactly like one that matches too much, and it fails more quietly.
+
+**The eight-hour horizon was a horizon, not a law.** The user asked why they had
+to "reset claude" about once every eight hours to get an idle account's numbers
+back. Eight hours is exactly the access token's life — issued 14:37, `expiresAt`
+22:37 — and their refresh tokens were healthy for another four weeks. So nothing
+was invalidating anything: the token aged out on schedule and `ccs poll` refused
+to renew it, by a rule written here in capitals. The rule's *reason* was sound
+and is unchanged — CCAS posting to the token endpoint rotates a refresh token
+behind Claude Code's back, which risks the login and can invalidate what a live
+session holds — but the conclusion drawn from it was wider than the reason. "CCAS
+must not rotate the token" is not "the token must not be rotated". `claude auth
+status` renews on its way past, under Claude Code's own cross-process lock,
+spends no model quota, and `accounts.auth_status()` was already in the tree doing
+exactly that call for `cmd_add`. The renewal is the expired path's alone — asking
+on every poll would spawn a claude every five minutes for an account that needs
+nothing — and `CCAS_NO_TOKEN_REFRESH=1` restores the old behaviour whole, tested
+by asserting claude is *not asked*, because an off switch that only goes quieter
+is not one.
