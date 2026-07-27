@@ -137,7 +137,10 @@
 .ccas-toggles > box > label { color: #9399b2; }
 .ccas-toggles label.ccas-section { color: #7f849c; }
 
-.ccas-manage        { padding: 8px 16px; }
+/* No horizontal padding, for the same reason .ccas-color-editor has none: the
+ * drawer already pads this column, and the extra 16px pushed this row alone
+ * right of every label, checkbox and chip above it. */
+.ccas-manage        { padding: 8px 0; }
 .ccas-danger        { color: #f38ba8; }
 
 /* The preview sits on the bar's own background rather than the panel's, so an
