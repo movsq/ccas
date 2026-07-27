@@ -884,10 +884,10 @@ def _build_toggles(state, pick, ui_state):
 
 
 def _build_color_editor(state, pick, ui_state):
-    """One dropdown, two sliders, one preview. The two colour rows this replaces
-    showed the same eight swatches under the word Colour and meant different
-    things — the account's colour and one token's — which is what made the
-    section unreadable.
+    """A row of chips, two sliders, one preview. The two colour rows this
+    replaces showed the same eight swatches under the word Colour and meant
+    different things — the account's colour and one token's — which is what
+    made the section unreadable.
 
     Nothing is parsed here: state["color_targets"] arrives decided.
     """
@@ -909,13 +909,47 @@ def _build_color_editor(state, pick, ui_state):
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
     box.add_css_class("ccas-color-editor")
 
+    # A row of chips, not a dropdown. The dropdown showed one target at a time,
+    # cost a click and a popup to change, and — greyed by an over-broad CSS
+    # rule — read as a disabled control. The chips show every target's current
+    # colour at once, which is the thing the user could not see.
+    chips = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    chips.add_css_class("ccas-color-chips")
+
+    # The name stays at full contrast and the colour goes in a 2 px strip under
+    # it: a name painted in its own colour is unreadable at low saturation and
+    # indistinguishable from "unset" at white, which is exactly the colour an
+    # unset token renders as.
+    strips = []
+    buttons = []
+    for entry_target in targets:
+        chip = Gtk.Button()
+        chip.add_css_class("ccas-color-chip")
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        inner.append(Gtk.Label(label=entry_target["label"]))
+        strip = Gtk.Box()
+        strip.add_css_class("ccas-color-chip-strip")
+        # Its own provider, at PRIORITY_USER + 1, for the reason the preview
+        # swatch has one: menu.css is installed at PRIORITY_USER, so an
+        # application-priority rule loses to it silently, and a colour part-way
+        # through a drag belongs to none of the classes _load_tints() built.
+        strip_provider = Gtk.CssProvider()
+        strip.get_style_context().add_provider(
+            strip_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
+        strip_provider.load_from_string(
+            f".ccas-color-chip-strip {{ background: {entry_target['color']}; }}")
+        inner.append(strip)
+        chip.set_child(inner)
+        chips.append(chip)
+        strips.append(strip_provider)
+        buttons.append(chip)
+    box.append(Gtk.Label(label="Color of", xalign=0))
+    box.append(chips)
+
     top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-    top.append(Gtk.Label(label="Color of", xalign=0))
-    picker = Gtk.DropDown.new_from_strings([t["label"] for t in targets])
-    top.append(picker)
 
     def target():
-        return targets[min(picker.get_selected(), len(targets) - 1)]
+        return targets[min(ui_state["target"], len(targets) - 1)]
 
     # A colour halfway through a drag is in neither set _load_tints() built the
     # CSS classes from, so _tint() would name a class that does not exist and
@@ -930,11 +964,9 @@ def _build_color_editor(state, pick, ui_state):
     preview.get_style_context().add_provider(
         provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
 
-    # No `account` button. It was the last of the three named values, and a
-    # button that pins a token to the widget's colour sits next to two sliders
-    # that set a colour — two answers to one question, in one row. `account` is
-    # still what a new account's glyph and percentage are written with, and
-    # still what `ccs format --color` takes; what the panel offers is a colour.
+    # No `account` button, and no `account` value behind it either now: a
+    # token's colour is a hex or it is nothing. What the panel offers for every
+    # target, the icon included, is one colour.
     top.append(preview)
     box.append(top)
 
@@ -967,6 +999,10 @@ def _build_color_editor(state, pick, ui_state):
         # The bar's own background, so an uncommitted preview is still honest
         # about what the label will look like once it lands.
         provider.load_from_string(f".ccas-preview {{ background: {value}; }}")
+        # The selected chip's strip tracks the drag, so the row keeps saying
+        # what every target's colour is while one of them is being changed.
+        strips[ui_state["target"]].load_from_string(
+            f".ccas-color-chip-strip {{ background: {value}; }}")
         # Not while it has the focus: that is the user part-way through typing
         # a colour, and overwriting it under the caret is the same mistake as
         # committing mid-drag.
@@ -1003,7 +1039,7 @@ def _build_color_editor(state, pick, ui_state):
         repaint()
         if settling["source"] is not None:
             GLib.source_remove(settling["source"])
-        # Never while seed() is moving the sliders: that is the dropdown
+        # Never while seed() is moving the sliders: that is a chip click
         # changing target, not the user choosing a colour.
         if not settling["seeding"]:
             settling["source"] = GLib.timeout_add(SETTLE_MS, on_settled)
@@ -1015,19 +1051,34 @@ def _build_color_editor(state, pick, ui_state):
 
     hue.connect("value-changed", on_value)
     sat.connect("value-changed", on_value)
-    # Restored from outside the rebuilt subtree: refresh_toggles() destroys this
-    # dropdown on every applied setting, and reopening on "the widget" after
-    # every tick would lose the target the user picked. set_selected() emits
-    # notify::selected, so the seeding runs once on build — harmless, because
-    # seed() only moves sliders and never commits. That separation is why seed
-    # and _commit are two functions.
-    picker.set_selected(min(ui_state["target"], len(targets) - 1))
 
-    def on_target(_d, _p):
-        ui_state["target"] = picker.get_selected()
+    def show_selection():
+        for index, chip in enumerate(buttons):
+            if index == ui_state["target"]:
+                chip.add_css_class("ccas-color-chip-on")
+            else:
+                chip.remove_css_class("ccas-color-chip-on")
+
+    def choose(index):
+        # Selection is a background, never a colour: the strip means "this is
+        # the colour" and the background means "this is what you are editing".
+        # One cue doing both jobs is unreadable.
+        #
+        # seed() only moves sliders and never commits, which is why picking a
+        # target writes nothing. That separation is why seed and _commit are
+        # two functions.
+        ui_state["target"] = index
+        show_selection()
         seed()
 
-    picker.connect("notify::selected", on_target)
+    for index, chip in enumerate(buttons):
+        chip.connect("clicked", lambda _b, i=index: choose(i))
+
+    # Restored from outside the rebuilt subtree: refresh_toggles() destroys this
+    # whole editor on every applied setting, and reopening on the icon after
+    # every tick would lose the target the user picked.
+    ui_state["target"] = min(ui_state.get("target", 0), len(targets) - 1)
+    show_selection()
 
     entry.connect("activate", lambda e: _commit(e.get_text()))
     top.append(entry)

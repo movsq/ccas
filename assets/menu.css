@@ -100,8 +100,20 @@
 .ccas-ghost:hover   { background: rgba(255, 255, 255, 0.08); color: #cdd6f4;
                       border-color: rgba(255, 255, 255, 0.22); }
 
-/* The dropdowns and the hex entry, matched to each other — GTK's defaults give
- * each a different height and the row reads as debris.
+/* The chips that pick which element you are colouring. The name stays at full
+ * contrast; the colour lives in the strip under it. */
+.ccas-color-chip {
+  min-height: 22px; padding: 4px 10px 3px 10px; border-radius: 8px;
+  border: none; background: rgba(255, 255, 255, 0.06);
+}
+.ccas-color-chip:hover { background: rgba(255, 255, 255, 0.12); }
+.ccas-color-chip.ccas-color-chip-on { background: rgba(255, 255, 255, 0.20); }
+.ccas-color-chip label { color: #cdd6f4; font-size: 0.85em; }
+/* Inset, so it reads as belonging to the chip rather than edging it. */
+.ccas-color-chip-strip { min-height: 2px; margin: 0 2px; border-radius: 999px; }
+
+/* The remaining dropdown and the hex entry, matched to each other — GTK's
+ * defaults give each a different height and the row reads as debris.
  *
  * .ccas-color-editor, not the .ccas-token-colors these were written for: that
  * class went with the two-row colour section it named, so every rule here
@@ -109,13 +121,11 @@
  * selector matches nothing, so the dropdown simply kept GTK's default and sat
  * there looking insensitive next to the styled controls around it. */
 .ccas-toggles dropdown > button,
-.ccas-color-editor dropdown > button,
 .ccas-color-editor entry {
   min-height: 22px; padding: 2px 10px; border-radius: 8px;
   border: none; background: rgba(255, 255, 255, 0.06);
 }
-.ccas-toggles dropdown > button:hover,
-.ccas-color-editor dropdown > button:hover { background: rgba(255, 255, 255, 0.12); }
+.ccas-toggles dropdown > button:hover { background: rgba(255, 255, 255, 0.12); }
 .ccas-color-editor entry { font-family: monospace; font-size: 0.85em; }
 .ccas-color-editor entry:focus-within { background: rgba(255, 255, 255, 0.10); }
 /* The label that names each row ("Show", "Color of") recedes; the things you
@@ -133,11 +143,12 @@
                      background: #353535; }
 /* No horizontal padding: it sits inside the drawer, which already has it. */
 .ccas-color-editor { padding: 2px 0 8px 0; }
-/* The two slider names only. A blanket `.ccas-color-editor label` also caught
- * the label *inside* the dropdown button — which is the widget's value, not a
- * caption — and greying it is exactly how GTK draws an insensitive control. */
+/* The captions only ("Color of", the two slider names). The chips carry their
+ * own colour rule above, so there is no dropdown label to exempt any more —
+ * greying one was exactly how GTK draws an insensitive control, which is what
+ * made the target picker read as disabled. */
+.ccas-color-editor > label,
 .ccas-color-editor > box > label { color: #9399b2; }
-.ccas-color-editor dropdown label { color: #cdd6f4; }
 .ccas-slider trough { min-height: 8px; border-radius: 999px; }
 .ccas-slider-hue trough {
   background: linear-gradient(to right, #f38ba8 0%, #f9e2af 17%, #a6e3a1 33%,
