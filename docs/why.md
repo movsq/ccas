@@ -991,3 +991,65 @@ does with anything it does not recognise. The two stored format strings still
 named `%icon`, which is now an unknown token and prints as its own four
 characters; they were re-set by hand, as one command per account, rather than by
 teaching a read path to rewrite them.
+
+## The retired value that made every other colour unwritable (2026-07-27)
+
+The section above ends on the right note and the wrong assumption. Both accounts
+held values that had stopped being valid, they rendered white, and nothing
+migrated — that was the design, and the read path implemented it exactly.
+
+The write path did not. `registry.set_field` validated **every** value in a
+`format_colors` dict, and both callers — `ccs format <slug> --color` and the
+panel's settle timer — read the stored dict, change one key and hand the whole
+thing back. So `vo-sedlacek`, still holding `account` for `%5hquotaleft`, could
+not have any *other* token's colour changed. The CLI returned 1 and printed
+nothing. The panel's slider moved, previewed, settled, and wrote nothing. And
+`ccs doctor` said all good throughout, because it does not read `format_colors`
+at all.
+
+That is the same complaint again, one level up. `account` was retired because a
+colour control could be live, previewed and inert; validating on write built a
+second one out of the retirement itself. A rule that says a stale value is
+tolerated has to be one rule — tolerated when read *and* when written, or the
+data model still refuses what the UI still shows.
+
+A value that is not a hex is now dropped rather than rejected, which is the
+answer `_chosen()` already gives it, and which quietly repairs the stored dict
+the first time anything writes that account. The field must still be a dict, and
+a bad colour the user actually types is still refused before it reaches here, by
+the CLI, with rc 1. Nothing but a hex has ever been stored, so the guarantee that
+keeps the format string layout rather than markup is untouched.
+
+It was found by reading the user's live `accounts.json` while reviewing the
+change that caused it — the value was in there, in exactly the account whose
+panel had been used to demonstrate the feature working. It did not show up in
+that demonstration because the token that was dragged was the poisoned one, and
+overwriting the bad value with a good one is the single case that succeeds.
+
+## A drag thrown away by the click that followed it (2026-07-27)
+
+The colour editor writes on a settle timer: 300 ms after the last `value-changed`
+with no further motion, because a `Gtk.Scale` in GTK4 has no released signal and
+a `GestureClick` on one denies the scale its own drag. Picking a target calls
+`seed()`, which moves both sliders to the stored colour without committing —
+`on_value` cancels the pending timer and the seeding flag stops it being rearmed,
+which is what keeps "I am looking at this token" from writing the registry.
+
+Between those two is a 300 ms hole. Finish a drag, reach for another chip inside
+the window, and the timer is cancelled by the seed and never rearmed: the colour
+was previewed on the strip, on the swatch and in the hex field, and never
+written. No error, because nothing failed.
+
+The code is unchanged from the dropdown it replaced, and the bug is almost
+certainly as old — but it needed a popup and two clicks to reach, which is longer
+than the window. A chip sits an inch from the slider and takes one. Making a
+control easier to reach makes its races easier to reach too.
+
+`flush()` commits a pending drag before the target changes, against the target it
+was made on, which is why `_commit` now takes an explicit one rather than reading
+`target()`. Picking a chip with nothing pending still writes nothing at all.
+
+Found by building the editor in a test harness and emitting the signals a pointer
+would emit, rather than by clicking it: the module had no test file, on the
+grounds that it decides nothing, and this is the part of it that decides. It has
+one now — no window is mapped, so it needs a display but not the user's screen.
