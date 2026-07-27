@@ -790,16 +790,15 @@ cp ~/ccas/assets/menu.css ~/.config/ccas/menu.css
 
 Tell the user the backup's name at the end; they may have edited theirs.
 
-- [ ] **Step 3: Ask which output is idle, then open the panel there**
+- [ ] **Step 3: Open the panel on the bar's output**
 
-Never map a window onto the output the user is working on. Waybar is on
-`HDMI-A-1` (x 2560–4480); `DP-1` is x 0–2560. Ask the user which one is free
-right now rather than assuming — it changes.
+`HDMI-A-1` — the monitor Waybar is on (x 2560–4480), which is where a real
+click would open it. Don't ask which output to use; the user does not care.
 
 ```bash
-(CCAS_PANEL_OUTPUT=<connector> setsid ccs --gui vsed >/tmp/panel.log 2>&1 &)
+(CCAS_PANEL_OUTPUT=HDMI-A-1 setsid ccs --gui vsed >/tmp/panel.log 2>&1 &)
 sleep 3
-grim -o <connector> /tmp/panel.png
+grim -o HDMI-A-1 /tmp/panel.png
 ```
 
 `CCAS_PANEL_OUTPUT` skips the pointer probe, which an idle output would never
