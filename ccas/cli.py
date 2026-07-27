@@ -7,7 +7,7 @@ import sys
 import time
 
 from . import (accounts, doctor, format as fmt, history, label, launch, panel,
-               panel_ui, paths, pickers, registry, usage, waybar)
+               panel_ui, paths, pickers, poll, registry, usage, waybar)
 
 
 # `claude <args>` normally resolves an account, because almost everything it can
@@ -392,6 +392,33 @@ def cmd_usage(slug=None) -> int:
     return 0
 
 
+def cmd_poll(args) -> int:
+    """Fetch each account's usage from the endpoint and record what changed.
+
+    What the systemd timer runs every five minutes, and what the user runs by
+    hand to see it work without waiting. The signal rides on the write, the same
+    rule `cmd_statusline` obeys — the bar repaints only when the numbers moved.
+    """
+    force = "--force" in args
+    rest = [a for a in args if a != "--force"]
+    reg = registry.load()
+    accounts_ = [registry.find(reg, rest[0])] if rest else reg["accounts"]
+    if accounts_ == [None]:
+        print(f"ccs poll: unknown account: {rest[0]}", file=sys.stderr)
+        return 1
+
+    outcomes = poll.poll([a["slug"] for a in accounts_], force=force)
+    for outcome in outcomes:
+        print(f"{outcome.slug:<14} {outcome.status:<10} {outcome.detail}")
+        if outcome.status == poll.OK:
+            account = registry.find(reg, outcome.slug)
+            if account:
+                waybar.signal(account["signal"])
+    # Not "any failed": one logged-out account must not make the timer look
+    # broken in the journal every five minutes.
+    return 1 if outcomes and all(o.status == poll.FAILED for o in outcomes) else 0
+
+
 def cmd_doctor() -> int:
     checks = doctor.run(registry.load())
     print(doctor.report(checks))
@@ -771,6 +798,8 @@ def main(argv) -> int:
         return 0
     if command == "usage":
         return cmd_usage(rest[0] if rest else None)
+    if command == "poll":
+        return cmd_poll(rest)
     if command == "statusline":
         return cmd_statusline(rest)
     if command == "render":

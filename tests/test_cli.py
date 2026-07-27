@@ -1147,6 +1147,73 @@ def test_usage_says_a_rolled_over_window_is_open(monkeypatch, capsys):
     assert "5h window open" in capsys.readouterr().out
 
 
+# ── the poll ──────────────────────────────────────────────────────────────────
+
+def test_poll_signals_only_the_accounts_that_changed(monkeypatch, capsys):
+    """The signal rides on the write, exactly as it does for the hook: a poll
+    that finds the same numbers must not repaint anything."""
+    make_account("a")
+    make_account("b")
+    sent = []
+    monkeypatch.setattr(cli.waybar, "signal", lambda n: sent.append(n))
+    monkeypatch.setattr(cli.poll, "poll", lambda slugs, **kw: [
+        cli.poll.Outcome(slugs[0], cli.poll.OK, "5h ≥41%"),
+        cli.poll.Outcome(slugs[1], cli.poll.UNCHANGED, "same numbers")])
+
+    capsys.readouterr()
+    assert cli.main(["poll"]) == 0
+    assert sent == [registry.find(registry.load(), "a")["signal"]]
+    out = capsys.readouterr().out
+    assert "5h ≥41%" in out and "same numbers" in out
+
+
+def test_poll_takes_one_slug(monkeypatch):
+    make_account("a")
+    make_account("b")
+    asked = {}
+    monkeypatch.setattr(cli.poll, "poll",
+                        lambda slugs, **kw: [asked.setdefault("slugs", slugs)] and [])
+    cli.main(["poll", "b"])
+    assert asked["slugs"] == ["b"]
+
+
+def test_poll_rejects_an_unknown_slug(capsys):
+    make_account("a")
+    assert cli.main(["poll", "ghost"]) == 1
+
+
+def test_poll_passes_force_through(monkeypatch):
+    make_account("a")
+    asked = {}
+    monkeypatch.setattr(cli.poll, "poll", lambda slugs, **kw: asked.update(kw) or [])
+    cli.main(["poll", "--force"])
+    assert asked["force"] is True
+
+
+def test_poll_fails_only_when_every_account_failed(monkeypatch):
+    """A timer that reports failure for one dead account would cry wolf in the
+    journal every five minutes."""
+    make_account("a")
+    make_account("b")
+    monkeypatch.setattr(cli.waybar, "signal", lambda n: None)
+    monkeypatch.setattr(cli.poll, "poll", lambda slugs, **kw: [
+        cli.poll.Outcome(slugs[0], cli.poll.OK, ""),
+        cli.poll.Outcome(slugs[1], cli.poll.FAILED, "http 401")])
+    assert cli.main(["poll"]) == 0
+
+    monkeypatch.setattr(cli.poll, "poll", lambda slugs, **kw: [
+        cli.poll.Outcome(s, cli.poll.FAILED, "http 401") for s in slugs])
+    assert cli.main(["poll"]) == 1
+
+
+def test_poll_does_not_open_the_panel(monkeypatch):
+    """`ccs poll` runs from a systemd timer with no display at all."""
+    make_account("a")
+    monkeypatch.setattr(cli.poll, "poll", lambda slugs, **kw: [])
+    monkeypatch.setattr(cli, "cmd_panel", _panel_never_called)
+    assert cli.main(["poll"]) == 0
+
+
 # ── the panel's action dispatch ───────────────────────────────────────────────
 
 def _panel_never_called(*a, **k):
