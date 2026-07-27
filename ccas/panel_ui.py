@@ -628,7 +628,6 @@ def build_body(state, chosen, window, apply=None):
     # ── search and panes ─────────────────────────────────────────────────
     entry = Gtk.SearchEntry()
     entry.set_name("ccas-search")
-    root.append(entry)
 
     projects_list = Gtk.ListBox()
     sessions_list = Gtk.ListBox()
@@ -645,10 +644,18 @@ def build_body(state, chosen, window, apply=None):
     panes.set_end_child(right)
     panes.set_position(320)
     panes.set_vexpand(True)
+    # The search entry is inside what the drawer covers, not above it. Left
+    # outside, it stayed on screen with settings filling everything below it and
+    # read as a search field *for* the settings — which it has never been.
+    finder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    finder.append(entry)
+    finder.append(panes)
+    finder.set_vexpand(True)
+
     # The drawer is laid over this, anchored to its bottom edge, so it appears
     # to slide up out of the Settings row directly beneath.
     stack = Gtk.Overlay()
-    stack.set_child(panes)
+    stack.set_child(finder)
     stack.set_vexpand(True)
     stack.add_overlay(revealer)
     root.append(stack)
@@ -791,12 +798,33 @@ def build_body(state, chosen, window, apply=None):
     toggles.append(visible)
     drawer.append(hidden)
     root.append(toggles)
-    root.append(_build_settings_row(lambda: revealer.set_reveal_child(
-        not revealer.get_reveal_child()), ui_state))
+    def toggle_drawer():
+        open_now = not revealer.get_reveal_child()
+        revealer.set_reveal_child(open_now)
+        # Covered is not the same as out of reach: the search entry keeps the
+        # focus for the whole life of the panel, so without this a keystroke
+        # meant for the settings would land in an entry nobody can see and
+        # silently refilter the list underneath. Insensitive drops the focus;
+        # closing the drawer hands it back.
+        finder.set_sensitive(not open_now)
+        # Hidden, not merely covered. The drawer is only as tall as its content,
+        # so the entry stayed on screen above it with settings filling
+        # everything below — which reads as a search field *for* the settings.
+        entry.set_visible(not open_now)
+        # And the panes with it, or the row the drawer does not reach shows as a
+        # single stranded session line above the settings.
+        panes.set_visible(not open_now)
+        if not open_now:
+            entry.grab_focus()
+
+    root.append(_build_settings_row(toggle_drawer, ui_state))
     revealer.set_child(drawer)
     # A rebuild restores the drawer rather than closing it under the user's
     # hand: refresh_toggles() runs on every applied setting.
     revealer.set_reveal_child(ui_state["expanded"])
+    finder.set_sensitive(not ui_state["expanded"])
+    entry.set_visible(not ui_state["expanded"])
+    panes.set_visible(not ui_state["expanded"])
 
     fill_projects()
     # After the fills, so nothing that runs during them can steal it back.
