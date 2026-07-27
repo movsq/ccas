@@ -284,6 +284,22 @@ existed. Four things about it are load-bearing and were each a bug first:
   `AttributeError`, outside the import guard, and the panel silently never
   appears.
 
+- **A per-widget `CssProvider` must go on above `PRIORITY_USER`.** `_load_css()`
+  installs the user's `menu.css` at `STYLE_PROVIDER_PRIORITY_USER`, so a widget
+  provider added at `PRIORITY_APPLICATION` is outranked by any rule in that file
+  and paints nothing — silently, since a losing rule is not an error. The colour
+  editor's preview swatch is the one widget that needs its own provider (a
+  colour mid-drag is in neither set `_load_tints()` built classes from, so
+  `_tint()` names a class that does not exist), and it uses `PRIORITY_USER + 1`.
+
+- **Never put a `GestureClick` on a `Gtk.Scale`.** It claims the event sequence
+  and denies the scale's own drag gesture: the press registers and the knob then
+  never tracks the pointer. `EventControllerLegacy` is not the escape — its
+  handler is passed a `None` event here. `Gtk.Scale` has no "released" signal in
+  GTK4 at all, so anything wanting commit-on-release uses the `SETTLE_MS` timer
+  rearmed on `value-changed` instead. That still honours write-only-on-a-change
+  with `waybar.signal()` riding on the write, and covers the keyboard for free.
+
 The open panel writes its pid, slug **and connector** to `paths.panel_lock()`.
 Waybar draws every module on every bar, so one account has one widget per
 monitor: *the same widget* is the slug **and** the output, and comparing slugs
@@ -334,6 +350,14 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   on an idle output, so a layer surface there receives nothing and the test
   reads as a broken feature. Half a day went into that once — `docs/why.md` has
   it. A uinput keyboard has no such limit; it is a real device.
+  Sharpened 2026-07-27: a **press** does reach an idle output's layer surface —
+  clicking a slider's trough at a new position moves it, which is enough to
+  verify a commit path end to end — but **motion delivered while the button is
+  held does not**, so a drag there proves nothing. Design the check around a
+  click, not a drag.
+- **Verify on `HDMI-A-1`, never on `DP-1`.** `DP-1` is the monitor the user is
+  working on, and a panel or test window mapped there covers what they are
+  doing. Asked for directly, 2026-07-27.
 - **Open the panel with `CCAS_PANEL_OUTPUT=<connector>` when you drive it
   yourself.** It skips the pointer probe, which is the previous rule's victim:
   the probe waits for `wl_pointer.enter`, an idle output never sends one, and
