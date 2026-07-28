@@ -22,15 +22,31 @@ mkdir -p "$BIN_DIR" "$SHARE" "$TRASH" "$ACCOUNTS"
 #
 # __pycache__ is excluded from the copy rather than trashed after it, so it does
 # not count as a difference on the next run.
+#
+# Staged aside and swapped in, never extracted over the live package. A running
+# Claude Code session spawns `ccs` through its statusline every few hundred
+# milliseconds, and extracting in place leaves it importable but incomplete —
+# `ccas/__init__.py` there while `ccas/cli.py` is not yet. Measured 2026-07-28:
+# 1.2 ms per install with the package unusable, and 0.2 ms with the launcher at
+# zero bytes below. Two renames leave a window of one rename instead of one tar.
 if [ ! -d "$SHARE/ccas" ] || ! diff -r -q -x __pycache__ -x '*.pyc' \
      "$SRC/ccas" "$SHARE/ccas" >/dev/null 2>&1; then
+  # mktemp rather than a fixed name, so the staging directory is always empty
+  # and nothing has to be deleted to make it so — the never-delete rule reaches
+  # here too. rmdir at the end removes it only if it is empty, which it is.
+  STAGE="$(mktemp -d "$SHARE/.staging-XXXXXX")"
+  tar -C "$SRC" --exclude=__pycache__ --exclude='*.pyc' -cf - ccas | tar -C "$STAGE" -xf -
   if [ -d "$SHARE/ccas" ]; then
     mv "$SHARE/ccas" "$TRASH/ccas-pkg-$(date +%Y%m%d-%H%M%S)-$$"
   fi
-  tar -C "$SRC" --exclude=__pycache__ --exclude='*.pyc' -cf - ccas | tar -C "$SHARE" -xf -
+  mv "$STAGE/ccas" "$SHARE/ccas"
+  rmdir "$STAGE" 2>/dev/null || true
 fi
 
-cat > "$BIN_DIR/ccs" <<EOF
+# Written beside the launcher and renamed over it: rename(2) is atomic, so a
+# spawn either gets the whole old file or the whole new one. `cat >` truncates
+# the file a live session is about to exec.
+cat > "$BIN_DIR/.ccs.$$" <<EOF
 #!/usr/bin/env python3
 import sys
 sys.path.insert(0, "$SHARE")
@@ -38,7 +54,8 @@ from ccas.cli import main
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 EOF
-chmod +x "$BIN_DIR/ccs"
+chmod +x "$BIN_DIR/.ccs.$$"
+mv "$BIN_DIR/.ccs.$$" "$BIN_DIR/ccs"
 
 export CCAS_CCS_BIN="${CCAS_CCS_BIN:-$BIN_DIR/ccs}"
 

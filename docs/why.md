@@ -1463,3 +1463,61 @@ that the instrument answered a question nobody had asked. The measurement built
 to prove the hook still fires is what put the poll's own log side by side with
 the raw body, and the flip had been in that log all day reading as a rounding
 quirk of no consequence.
+
+## The session that dies while the installer runs (2026-07-28)
+
+Reported as "my session randomly crashes while you're working". Three of them
+are in the transcripts — 07-25 23:29:54, 07-27 05:04:39, 07-28 16:00:25 — and
+the third happened mid-investigation, which is what made it findable.
+
+What a crash looks like from the outside: the transcript stops mid-turn, with a
+tool result written and no turn ever built on it, and resumes minutes later on
+the harness's `Continue from where you left off.` The signature is worth writing
+down, because the obvious search finds the wrong thing. Sessions that end at a
+turn boundary are `/clear`; sessions with no closing `turn_duration` are mostly
+*live*; and a crash leaves **no new file at all**, because the resume continues
+the same one. It is a mid-turn gap *inside* a transcript, not an abrupt end of
+one. Of 149 "abrupt endings" in two days, exactly three were crashes.
+
+What it is not, all measured rather than assumed: no coredump (`coredumpctl`
+has python's aborts from the panel and nothing from node), no OOM and no kernel
+line at all, no systemd action on the scope, and the scope's own accounting says
+447 MB peak. The MCP log settles what kind of death it was — 30 ms *before* the
+last tool result was recorded, the CLI sent SIGINT to its MCP server and reaped
+it cleanly, and the session's pid file under `~/.claude/sessions/` was removed.
+That is an orderly shutdown, not a fault: something asked the process to exit.
+
+Two of the three land in the same second as `./install.sh`. The 07-25 one is
+the same command with `&& ccs doctor` on the end. And the session that died is
+the only one that died: two other live sessions ran straight through 16:00:25.
+The asymmetry between them is visible in `ps`. A session launched from the panel
+descends from the bar —
+
+```
+claude ← kitty ← python3 ccs --gui vo-sedlacek ← waybar
+```
+
+— with kitty in the panel's own process group, while a terminal-launched
+session has kitty at PPID 1 and is reachable from none of it. `install.sh` ends
+with `ccs config`, which sends Waybar a SIGUSR2.
+
+That is where the evidence stops and a hypothesis would start, so it is left as
+one. What the investigation *did* prove is a defect of our own on the same path,
+and it is fixed here: `install.sh` replaced both the staged package and the
+launcher **in place**, while a live session spawns `ccs` through its statusline
+every few hundred milliseconds. Measured with a sub-millisecond poll across ten
+installs: 1.2 ms per install with the package directory absent — or worse,
+present and half-extracted, `ccas/__init__.py` there and `ccas/cli.py` not — and
+0.2 ms with the launcher truncated to zero bytes by `cat >`. The package is now
+extracted into a staging directory and swapped in, and the launcher is written
+beside itself and renamed over, so a spawn gets the whole old file or the whole
+new one. The same measurement after: the launcher window is gone entirely and
+the package window is 0.29 ms, one rename rather than one tar. The residual is
+the two renames of a directory swap; closing it completely would mean a
+versioned package directory behind a symlink, which is not worth the layout.
+
+At roughly one spawn per 300 ms that window is about 0.1% per install per live
+session, so it is not on its own an explanation for two crashes — it is one
+mechanism removed rather than the cause identified. The honest state: the shape
+of the death is known, the trigger correlates with the installer twice out of
+three, and the next occurrence needs a signal trace to name the sender.

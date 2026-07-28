@@ -171,6 +171,40 @@ def _sandbox_env(tmp_path):
     return env
 
 
+def test_the_launcher_is_replaced_by_rename_never_rewritten_in_place(tmp_path):
+    """`ccs` is spawned constantly by a live session — Claude Code's statusline
+    runs it every few hundred milliseconds — so the installer may never leave it
+    half-written. `cat > "$BIN_DIR/ccs"` truncates the file the running system is
+    about to exec: measured 2026-07-28, 0.2 ms per install with the launcher at
+    zero bytes and 1.2 ms with the package directory absent.
+
+    A rename cannot be observed half-done, and the inode is how you tell the two
+    apart: writing in place keeps it, renaming a finished file over it changes
+    it. Anything that already opened the old path keeps a complete file.
+    """
+    env = _sandbox_env(tmp_path)
+    launcher = tmp_path / "bin" / "ccs"
+    subprocess.run(["bash", str(ROOT / "install.sh")], env=env, check=True,
+                   capture_output=True)
+    first = launcher.stat().st_ino
+    subprocess.run(["bash", str(ROOT / "install.sh")], env=env, check=True,
+                   capture_output=True)
+    assert launcher.stat().st_ino != first, \
+        "the launcher was rewritten in place, so a spawn can catch it truncated"
+    assert os.stat(launcher).st_mode & stat.S_IXUSR
+
+
+def test_the_package_is_staged_before_it_is_swapped_in(tmp_path):
+    """The other half of the same window. Extracting straight into $SHARE leaves
+    the package importable but incomplete — `ccas/__init__.py` present while
+    `ccas/cli.py` is still being written — which is a stranger failure for a
+    running session than a missing directory. Stage it aside, then swap."""
+    text = (ROOT / "install.sh").read_text()
+    assert 'tar -C "$SHARE" -xf -' not in text, \
+        "extract into a staging directory, not over the live package"
+    assert "STAGE=" in text, "the staging directory is what makes the swap atomic"
+
+
 def test_install_ships_the_panel_stylesheet(tmp_path):
     """The panel opens without it, unstyled. Shipping it once is what makes it
     a thing the user can edit rather than a thing they have to write."""
