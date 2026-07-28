@@ -1501,8 +1501,29 @@ claude ← kitty ← python3 ccs --gui vo-sedlacek ← waybar
 session has kitty at PPID 1 and is reachable from none of it. `install.sh` ends
 with `ccs config`, which sends Waybar a SIGUSR2.
 
-That is where the evidence stops and a hypothesis would start, so it is left as
-one. What the investigation *did* prove is a defect of our own on the same path,
+That looked like the answer, and it is not. Every step of `install.sh` was then
+run against this live session with a detached watcher polling the pids, and the
+suspicion died one measurement at a time:
+
+| suspected | measured | verdict |
+|---|---|---|
+| waybar's SIGUSR2 reload kills the session | it kills its **direct child** only — a grandchild in the same process group survived, reparented to PPID 1 | ✗ (it does close an open panel) |
+| `ccs relink` disturbs the watched config dir | a complete no-op in steady state: nothing created, nothing pruned, inodes identical, zero inotify events | ✗ |
+| a failing `ccs statusline` takes the CLI down | the package was moved aside for **4 s** — every spawn failing, ~3000× the real window — and the session did not blink | ✗ |
+| `systemctl --user daemon-reload` / `enable --now` | reproduced the journal's exact `Reload requested … (unit kitty-*.scope)` line; nothing died | ✗ |
+| the 2-minute `gem` watchdog that fired in the same second | `systemctl --user stop <named unit>`, no pattern matching | ✗ |
+| the whole `./install.sh`, reload and package swap included | ran it again in full; session survived | ✗ |
+
+The tests are worth more than the verdicts. Waybar killing only the direct child
+is why a panel-launched session shows kitty at PPID 1 with a process group whose
+leader is gone — which reads like a clue and is merely a fingerprint of the last
+reload. And the statusline probe is the sharpest of them: a Claude Code session
+is *indifferent* to its statusline command failing outright, which retires the
+most attractive theory on the list and would have retired it before the fix
+below, had it been run first. Widen the window and test the mechanism, rather
+than reasoning about how likely the narrow one is to be hit.
+
+What the investigation *did* prove is a defect of our own on the same path,
 and it is fixed here: `install.sh` replaced both the staged package and the
 launcher **in place**, while a live session spawns `ccs` through its statusline
 every few hundred milliseconds. Measured with a sub-millisecond poll across ten
@@ -1516,8 +1537,19 @@ the package window is 0.29 ms, one rename rather than one tar. The residual is
 the two renames of a directory swap; closing it completely would mean a
 versioned package directory behind a symlink, which is not worth the layout.
 
-At roughly one spawn per 300 ms that window is about 0.1% per install per live
-session, so it is not on its own an explanation for two crashes — it is one
-mechanism removed rather than the cause identified. The honest state: the shape
-of the death is known, the trigger correlates with the installer twice out of
-three, and the next occurrence needs a signal trace to name the sender.
+It is worth fixing on its own terms — yanking a binary out from under a process
+that is about to exec it is wrong whatever it does or does not cause — but the
+statusline probe above says plainly that it is **not** the crash. The cause is
+unfound.
+
+So the honest state, which is what this file is for. The shape of the death is
+known and is not a fault: an orderly exit, no signal, no trace, mid-turn. It
+correlates with `./install.sh` twice out of three, and nothing `install.sh` does
+reproduces it. Everything CCAS contributes to that second has now been ruled out
+by experiment rather than by argument, which means the next occurrence needs an
+instrument CCAS cannot provide from here: a signal trace naming the sender
+(`bpftrace` on `signal:signal_generate`, which wants root), or the exit status of
+the process itself, which only whatever launches the session can see. Absent
+that, a recurrence after 2026-07-28 says the atomic install was not it either —
+which is itself worth knowing, and is why the negative results above are written
+down instead of the theory they killed.
