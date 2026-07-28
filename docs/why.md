@@ -1408,3 +1408,58 @@ wrong — it was checked against the wrong minute. What settled it was the pair 
 writes: a poll that reported `unchanged`, then a poll that wrote. Write-on-change
 turns the log into a record of when the reading moved, which is a stronger
 instrument than any single line in it.
+
+## The reset clock that flipped a minute on every poll (2026-07-28)
+
+Reported as a regression in the other direction from the one above: the
+percentage on the bar *used* to move often, and now looked as though only the
+five-minute timer touched it. The hook was suspected of being ignored — the
+carry added the same afternoon is exactly the sort of change that would do it.
+
+It was not. Instrumenting the live `ccs statusline` (log the payload, the stored
+reading, and whether `record` wrote) showed the hook working end to end: 32
+payloads in four minutes, every one naming **both** windows — so the carry never
+fired at all — a write on each 1% step, and a `render` in Waybar's log 50 ms
+after each `waybar.signal()`. The ceiling is Claude Code's own granularity: its
+`rate_limits` moves in whole percent, about once a minute under a working agent,
+and an integer percent cannot be repainted more often than it changes.
+
+What *did* change on the five-minute boundary was the clock beside it. The
+poll's log had been saying it for hours and it read as noise:
+
+```
+15:21:01 vo-sedlacek ok 5h ≥55% clears 18:39
+15:41:31 vo-sedlacek ok 5h ≥56% clears 18:40
+15:47:00 vo-sedlacek ok 5h ≥56% clears 18:39
+```
+
+Three forced polls twenty seconds apart, logging the raw body, gave the cause.
+One window, one anchor, three answers:
+
+```
+2026-07-28T16:09:59.820816+00:00
+2026-07-28T16:10:00.488736+00:00
+2026-07-28T16:09:59.956668+00:00
+```
+
+The endpoint's `resets_at` jitters either side of the minute it means, and
+`_epoch()` truncated the fraction — so the same anchor quantised to two
+different seconds, and therefore to two different *minutes*. `%5hreset` flipped
+18:09 ↔ 18:10 on every poll; each flip was a change `record_reading` had to
+write and `waybar.signal()` had to repaint, for a window that had not moved, and
+half of them named the wrong minute. It also put the two sources permanently at
+odds: the statusline hands the same window a whole epoch **on** the minute
+(`1785255000`), so hook and poll overwrote each other in turn, every time.
+
+`_epoch()` now rounds to the minute, which is where a reset anchor actually
+lands — all four statusline epochs seen are divisible by 60 and every ISO string
+measured is within a second of a minute boundary. Two forced polls after the fix
+say `unchanged  same numbers`.
+
+The user's report was accurate about the symptom and wrong about the mechanism,
+which is the normal case: they saw the widget change on the timer's cadence, and
+that was true — it was the clock digit, not the percentage. Worth keeping is
+that the instrument answered a question nobody had asked. The measurement built
+to prove the hook still fires is what put the poll's own log side by side with
+the raw body, and the flip had been in that log all day reading as a rounding
+quirk of no consequence.

@@ -79,9 +79,22 @@ def from_statusline(payload: dict, now: float):
 
 
 def _epoch(iso: str):
-    """The cache's ISO 8601, which carries both a trailing Z and fractions."""
+    """The cache's ISO 8601, which carries both a trailing Z and fractions.
+
+    Rounded to the **minute**, which is where a reset anchor actually lands —
+    the statusline hands the same window a whole epoch on the minute, and every
+    ISO string measured is within a second of one. The fraction is jitter, and
+    truncating it made the jitter visible: three responses for one window on
+    2026-07-28, twenty seconds apart, read `16:09:59.820`, `16:10:00.488` and
+    `16:09:59.956`, so `int()` quantised them to two different seconds — two
+    different *minutes* — and the bar's `%5hreset` flipped 18:09 ↔ 18:10 on
+    every poll. Each flip was a change: a write, a signal and a repaint for a
+    window that had not moved, and half of them named the wrong minute. It also
+    made a hook reading and a poll reading of one window disagree by a second,
+    so the two sources overwrote each other in turn.
+    """
     try:
-        return int(datetime.fromisoformat(iso).timestamp())
+        return round(datetime.fromisoformat(iso).timestamp() / 60) * 60
     except (TypeError, ValueError):
         return None
 

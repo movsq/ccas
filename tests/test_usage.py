@@ -74,12 +74,50 @@ def oauth(five=(3.0, "2026-07-27T02:39:59.757453+00:00"),
 def test_the_endpoint_is_a_third_shape_of_the_same_fact():
     """The cache's shape without the cachedUsageUtilization wrapper: 0-100 under
     `utilization`, an ISO 8601 resets_at. Only this module sees any of the three.
+
+    The measured body's `…:59.757453` is the minute above it, not the second
+    below: the anchor is minute-aligned and the fraction is jitter — see
+    `test_the_endpoints_sub_second_jitter_lands_on_one_anchor`.
     """
     reading = usage.from_oauth(oauth(), now=1785104289.0)
-    assert reading["five_hour"] == {"percent": 3.0, "resets_at": 1785119999}
+    assert reading["five_hour"] == {"percent": 3.0, "resets_at": 1785120000}
     assert reading["seven_day"]["percent"] == 0.0
     assert reading["source"] == "oauth"
     assert reading["fetched_at"] == 1785104289.0
+
+
+def test_the_endpoints_sub_second_jitter_lands_on_one_anchor():
+    """Three responses for *one* window, measured 2026-07-28 twenty seconds
+    apart: the endpoint's `resets_at` wobbles either side of the minute it means.
+    Truncating the fraction quantised them to two different seconds — and so to
+    two different minutes — and `%5hreset` on the bar flipped 18:09 ↔ 18:10 on
+    every poll, each flip a change `record_reading` had to write and signal.
+
+    The anchor is minute-aligned at the source: the statusline hands the same
+    window a whole epoch on the minute, which is what these must agree with.
+    """
+    jitter = ("2026-07-28T16:09:59.820816+00:00",
+              "2026-07-28T16:10:00.488736+00:00",
+              "2026-07-28T16:09:59.956668+00:00")
+    epochs = {usage.from_oauth(oauth(five=(6.0, iso)), now=1.0)["five_hour"]
+              ["resets_at"] for iso in jitter}
+    assert epochs == {1785255000}
+    assert 1785255000 % 60 == 0
+    assert usage.from_statusline(statusline(five=(6.0, 1785255000)),
+                                 now=1.0)["five_hour"]["resets_at"] == 1785255000
+
+
+def test_jitter_alone_is_not_a_change(monkeypatch, tmp_path):
+    """The half of the flip that cost a write. Same percentage, same minute, a
+    different fraction of a second: nothing moved, so nothing is written and the
+    bar is not signalled."""
+    env(monkeypatch, tmp_path)
+    first = usage.from_oauth(
+        oauth(five=(6.0, "2026-07-28T16:09:59.820816+00:00")), now=100.0)
+    assert usage.record_reading("work", first) is True
+    again = usage.from_oauth(
+        oauth(five=(6.0, "2026-07-28T16:10:00.488736+00:00")), now=200.0)
+    assert usage.record_reading("work", again) is False
 
 
 def test_an_endpoint_window_may_be_independently_absent():
