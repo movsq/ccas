@@ -42,6 +42,12 @@ NO_DATA = "no data — statusline hook not wired"
 # How an IDLE window is said, wherever it is said. Not "full": that reads
 # backwards, as full of usage rather than full of quota.
 IDLE_TEXT = "0% used"
+# The same fact in the width of a clock, for the label's reset and time-left
+# tokens. They rendered empty for an idle window, which was truthful and
+# unreadable: `%5hreset %5hquotaleft` collapsed to a bare `100%`, and a lone
+# round number on a usage widget reads as 100% *used*. A word in the clock's
+# place says which of the two it is without needing the format string changed.
+IDLE_MARK = "idle"
 
 WINDOWS = ("five_hour", "seven_day")
 

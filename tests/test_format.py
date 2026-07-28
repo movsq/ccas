@@ -165,17 +165,25 @@ def test_an_absent_window_renders_every_one_of_its_tokens_empty():
                           format_override=token) == ""
 
 
-def test_an_idle_window_has_no_clock_and_nothing_spent_in_it():
+def test_an_idle_window_says_so_where_its_clock_would_be():
     """resets_at in the past means the window rolled over, so the clock is
     meaningless — and so is the percentage it was at, which used to be kept as
     "the last thing known". It is not known any more: the window refilled. An
     idle account rendered its dead 62% until the endpoint dropped the window
-    entirely, at which point the label vanished mid-afternoon."""
+    entirely, at which point the label vanished mid-afternoon.
+
+    The clock slot renders usage.IDLE_MARK rather than nothing. Empty was
+    truthful and unreadable: a `%5hreset %5hquotaleft` label collapsed to a bare
+    `100%`, which on a usage widget reads as 100% *used* — the user asked what
+    was wrong with an account that had nothing wrong with it. ABSENT keeps the
+    empty string; there the answer is that we do not know, not that the window
+    is resting."""
     r = reading(five_at=NOW - 60)
-    assert bare({}, "%5hreset", r) == ""
-    assert bare({}, "%5htimeleft", r) == ""
+    assert bare({}, "%5hreset", r) == usage.IDLE_MARK
+    assert bare({}, "%5htimeleft", r) == usage.IDLE_MARK
     assert bare({}, "%5hused", r) == "0%"
     assert bare({}, "%5hquotaleft", r) == "100%"
+    assert bare({}, "%5hreset %5hquotaleft", r) == f"{usage.IDLE_MARK} 100%"
 
 
 def test_a_window_the_payload_never_named_renders_the_same_as_a_rolled_over_one():
@@ -184,7 +192,7 @@ def test_a_window_the_payload_never_named_renders_the_same_as_a_rolled_over_one(
     r = reading(five_pct=None, seven_pct=11.0, seven_at=NOW + 86400)
     assert bare({}, "%5hused", r) == "0%"
     assert bare({}, "%5hquotaleft", r) == "100%"
-    assert bare({}, "%5hreset", r) == ""
+    assert bare({}, "%5hreset", r) == usage.IDLE_MARK
 
 
 def test_the_smart_tokens_are_usage_bar():

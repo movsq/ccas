@@ -144,11 +144,18 @@ def _now(ctx) -> float:
     return time.time() if ctx["now"] is None else ctx["now"]
 
 
+# What the clock slots say when there is no clock. IDLE is a measurement — the
+# window is not running — so it gets a word; ABSENT is ignorance and keeps the
+# empty string, because "idle" there would be a claim we cannot make.
+def _no_clock(kind):
+    return usage_mod.IDLE_MARK if kind == usage_mod.IDLE else ""
+
+
 def _reset(key, absolute):
     def text(ctx):
         st = _state(ctx, key)
         if st.kind != usage_mod.BOUNDED:
-            return ""
+            return _no_clock(st.kind)
         return usage_mod.reset_time(st.resets_at, _now(ctx)) if absolute \
             else usage_mod.reset_clock(st.resets_at)
     return text
@@ -158,7 +165,7 @@ def _timeleft_token(key):
     def text(ctx):
         st = _state(ctx, key)
         if st.kind != usage_mod.BOUNDED:
-            return ""
+            return _no_clock(st.kind)
         return _timeleft(st.resets_at - _now(ctx))
     return text
 
