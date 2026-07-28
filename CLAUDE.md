@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~530 tests, under four seconds). They are the specification —
+1. `python -m pytest` (~555 tests, under four seconds). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -27,9 +27,9 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
 | `format.py` | the format string — the only way a label is built: the token table, `tokens_in`, `unknown_tokens`, `render()`, `random_color()`, and the hue/saturation maths. Pure — no I/O and no GTK, because `ccs statusline` reaches it. |
 | `usage.py` | the per-account usage reading: recording it, all three source shapes, the three states, and how each is said. |
-| `poll.py` | the session-free usage fetch: the credential read, the freshness gate, the request. Its fetcher is injected, so no test opens a socket. |
+| `poll.py` | the session-free usage fetch: the credential read, the freshness gate, the request. Also the panel's on-demand poll and its separate `poll-stamp` guard. Its fetcher is injected, so no test opens a socket. |
 | `pickers.py` | the terminal front-ends (fzf, `input()`), and `is_gui()`. |
-| `panel.py` | the GTK panel's state: `build_state`, `filter_state`, the open-panel lock, which output. No GTK. |
+| `panel.py` | the GTK panel's state: `build_state`, `filter_state`, `poll_and_refresh`, the open-panel lock, which output. No GTK. |
 | `panel_ui.py` | the panel's widget tree. The only module that touches GTK. It decides nothing except *when* a colour is written (the settle timer) and *when* the body is swapped for another account's — both covered by `test_panel_ui.py`. |
 | `launch.py` | resolving a launch request into a cwd and argv. |
 | `doctor.py` | the read-only audit. |
@@ -287,6 +287,18 @@ user timer runs `ccs poll` every five minutes. Four rules there:
   same write-only-on-change rule the hook obeys — which also means an idle
   account whose numbers have not moved is correctly *not* repainted.
 
+**The panel asks for itself, and `fetched_at` cannot be what limits it.** Opening
+the panel starts one background fetch for the account it opened on, and the two
+usage bars update in place when it lands. Its guard is `poll-stamp`, a separate
+per-account file recording *when we last asked* — not `due()`, which reads
+`fetched_at`, *when the answer last changed*. The write-on-change rule leaves
+that alone while an account's numbers are steady, so `due()` is permanently true
+for exactly the idle account this serves and would have let every open through
+at any interval. The stamp is written **before** the fetch, so a failure or a
+hang still counts as having asked; `docs/why.md` has both halves, and the
+evidence that the endpoint really is rate limited. Renewal stays the timer's:
+the panel never spawns `claude`.
+
 A poller that quietly died looks exactly like the staleness it exists to remove,
 so `ccs doctor` reports the timer's state and each account's reading age and
 token horizon. Tests must set `CCAS_SYSTEMD_DIR` and `CCAS_SKIP_SYSTEMD=1`
@@ -370,6 +382,15 @@ existed. Four things about it are load-bearing and were each a bug first:
   previewed everywhere, written nowhere. Anything else that seeds the sliders
   owes the same flush, and it commits against the *old* target, so `_commit`
   takes one explicitly.
+
+**A late answer paints the body that asked for it, or nothing.** The on-demand
+fetch runs on a **daemon** thread — non-daemon would hold the process open for
+`poll.TIMEOUT` after Escape, panel gone and lock still claimed — and comes back
+through `GLib.idle_add` guarded by `ui_state["generation"]`, which `build_body`
+increments. Without it a fetch in flight across a chip switch paints one
+account's quota onto the other's bars. The rows update **in place**
+(`_build_usage`'s `apply_rows`); rebuilding the body would tear it out from
+under a drag or a search, which is the `Gtk.Scale` grab rule again.
 
 The open panel writes its pid, slug **and connector** to `paths.panel_lock()`.
 Waybar draws every module on every bar, so one account has one widget per
@@ -552,7 +573,7 @@ still generated files.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~530 tests, under four seconds
+cd ~/ccas && python -m pytest    # ~555 tests, under four seconds
 ./install.sh                     # idempotent; re-run after any code change
 ccs                              # terminal: pick account → mode (fzf)
 ccs --gui <slug>                 # the bar's click: the GTK panel. A second one closes it.

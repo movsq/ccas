@@ -1254,3 +1254,71 @@ emptied them would be discarding work over a change that cannot have affected
 what was being looked for. The colour target does not: the chip row is one chip
 per token in *this* account's format string, so the index names a different
 token either side of a switch, and `icon` is the one target every account has.
+
+## `fetched_at` cannot be a rate limit (2026-07-28)
+
+The panel now asks the usage endpoint when it opens, so that the account you are
+looking at is fresh rather than up to five minutes old. That needs a guard, and
+the guard `poll.py` already had looked like the obvious one to reuse with a
+shorter interval:
+
+```python
+def due(slug, now, interval=INTERVAL):
+    reading = usage.load(slug)
+    if reading is None:
+        return True
+    return (now - reading.get("fetched_at", 0.0)) >= interval
+```
+
+It would have engaged approximately never. `usage.record` defines `fetched_at`
+as *when this reading was first seen*, and means it — the write-on-change rule
+is what makes the statusline hook affordable at a few hundred milliseconds, so a
+reading whose numbers are steady is simply not rewritten and its timestamp does
+not move. For the timer that is exactly right: the question there is the
+cadence. For a rate limit it is backwards, and worst of all it fails for the
+account the feature exists to serve. An idle account is the one whose usage is
+*not* moving, so its `fetched_at` is permanently older than any interval, so
+`due()` is permanently true, so every panel open would have spent a request at
+any setting.
+
+Two timestamps, two facts: when the answer last changed, and when we last asked.
+The second is `poll-stamp`, its own file beside `usage.json`, and it is written
+**before** the fetch rather than after. Stamping on success only turns a broken
+network into an unthrottled retry — one request per panel open, none of which
+can succeed — which is the precise behaviour a rate limit is for.
+
+That the endpoint is rate limited at all is not an assumption. Claude Code's own
+bundle carries a `rateLimitedVia` path for `GET /api/oauth/usage`, distinguishing
+an envelope-level limit from an HTTP one, and degrades `/usage` to *"Showing
+last-known usage … (rate limited — try again in a moment)"* against persisted or
+header-seeded numbers. `poll.fetch()` has no such fallback: a 429 is
+`FAILED — reading unchanged`, which on the bar and in the panel is
+indistinguishable from the staleness the poller exists to remove. The cheap
+request is the one a human just asked for; the expensive one is the timer
+tightened to spend them continuously whether or not anyone is looking.
+
+## The panel's usage bars have never shown the ramp (2026-07-28)
+
+Found while photographing the on-demand refresh, and **not fixed** — it is in
+`assets/menu.css`, which is the user's the moment `install.sh` copies it, and the
+fix is a choice about which of the two rules should win.
+
+`_load_tints()` installs `progressbar.ccas-tint-fab387 progress { background:
+#fab387; }` and friends at `STYLE_PROVIDER_PRIORITY_APPLICATION`, covering the
+whole of `usage.RAMP`, and `_usage_bar()` puts the right class on the bar. But
+`menu.css` is loaded at `PRIORITY_USER` and says:
+
+```css
+.ccas-usage-bar progress { min-height: 6px; border-radius: 999px;
+                           background: #89b4fa; }
+```
+
+Priority beats specificity in GTK CSS, so the flat blue wins for every reading.
+Seeding a reading of 88% — `usage.color(88)` is `#fab387` — and opening the panel
+draws a blue bar. The class is there; it paints nothing.
+
+This is the same trap the colour editor's preview swatch already documents, from
+the other side: a per-widget provider at `PRIORITY_APPLICATION` is outranked by
+anything in `menu.css`, silently, because a losing rule is not an error. The
+claim in CLAUDE.md that `usage.color()` "still ramps inside `usage.bar()` and the
+panel's bars" holds for the first and not the second.
