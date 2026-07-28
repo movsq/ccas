@@ -159,6 +159,28 @@ def load(slug: str):
         return None
 
 
+def _carried(stored, reading):
+    """`reading`, with any window it does not name taken from `stored`.
+
+    A payload naming neither window is already not a reading. This is the same
+    rule one level finer: naming *one* window is a statement about that window
+    and silence about the other, and silence must not overwrite a measurement.
+    Found on the bar 2026-07-28 — an account with a live 5-hour window read
+    `100%` out of nowhere, because a statusline tick carrying only `seven_day`
+    wrote `five_hour: null` over it, and a null window is IDLE, and IDLE is
+    0% used, and `%5hquotaleft` is 100 minus that.
+
+    Carrying cannot resurrect a window that really did roll over: `resets_at` is
+    an absolute anchor, so `state()` calls a carried window whose reset has
+    passed IDLE from the timestamp alone. The worst a carry can do is keep a
+    true fact one tick longer than the source mentioned it.
+    """
+    if stored is None:
+        return reading
+    return {**reading, **{key: stored.get(key) for key in WINDOWS
+                          if reading.get(key) is None}}
+
+
 def record_reading(slug: str, reading) -> bool:
     """Write an already-normalised reading if it says something new.
 
@@ -168,7 +190,9 @@ def record_reading(slug: str, reading) -> bool:
     """
     if reading is None:
         return False  # a payload with no windows must not erase a good one
-    if _same(load(slug), reading):
+    stored = load(slug)
+    reading = _carried(stored, reading)
+    if _same(stored, reading):
         return False
     _atomic_write(paths.account_dir(slug) / paths.USAGE_FILE,
                   json.dumps(reading, indent=2) + "\n")

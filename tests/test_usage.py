@@ -316,3 +316,52 @@ def test_an_idle_window_still_has_nothing_to_warn_about():
     idle = usage.from_statusline(statusline(five=None, seven=(11.0, 900000)),
                                  now=1000.0)
     assert usage.bar(idle, now=1000.0) is None
+
+
+def test_a_payload_naming_one_window_does_not_erase_the_other(monkeypatch, tmp_path):
+    """The rule "a payload with no windows must not erase a good one", one level
+    finer — it guarded the both-missing case and let the half-missing one
+    through. Found on the real system 2026-07-28: an account with a live 5-hour
+    window read `100%` out of nowhere on the bar. A statusline tick had named
+    seven_day and no usable five_hour, which wrote `five_hour: null` over a
+    running window; `state()` reads that as IDLE, IDLE carries 0.0, and a label
+    built from `%5hquotaleft` renders 100 - 0. Nothing was wrong with the
+    account and nothing was stale — the reading had been overwritten with less
+    than it had.
+
+    Carrying the old window forward cannot lie about a rollover: `state()` calls
+    a window whose `resets_at` has passed IDLE from the timestamp alone, so a
+    window that really did roll over still reports idle on its own.
+    """
+    env(monkeypatch, tmp_path)
+    live = {"fetched_at": 100.0, "source": "oauth",
+            "five_hour": {"percent": 1.0, "resets_at": 12000},
+            "seven_day": {"percent": 2.0, "resets_at": 500000}}
+    assert usage.record_reading("work", live) is True
+
+    half = usage.from_statusline(
+        {"rate_limits": {"seven_day": {"used_percentage": 3, "resets_at": 500000}}},
+        now=200.0)
+    assert half["five_hour"] is None          # the payload really did name one
+    usage.record_reading("work", half)
+
+    stored = usage.load("work")
+    assert stored["five_hour"] == {"percent": 1.0, "resets_at": 12000}
+    assert stored["seven_day"]["percent"] == 3.0     # the named one still lands
+    assert usage.state(stored, "five_hour", 150.0).kind == usage.BOUNDED
+
+
+def test_a_window_that_rolled_over_is_still_idle_when_it_is_carried(
+        monkeypatch, tmp_path):
+    """The carry above must not resurrect a dead window: `resets_at` is an
+    absolute anchor, so a carried five_hour whose reset has passed reads IDLE
+    from the timestamp, exactly as it would have without the carry."""
+    env(monkeypatch, tmp_path)
+    usage.record_reading("work", {
+        "fetched_at": 100.0, "source": "oauth",
+        "five_hour": {"percent": 40.0, "resets_at": 500},
+        "seven_day": {"percent": 2.0, "resets_at": 500000}})
+    usage.record_reading("work", usage.from_statusline(
+        {"rate_limits": {"seven_day": {"used_percentage": 3, "resets_at": 500000}}},
+        now=600.0))
+    assert usage.state(usage.load("work"), "five_hour", 600.0).kind == usage.IDLE
