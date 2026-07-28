@@ -488,6 +488,17 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   kill it once the capture is taken. Which output that is changes; ask or look
   rather than assuming, and if the answer is derivable without a window at all,
   derive it.
+- **When every real output is in use, make one that is not: `swaymsg
+  create_output`.** It appears as `HEADLESS-1` beside the real connectors, takes
+  `CCAS_PANEL_OUTPUT` and `grim -o` exactly like them, and
+  `swaymsg output HEADLESS-1 unplug` removes it. Nothing is shown to the user at
+  any point, so the rule above stops being a reason not to take a screenshot —
+  there is no exception in it for "only for a second", and both monitors being
+  busy is the normal case rather than the awkward one. Reach for this **before**
+  trying to render a widget offscreen: `Gtk.WidgetPaintable` over an unmapped
+  widget snapshots to a `None` node however carefully it is realized and
+  allocated, and the `Gsk.Renderer` then aborts the process on dispose rather
+  than raising — an abort mid-suite, not a traceback.
 - **Open the panel with `CCAS_PANEL_OUTPUT=<connector>` when you drive it
   yourself.** It skips the pointer probe, which is the previous rule's victim:
   the probe waits for `wl_pointer.enter`, an idle output never sends one, and
