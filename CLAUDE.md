@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~555 tests, under four seconds). They are the specification —
+1. `python -m pytest` (~557 tests, under four seconds). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -244,7 +244,21 @@ that is the fact, it is what keeps `%5hused` rendering, and it makes a panel bar
 at zero *mean* zero. Said as `usage.IDLE_TEXT` (`0% used`) wherever it is said;
 "no data" survives only for `ABSENT`, where doctor's hook and timer checks are
 the answer. `usage.bar()` still answers `None` for anything but `BOUNDED`: it
-warns, and an idle window has nothing to warn about.
+warns, and an idle window has nothing to warn about. In the label the clock
+slots (`%5hreset`, `%5htimeleft`) say `usage.IDLE_MARK` — empty was truthful and
+unreadable, since `%5hreset %5hquotaleft` then collapsed to a bare `100%`, which
+on a usage widget reads as 100% *used*. `ABSENT` keeps the empty string there:
+"idle" would be a claim the reading cannot support.
+
+**Silence about a window is not a measurement of it.** `_reading()` refuses a
+payload naming neither window; `record_reading` handles the half of that rule the
+first version missed, carrying a window the incoming reading does not name over
+from the stored one. A statusline tick carrying only `seven_day` otherwise writes
+`five_hour: null` over a *running* window, and from there four correct rules —
+null is IDLE, IDLE is `0.0`, `%5hquotaleft` is `100 -` that — compose into a
+label reading `100%` for an account at 1%. The carry cannot resurrect a
+rolled-over window: `resets_at` is an absolute anchor, so `state()` calls a
+carried window whose reset has passed IDLE from the timestamp alone.
 
 The display is the **reset time, not the percentage**: `resets_at` is an absolute
 anchor, so past means the window rolled over and future makes the recorded

@@ -1350,3 +1350,61 @@ nothing, and every other property in the rule — the height and the radius are
 untouched by any of this. The rule now says so beside itself, because a
 `background` that silently stops applying above 50% is exactly the kind of thing
 that costs someone ten minutes.
+
+## An account with a live window read 100% out of nowhere (2026-07-28)
+
+The user was watching a video when one account's widget went to `100%`. Clicking
+it opened the panel, and a second or two later it corrected itself. Nothing was
+wrong with the account, nothing was stale, and every hop involved was behaving
+exactly as specified.
+
+The label was `%5hreset %5hquotaleft` — quota *left*, so `100%` means nothing
+spent. That is what made it alarming rather than obviously wrong: on a usage
+widget a lone round number reads as 100% *used*.
+
+The first explanation was wrong and worth recording as a warning about the
+evidence. The journal showed a genuine idle stretch that afternoon — the 5-hour
+window rolled over at 12:59, and for 21 minutes the endpoint reported no running
+window, which renders `100%` correctly:
+
+```
+12:47  vsed  ok  5h ≥40% clears 12:59
+13:03  vsed  ok  5h 0% used            ← rolled over, endpoint names no window
+13:08  vsed  unchanged  same numbers
+13:24  vsed  ok  5h ≥1% clears 18:09   ← a new window started
+```
+
+That is a real state, it renders `100%`, and it was not this. The user said it
+had happened ten minutes ago, not ninety, and the timer's own log ruled the
+afternoon story out: at 14:33:31 the poll said `unchanged`, meaning the stored
+reading matched what the endpoint had just answered — a live 5-hour window at 1%.
+Two minutes later the panel's on-demand poll *wrote*, which it only does on a
+change. So something had overwritten the reading in between, and the only other
+writer is the statusline hook, from the session running under that account.
+
+`_reading()` refuses a payload naming neither window — "a payload with no
+windows must not erase a good one". A payload naming **one** went straight
+through. A statusline tick carrying `seven_day` and no usable `five_hour` (a
+missing `resets_at` is enough, `_window` returns None for it) therefore wrote
+`five_hour: null` over a running window. From there every step is the documented
+design: `state()` reads a null window as IDLE, IDLE carries `0.0` rather than
+None *on purpose*, and `%5hquotaleft` renders `100 - 0`. Four correct rules
+composing into a wrong label.
+
+Two fixes. `record_reading` carries a window the incoming reading does not name
+over from the stored one — silence about a window is not a measurement of it.
+That cannot resurrect a rolled-over window, because `resets_at` is an absolute
+anchor and `state()` calls a carried window whose reset has passed IDLE from the
+timestamp alone; the worst a carry does is keep a true fact one tick longer than
+the source mentioned it. And the clock slots (`%5hreset`, `%5htimeleft`) now
+render `usage.IDLE_MARK` instead of nothing, so the idle state that *is* real —
+the 13:03 one above — says `idle 100%` rather than a bare `100%`. ABSENT keeps
+the empty string: there the answer is that we do not know, and "idle" would be a
+claim the reading cannot support.
+
+The lesson about the investigation is the one worth keeping. The first
+explanation fitted a real mechanism, had log evidence behind it, and was still
+wrong — it was checked against the wrong minute. What settled it was the pair of
+writes: a poll that reported `unchanged`, then a poll that wrote. Write-on-change
+turns the log into a record of when the reading moved, which is a stronger
+instrument than any single line in it.
