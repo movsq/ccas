@@ -325,12 +325,6 @@ def Gdk_display(Gtk):
     return Gdk.Display.get_default()
 
 
-def _glib():
-    """GLib, for the same reason as the line above: module scope is off limits."""
-    from gi.repository import GLib
-    return GLib
-
-
 def _open(app, Gtk, LayerShell, state, chosen, connector, apply=None) -> None:
     """Build the panel proper on `connector`."""
     window = Gtk.ApplicationWindow(application=app)
@@ -368,13 +362,6 @@ def _open(app, Gtk, LayerShell, state, chosen, connector, apply=None) -> None:
     ui_state = {"expanded": False, "target": 0}
     rebuild = _body_swapper(frame, chosen, window, apply, ui_state)
     frame.append(build_body(state, chosen, window, apply, ui_state, rebuild))
-
-    # Once per panel, and here rather than in build_body: a chip switch is not
-    # a second question, and the guard would skip most of them anyway. The
-    # account is the one the panel was opened on — if it is switched away from
-    # before the answer lands, the reading still reaches disk and only the
-    # repaint is dropped.
-    _start_usage_poll(state["slug"], ui_state, _glib())
 
     scrim = Gtk.Box()
     scrim.set_hexpand(True)
@@ -523,31 +510,51 @@ def _load_base(display) -> None:
         display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
 
-def _load_tints(display, state) -> None:
-    """One provider for every colour the panel can need, at APPLICATION priority.
-
-    Below the user's menu.css (USER), deliberately: these say what a colour *is*,
-    and the stylesheet stays free to override anything it names.
-
-    Can, not does. This runs once, before the first surface maps, and a switch
-    then shows another account's reading through it — so the whole of usage.RAMP
-    goes in rather than the two values the account being opened happens to
-    reach. Every account's own colour is in state["accounts"] whichever one is
-    current, so a switch needs nothing added and no second provider.
-    """
-    from gi.repository import Gtk
-    colors = {c for _name, c in paths.PALETTE}
-    colors |= {value for _threshold, value in usage.RAMP}
-    colors |= {a["color"] for a in state["accounts"]}
-    css = "\n".join(
+def _tint_css(colors) -> str:
+    return "\n".join(
         f".{_tint(c)} {{ background: {c}; }}\n"
         f"progressbar.{_tint(c)} {{ background: transparent; }}\n"
         f"progressbar.{_tint(c)} progress {{ background: {c}; }}"
         for c in sorted(colors))
+
+
+def _add_css(display, css: str, priority) -> None:
+    from gi.repository import Gtk
     provider = Gtk.CssProvider()
     provider.load_from_string(css)
-    Gtk.StyleContext.add_provider_for_display(
-        display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    Gtk.StyleContext.add_provider_for_display(display, provider, priority)
+
+
+def _load_tints(display, state) -> None:
+    """Every colour the panel can need, in two providers that differ in rank.
+
+    A colour the *user* chose — an account's, a palette entry's — goes in at
+    APPLICATION, below menu.css: it says what a colour is, and the stylesheet
+    stays free to override anything it names.
+
+    `usage.RAMP` goes in **above** menu.css, at USER + 1, and this is not
+    symmetry-breaking for its own sake. menu.css ships
+    `.ccas-usage-bar progress { background: #89b4fa }` as the bar's resting
+    colour, priority beats specificity in GTK CSS, and the ramp class was
+    therefore on the widget and painting nothing — the panel's usage bars have
+    never once shown the ramp, at any level, since they were built. The ramp is
+    a function of the reading rather than a theme choice, so it outranks the
+    theme, the way the colour editor's preview swatch already does. The cost is
+    stated plainly in menu.css beside the rule it overrules.
+
+    Both run once, before the first surface maps, and a switch then shows another
+    account's reading through them — so the whole of RAMP goes in rather than the
+    two values the account being opened happens to reach, and every account's
+    colour is in state["accounts"] whichever one is current.
+    """
+    from gi.repository import Gtk
+    ramp = {value for _threshold, value in usage.RAMP}
+    chosen = {c for _name, c in paths.PALETTE}
+    chosen |= {a["color"] for a in state["accounts"]}
+    _add_css(display, _tint_css(chosen - ramp),
+             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    _add_css(display, _tint_css(ramp),
+             Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
 
 
 def _usage_bar(row):
@@ -837,6 +844,12 @@ def build_body(state, chosen, window, apply=None, ui_state=None, rebuild=None):
     # number of bodies. It always names the newest one; the generation above is
     # what says whether that is the one the answer in flight was asked for.
     ui_state["apply_usage"] = apply_usage
+    # Every body asks for the account it is showing, a chip switch included: the
+    # account you switch *to* is the one nothing has been keeping fresh. The
+    # per-account stamp in poll.py is what keeps flicking between two chips from
+    # costing a request each time — the answer to "may I ask" belongs there, not
+    # in a rule here about which clicks count.
+    _start_usage_poll(slug, ui_state, GLib)
     root.append(header)
 
     # ── verbs ────────────────────────────────────────────────────────────

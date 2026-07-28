@@ -48,6 +48,10 @@
 .ccas-usage-bar     { min-height: 6px; }
 .ccas-usage-bar trough  { min-height: 6px; border-radius: 999px;
                           background: rgba(255, 255, 255, 0.07); }
+/* The bar's resting colour, used below 50%. Above it the reading carries its
+   own colour from usage.RAMP, and that one is added by the panel above this
+   file rather than below it — so changing the background here will not recolour
+   a bar that is amber or red. Everything else in this rule still applies. */
 .ccas-usage-bar progress { min-height: 6px; border-radius: 999px;
                            background: #89b4fa; }
 .ccas-usage-label   { color: #9399b2; font-size: 0.85em; }

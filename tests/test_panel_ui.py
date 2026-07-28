@@ -625,3 +625,41 @@ def test_each_body_takes_a_generation_and_leaves_its_bars_reachable(
     panel_ui._body_swapper(_frame, {"action": None}, gtk.Window(),
                            lambda _a: None, ui_state)("two")
     assert ui_state["generation"] != first
+
+
+def test_every_body_asks_for_its_own_account(gtk, monkeypatch):
+    """A chip click is a click. The refresh started once per *panel* left the
+    account you switched to showing whatever was last on disk for it — which for
+    the idle account this whole feature serves is the stalest reading there is.
+    Each body asks for the account it is showing; the per-account stamp is what
+    stops that costing a request every time you flick between two chips."""
+    asked = []
+    monkeypatch.setattr(panel_ui, "_start_usage_poll",
+                        lambda slug, ui_state, glib: asked.append(slug))
+    frame, _chosen, _applied, _ui = _body(gtk, monkeypatch)
+    assert asked == ["one"]
+
+    other = next(c for c in _chips(frame) if not c.has_css_class("current"))
+    other.emit("clicked")
+    _settle()
+    assert asked == ["one", "two"]
+
+
+def test_the_usage_ramp_outranks_the_users_stylesheet(gtk, monkeypatch):
+    """menu.css says `.ccas-usage-bar progress { background: #89b4fa }`, at
+    PRIORITY_USER, and priority beats specificity — so the ramp classes, added
+    at PRIORITY_APPLICATION, were on the widget and painted nothing. The bars
+    had never once shown the ramp. A colour that is a function of the reading is
+    not a theme choice, so it goes above the stylesheet, the way the colour
+    editor's preview swatch already does."""
+    added = []
+    monkeypatch.setattr(Gtk.StyleContext, "add_provider_for_display",
+                        lambda display, provider, priority:
+                        added.append((priority, provider)))
+    panel_ui._load_tints(gtk.Window().get_display(), _state("one"))
+
+    user = Gtk.STYLE_PROVIDER_PRIORITY_USER
+    ramp = {value for _threshold, value in usage.RAMP}
+    above = "\n".join(p.to_string() for level, p in added if level > user)
+    for color in ramp:
+        assert f"progressbar.{panel_ui._tint(color)} progress" in above
