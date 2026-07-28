@@ -12,7 +12,7 @@ Two rules hold it up:
 - **Read the credentials, never write them.** CCAS does not hold the refresh
   token to the fire itself: rotating one behind Claude Code's back risks that
   account's login and can invalidate the token a live session holds. An expired
-  token is instead handed *back* to Claude Code — `claude auth status` renews it
+  token is instead handed *back* to Claude Code — `claude mcp list` refreshes it
   on the way past, under its own cross-process lock — and the fresh one is read
   off disk. `CCAS_NO_TOKEN_REFRESH=1` takes that away again and restores the
   eight-hour horizon this had before, where an idle account simply went quiet.
@@ -73,19 +73,43 @@ def renewal_wanted() -> bool:
     return os.environ.get("CCAS_NO_TOKEN_REFRESH") != "1"
 
 
+# What renews a token, measured 2026-07-28 against an account five hours past
+# expiry. Not `claude auth status`: that reads the credentials and reports
+# `loggedIn: true` over an expired token without touching it, which is how the
+# first version of this shipped inert. A token is refreshed as a side effect of
+# a **first-party API call**, which the bundle makes with `refreshOAuth: true`,
+# and `mcp list` is the cheapest CLI command that makes one — about 2.5s, and no
+# model quota. It is a side effect, so it is not promised: `renew()` re-reads
+# rather than trusting it, and the poll degrades to the old eight-hour horizon
+# the day a claude release stops doing it, visibly, in doctor's freshness row.
+RENEW_ARGS = ("mcp", "list")
+RENEW_TIMEOUT = 45.0
+
+
+def ask_claude(slug: str, runner=None) -> None:
+    """Run the renewing command under that account's `CLAUDE_CONFIG_DIR`.
+
+    Nothing is read back from it — the answer is on disk, and `renew` looks
+    there. `accounts.env_for` carries the `CCAS_INNER=1` guard.
+    """
+    runner = subprocess.run if runner is None else runner
+    runner([str(paths.claude_bin()), *RENEW_ARGS], env=accounts.env_for(slug),
+           capture_output=True, text=True, timeout=RENEW_TIMEOUT)
+
+
 def renew(slug: str, asker=None):
     """Ask Claude Code to renew this account's token; re-read what it left.
 
     `(token, expires_at)` if a usable one is now on disk, else None. CCAS writes
-    nothing here — `claude auth status` reads the credentials for that account
-    and refreshes an expired token on its way, which is the whole point of
-    routing through it rather than posting to the token endpoint ourselves.
+    nothing here — claude refreshes the credentials for its own account, which
+    is the whole point of routing through it rather than posting to the token
+    endpoint ourselves.
 
     Never raises: the timer runs unattended, and a claude that is missing, slow
     or logged out is the same event as far as the caller is concerned — no fresh
     token this time.
     """
-    asker = accounts.auth_status if asker is None else asker
+    asker = ask_claude if asker is None else asker
     try:
         asker(slug)
     except Exception:  # noqa: BLE001 — see the docstring

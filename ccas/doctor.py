@@ -236,7 +236,7 @@ def _poll_timer() -> Check:
 def _usage_freshness(account: dict) -> Check:
     """How old this account's reading is, and how long its token can still be
     polled with. Always passes: both facts are expected states, not faults. An
-    expired token is the next poll's problem to hand to `claude auth status`,
+    expired token is the next poll's problem to hand to claude for renewal,
     not a fault here — and with `CCAS_NO_TOKEN_REFRESH=1` set it is not even
     that, just the account going quiet until it is next used."""
     name = label.display_name(account)

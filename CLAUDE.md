@@ -265,9 +265,14 @@ user timer runs `ccs poll` every five minutes. Four rules there:
   Rotating a refresh token behind Claude Code's back risks that account's login
   and can invalidate the token a live session is holding. An expired token is
   handed *back* to the program that owns the file — `poll.renew()` runs
-  `claude auth status` under that account's `CLAUDE_CONFIG_DIR`, which refreshes
-  on its way past under its own cross-process lock, and CCAS re-reads the
-  result. It costs no model quota. **`CCAS_NO_TOKEN_REFRESH=1` puts the whole
+  `poll.RENEW_ARGS` under that account's `CLAUDE_CONFIG_DIR`, and CCAS re-reads
+  the result. The command is **`claude mcp list`**, and which command it is was
+  measured, not assumed: `claude auth status` reports `loggedIn: true` over an
+  expired token without touching it, and shipped inert for a day because of it.
+  A token is refreshed as a side effect of a *first-party API call*, which the
+  bundle makes with `refreshOAuth: true`; `mcp list` is the cheapest CLI command
+  that makes one — 2.5s, no model quota. Being a side effect it is not promised,
+  so `renew()` re-reads rather than trusting it. **`CCAS_NO_TOKEN_REFRESH=1` puts the whole
   thing away**: the poll then treats expiry as "no fetch" again and the account
   goes quiet after about eight hours until it is next used, which was the
   behaviour before 2026-07-27 and is still a degradation rather than a hole —

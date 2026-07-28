@@ -1155,14 +1155,44 @@ to renew it, by a rule written here in capitals. The rule's *reason* was sound
 and is unchanged — CCAS posting to the token endpoint rotates a refresh token
 behind Claude Code's back, which risks the login and can invalidate what a live
 session holds — but the conclusion drawn from it was wider than the reason. "CCAS
-must not rotate the token" is not "the token must not be rotated". `claude auth
-status` renews on its way past, under Claude Code's own cross-process lock,
-spends no model quota, and `accounts.auth_status()` was already in the tree doing
-exactly that call for `cmd_add`. The renewal is the expired path's alone — asking
-on every poll would spawn a claude every five minutes for an account that needs
-nothing — and `CCAS_NO_TOKEN_REFRESH=1` restores the old behaviour whole, tested
-by asserting claude is *not asked*, because an off switch that only goes quieter
-is not one.
+must not rotate the token" is not "the token must not be rotated". Claude Code
+renews on its way past, under its own cross-process lock and for no model quota.
+The renewal is the expired path's alone — asking on every poll would spawn a
+claude every five minutes for an account that needs nothing — and
+`CCAS_NO_TOKEN_REFRESH=1` restores the old behaviour whole, tested by asserting
+claude is *not asked*, because an off switch that only goes quieter is not one.
+
+**And it shipped inert, because the command was assumed rather than measured.**
+The first version called `accounts.auth_status()` — already in the tree, already
+running claude under the account's `CLAUDE_CONFIG_DIR`, so it looked like the
+renewal was free. It was reasoned into place: *`auth status` is about auth,
+therefore it refreshes.* It does not. Run against an account five hours past
+expiry it prints `loggedIn: true` with the email and the org, exits 0, and leaves
+`.credentials.json` untouched to the mtime. A whole night of five-minute polls
+said `claude did not renew it; is it logged in?` — and it *was* logged in.
+
+Two things kept that from being worse. The renewal **verifies instead of
+trusting**: `renew()` re-reads the file and answers None if the token is still
+expired, so a renewal that does nothing degrades to exactly the old horizon
+rather than to a poll that fetches with a dead token. And the failure message
+named the account and the fix, so the journal said what had happened rather than
+going quiet. The instrument was sound; the assumption inside it was not.
+
+What actually renews is a **first-party API call** — the bundle attaches
+`refreshOAuth: true` to those, which `auth status` plainly does not make. Found
+by running the cheap subcommands against that still-expired account and watching
+the credential mtime: `mcp list` refreshed it (8h horizon restored, refresh token
+untouched, 2.5s), while `doctor`, `agents` and `project` did not. So `mcp list`
+is what `RENEW_ARGS` holds — chosen by measurement, and *pinned by a test*,
+because which command it is turned out to be the entire feature.
+
+The general lesson is the one this file keeps relearning: **an integration point
+that is one call away still has to be measured.** A command whose name matches
+the intent is not evidence it does the thing, and "it returned 0" is not evidence
+either. The check that would have caught this on day one took ninety seconds —
+stat the file, run the command, stat it again — and it was skipped because there
+was no expired token to hand and the reasoning felt tight. Wait for the real
+condition, or build one; do not ship on the reasoning.
 
 ## The account switch that rebuilt the whole window (2026-07-27)
 

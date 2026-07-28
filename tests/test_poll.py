@@ -119,7 +119,7 @@ def test_force_polls_a_fresh_account_anyway(monkeypatch, tmp_path):
 # ── the expiry horizon ────────────────────────────────────────────────────────
 
 def renewing(tmp_path, to=None, token="sk-fresh"):
-    """A renewer standing in for `claude auth status`.
+    """A renewer standing in for the claude that renews the token.
 
     The real one renews by *rewriting the credentials file* — CCAS never writes
     it — so the stub does that and nothing else. What the poll then fetches with
@@ -134,6 +134,38 @@ def renewing(tmp_path, to=None, token="sk-fresh"):
         return {"loggedIn": True}
     asker.calls = calls
     return asker
+
+
+def test_the_renewal_runs_the_command_that_actually_refreshes(monkeypatch, tmp_path):
+    """`claude auth status` reads the credentials and reports on them without
+    touching an expired token — measured 2026-07-28 against an account five
+    hours past expiry, which is what shipped inert. What renews is a first-party
+    API call, which the bundle makes with `refreshOAuth: true`, and `mcp list`
+    is the cheapest CLI command that makes one. The command *is* the behaviour
+    here, so it is pinned."""
+    env(monkeypatch, tmp_path)
+    seen = {}
+
+    def runner(argv, **kwargs):
+        seen["argv"] = argv
+        seen["config_dir"] = kwargs["env"]["CLAUDE_CONFIG_DIR"]
+        return None
+
+    poll.ask_claude("work", runner=runner)
+    assert seen["argv"][1:] == ["mcp", "list"]
+    assert seen["config_dir"] == str(paths.account_dir("work"))
+
+
+def test_the_renewal_reports_a_claude_that_will_not_run(monkeypatch, tmp_path):
+    """Missing binary, timeout, non-zero exit: all the same event to the caller
+    — no fresh token this time — and none of them may reach the timer."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW - 60) * 1000))
+
+    def runner(argv, **kwargs):
+        raise OSError("no such binary")
+
+    assert poll.renew("work", lambda slug: poll.ask_claude(slug, runner)) is None
 
 
 def test_an_expired_token_is_handed_to_claude_and_the_fresh_one_is_used(
