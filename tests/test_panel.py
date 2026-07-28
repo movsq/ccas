@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from ccas import format as fmt, panel, paths, registry, usage
+from ccas import format as fmt, panel, paths, poll, registry, usage
 
 
 @pytest.fixture
@@ -89,6 +89,89 @@ def test_build_state_reads_a_bounded_window(reg):
     assert five["kind"] == usage.BOUNDED
     assert five["percent"] == 61.0
     assert five["resets"] == usage.reset_time(int(now + 3600), now)
+
+
+def test_refresh_usage_rereads_the_recording_build_state_read(reg):
+    """The on-demand poll's half of the panel refresh.
+
+    It re-reads the file rather than being handed the reading, because the
+    writer is poll.record_reading on another thread and the only thing the two
+    share is the account directory. Same rows build_state puts in state["usage"],
+    so the widget update has nothing new to understand.
+    """
+    now = 1_700_000_000.0
+    path = paths.account_dir("one") / paths.USAGE_FILE
+    path.write_text(json.dumps({
+        "fetched_at": now, "source": "statusline",
+        "five_hour": {"percent": 61.0, "resets_at": int(now + 3600)},
+        "seven_day": None,
+    }))
+    state = panel.build_state("one", now=now)
+    assert panel.refresh_usage("one", now=now) == state["usage"]
+
+    path.write_text(json.dumps({
+        "fetched_at": now, "source": "oauth",
+        "five_hour": {"percent": 74.0, "resets_at": int(now + 3600)},
+        "seven_day": None,
+    }))
+    rows = panel.refresh_usage("one", now=now)
+    assert rows[0]["percent"] == 74.0
+    assert [r["key"] for r in rows] == ["five_hour", "seven_day"]
+
+
+def _recording(path, now, percent):
+    """A poller that writes a reading the way poll_on_demand's fetch would."""
+    def poller(slug):
+        path.write_text(json.dumps({
+            "fetched_at": now, "source": "oauth",
+            "five_hour": {"percent": percent, "resets_at": int(now + 3600)},
+            "seven_day": None,
+        }))
+        return poll.Outcome(slug, poll.OK, "")
+    return poller
+
+
+def test_poll_and_refresh_signals_the_bar_when_the_numbers_moved(reg):
+    """The rule every other writer obeys: the signal rides on the write. The bar
+    re-renders on its own every 30s, but half a minute of the old number right
+    after asking for the new one is the staleness this feature is against."""
+    now = 1_700_000_000.0
+    path = paths.account_dir("one") / paths.USAGE_FILE
+    signalled = []
+    rows = panel.poll_and_refresh("one", now=now,
+                                  poller=_recording(path, now, 42.0),
+                                  signaller=signalled.append)
+    assert rows[0]["percent"] == 42.0
+    assert signalled == [registry.find(reg, "one")["signal"]]
+
+
+def test_poll_and_refresh_does_not_signal_when_nothing_changed(reg):
+    """SKIPPED by the guard, or the same numbers back: no write, no signal."""
+    now = 1_700_000_000.0
+    signalled = []
+    panel.poll_and_refresh("one", now=now,
+                           poller=lambda s: poll.Outcome(s, poll.SKIPPED, ""),
+                           signaller=signalled.append)
+    assert signalled == []
+
+
+def test_poll_and_refresh_still_answers_rows_when_the_poll_blows_up(reg):
+    """It runs on a background thread in the panel process, where an exception
+    is a traceback in Waybar's log and nothing else. The panel keeps showing
+    what it was showing."""
+    now = 1_700_000_000.0
+    (paths.account_dir("one") / paths.USAGE_FILE).write_text(json.dumps({
+        "fetched_at": now, "source": "statusline",
+        "five_hour": {"percent": 61.0, "resets_at": int(now + 3600)},
+        "seven_day": None,
+    }))
+
+    def exploding(_slug):
+        raise RuntimeError("dns went away")
+
+    rows = panel.poll_and_refresh("one", now=now, poller=exploding,
+                                  signaller=lambda _n: None)
+    assert rows[0]["percent"] == 61.0
 
 
 def test_build_state_reads_a_rolled_over_window_as_idle(reg):

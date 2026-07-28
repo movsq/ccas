@@ -14,7 +14,8 @@ import subprocess
 import time
 from collections import namedtuple
 
-from . import format as fmt, history, label, paths, registry, usage
+from . import (format as fmt, history, label, paths, poll, registry, usage,
+               waybar)
 
 # What the widget tree hands back. `kind` picks the branch cli.dispatch_panel
 # takes, `slug` says whose, and `value` is that branch's argument — None for the
@@ -72,6 +73,55 @@ def _usage_rows(slug: str, now: float):
             "color": None if st.percent is None else usage.color(st.percent),
         })
     return rows
+
+
+def refresh_usage(slug: str, now=None):
+    """The usage rows again, read fresh off disk.
+
+    What the panel's on-demand poll hands back to the widget tree. It re-reads
+    rather than being given the reading because the writer is
+    `usage.record_reading` on another thread and the account directory is the
+    only thing the two share — and because a fetch that changed nothing must
+    still produce the rows the panel is already showing, not a second shape.
+
+    Only this. Rebuilding the whole state would rescan ~/.claude/projects for a
+    number, and the body it fed would be torn out from under whatever the user
+    is doing in it.
+    """
+    return _usage_rows(slug, time.time() if now is None else now)
+
+
+def poll_and_refresh(slug: str, now=None, poller=None, signaller=None):
+    """Ask the endpoint once, then answer the rows to paint. Never raises.
+
+    The panel's on-demand refresh, whole — and here rather than in panel_ui
+    because it is three decisions (whether the reading moved, whether the bar
+    should be told, what the rows now say) and the widget tree is meant to make
+    none. It also keeps the whole thing testable with no display attached.
+
+    The signal rides on the write, as it does for the hook and the timer: only
+    an `OK` outcome moved anything. Waybar re-runs `ccs render` every 30s of its
+    own accord, so this is not the only way the bar catches up — but half a
+    minute of the old number immediately after asking for the new one is the
+    staleness the on-demand poll exists to remove.
+
+    Never raises because the caller is a background thread, where an exception
+    is a traceback in Waybar's log and no other consequence. A refresh that
+    could not happen leaves the panel showing exactly what it was showing.
+    """
+    poller = poll.poll_on_demand if poller is None else poller
+    signaller = waybar.signal if signaller is None else signaller
+    try:
+        outcome = poller(slug)
+        if outcome.status == poll.OK:
+            account = registry.find(registry.load(), slug)
+            if account:
+                signaller(account["signal"])
+    except Exception:  # noqa: BLE001 — see the docstring
+        pass
+    # After the fetch, not before: `now` defaulting to None means the rows are
+    # read against the clock as it is when the answer arrived.
+    return refresh_usage(slug, now)
 
 
 def _accounts(reg: dict, slug: str):
