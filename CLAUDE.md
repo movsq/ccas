@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~330 tests, under a second). They are the specification —
+1. `python -m pytest` (~530 tests, under four seconds). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -30,7 +30,7 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `poll.py` | the session-free usage fetch: the credential read, the freshness gate, the request. Its fetcher is injected, so no test opens a socket. |
 | `pickers.py` | the terminal front-ends (fzf, `input()`), and `is_gui()`. |
 | `panel.py` | the GTK panel's state: `build_state`, `filter_state`, the open-panel lock, which output. No GTK. |
-| `panel_ui.py` | the panel's widget tree. The only module that touches GTK. It decides nothing except *when* a colour is written — the settle timer, which is what `test_panel_ui.py` covers. |
+| `panel_ui.py` | the panel's widget tree. The only module that touches GTK. It decides nothing except *when* a colour is written (the settle timer) and *when* the body is swapped for another account's — both covered by `test_panel_ui.py`. |
 | `launch.py` | resolving a launch request into a cwd and argv. |
 | `doctor.py` | the read-only audit. |
 | `cli.py` | argument dispatch and the command bodies. |
@@ -427,6 +427,12 @@ moment it exists, the same stance CCAS takes toward `style.css`.
 ## Working style
 
 - TDD: failing test → verify it fails → implement → verify it passes → commit.
+  **A test that lands after the code it covers is not trusted until the
+  implementation has been mutated under it** — break the one line it is about,
+  confirm it goes red, put the line back. One written this way on 2026-07-27
+  stayed green through the mutation: it aimed at a selection that another
+  restore path was putting back anyway, and it had to be re-aimed at the project
+  row, which was the real casualty. A test that cannot fail measures nothing.
 - One commit per coherent change. **Never co-sign or co-author** (global rule).
 - Verify on the real system rather than reasoning about it: `./install.sh`,
   `ccs render <slug>`, read `~/.config/waybar/config.jsonc`. `grim` plus PIL
@@ -546,7 +552,7 @@ still generated files.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~330 tests, under a second
+cd ~/ccas && python -m pytest    # ~530 tests, under four seconds
 ./install.sh                     # idempotent; re-run after any code change
 ccs                              # terminal: pick account → mode (fzf)
 ccs --gui <slug>                 # the bar's click: the GTK panel. A second one closes it.
