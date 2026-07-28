@@ -536,3 +536,92 @@ def test_the_restored_query_is_not_a_search_of_its_own(gtk, monkeypatch):
     _settle(400)   # the delayed search-changed of the seeded entry lands here
     projects, _sessions = _panes(frame)
     assert _selected(projects, PROJECTS)["path"] == "/p/beta"
+
+
+# ── the on-demand usage refresh ───────────────────────────────────────────────
+
+def _rows(percent, color, kind=usage.BOUNDED):
+    return [{"key": "five_hour", "label": "5h", "kind": kind,
+             "percent": percent, "resets": "in 2h", "color": color}]
+
+
+def test_a_refresh_moves_the_bar_and_its_label(gtk):
+    """In place, not by rebuilding the body. A fetch landing half a second after
+    the panel opened would otherwise tear the widget tree out from under someone
+    typing in the search entry or dragging a colour slider — the grab-losing bug
+    Gtk.Scale already cost us once."""
+    box, apply_rows = panel_ui._build_usage(_rows(20.0, "#a6e3a1"))
+    bar = _walk(box, lambda w: isinstance(w, Gtk.ProgressBar))[0]
+    assert bar.get_fraction() == pytest.approx(0.20)
+
+    apply_rows(_rows(75.0, "#f9e2af"))
+    assert bar.get_fraction() == pytest.approx(0.75)
+    labels = [w.get_label() for w in _walk(box, lambda w: isinstance(w, Gtk.Label))]
+    assert any("75" in (text or "") for text in labels)
+
+
+def test_a_refresh_carries_the_bar_across_a_ramp_threshold(gtk):
+    """The colour is a function of the reading, so it moves with it. _load_tints
+    installs the whole of usage.RAMP up front precisely so this needs no new
+    provider — but the old class has to come off, or the bar wears both."""
+    box, apply_rows = panel_ui._build_usage(_rows(20.0, "#a6e3a1"))
+    bar = _walk(box, lambda w: isinstance(w, Gtk.ProgressBar))[0]
+    assert bar.has_css_class(panel_ui._tint("#a6e3a1"))
+
+    apply_rows(_rows(95.0, "#f38ba8"))
+    assert bar.has_css_class(panel_ui._tint("#f38ba8"))
+    assert not bar.has_css_class(panel_ui._tint("#a6e3a1"))
+
+
+def test_a_refresh_of_an_absent_window_leaves_the_bar_empty(gtk):
+    """ABSENT has no percent and no colour. A bar at zero and a bar not drawn
+    mean opposite things, and this must not paint the first as the second."""
+    box, apply_rows = panel_ui._build_usage(_rows(60.0, "#f9e2af"))
+    bar = _walk(box, lambda w: isinstance(w, Gtk.ProgressBar))[0]
+    apply_rows(_rows(None, None, kind=usage.ABSENT))
+    assert bar.get_fraction() == pytest.approx(0.0)
+    assert not bar.has_css_class(panel_ui._tint("#f9e2af"))
+
+
+def test_a_refresh_paints_the_body_that_asked_for_it():
+    """No GTK: the guard is a comparison, and it is the whole of what keeps a
+    late answer honest."""
+    painted = []
+    ui_state = {"generation": 3, "apply_usage": painted.append}
+    panel_ui._usage_delivery(ui_state)(_rows(42.0, None))
+    assert [r[0]["percent"] for r in painted] == [42.0]
+
+
+def test_a_refresh_that_lands_after_a_switch_paints_nothing():
+    """The reason the guard exists at all.
+
+    The fetch is for the account the panel opened on. If a chip click swaps the
+    body while it is in flight, `apply_usage` now points at the *other* account's
+    bars — so painting would show one account's quota under the other's name.
+    The reading still lands on disk; only the repaint is dropped.
+    """
+    painted = []
+    ui_state = {"generation": 3, "apply_usage": painted.append}
+    deliver = panel_ui._usage_delivery(ui_state)
+    ui_state["generation"] = 4                    # a chip click swapped the body
+    ui_state["apply_usage"] = painted.append      # ...and with it, the bars
+    deliver(_rows(42.0, None))
+    assert painted == []
+
+
+def test_a_refresh_that_lands_after_the_panel_closed_paints_nothing():
+    """Escape, then the answer. There is no body left to hold a handle to."""
+    ui_state = {"generation": 1, "apply_usage": None}
+    assert panel_ui._usage_delivery(ui_state)(_rows(42.0, None)) is False
+
+
+def test_each_body_takes_a_generation_and_leaves_its_bars_reachable(
+        gtk, monkeypatch):
+    """build_body is the only thing that moves the generation, so a swap moves
+    it exactly once and the delivery built before the swap can tell."""
+    _frame, _chosen, _applied, ui_state = _body(gtk, monkeypatch)
+    first = ui_state["generation"]
+    assert callable(ui_state["apply_usage"])
+    panel_ui._body_swapper(_frame, {"action": None}, gtk.Window(),
+                           lambda _a: None, ui_state)("two")
+    assert ui_state["generation"] != first

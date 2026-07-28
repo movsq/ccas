@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 
 from . import format as fmt, panel, paths, usage
 
@@ -324,6 +325,12 @@ def Gdk_display(Gtk):
     return Gdk.Display.get_default()
 
 
+def _glib():
+    """GLib, for the same reason as the line above: module scope is off limits."""
+    from gi.repository import GLib
+    return GLib
+
+
 def _open(app, Gtk, LayerShell, state, chosen, connector, apply=None) -> None:
     """Build the panel proper on `connector`."""
     window = Gtk.ApplicationWindow(application=app)
@@ -361,6 +368,13 @@ def _open(app, Gtk, LayerShell, state, chosen, connector, apply=None) -> None:
     ui_state = {"expanded": False, "target": 0}
     rebuild = _body_swapper(frame, chosen, window, apply, ui_state)
     frame.append(build_body(state, chosen, window, apply, ui_state, rebuild))
+
+    # Once per panel, and here rather than in build_body: a chip switch is not
+    # a second question, and the guard would skip most of them anyway. The
+    # account is the one the panel was opened on — if it is switched away from
+    # before the answer lands, the reading still reaches disk and only the
+    # repaint is dropped.
+    _start_usage_poll(state["slug"], ui_state, _glib())
 
     scrim = Gtk.Box()
     scrim.set_hexpand(True)
@@ -558,6 +572,112 @@ def _dot(color):
     return dot
 
 
+def _build_usage(rows):
+    """The window lines, and an `apply_rows` that updates them where they stand.
+
+    Two ways to show a new reading were available and only one is safe. Handing
+    the job to `_body_swapper`'s rebuild would have cost nothing to write, but
+    the answer arrives on its own schedule — half a second after the panel
+    opened, or ten — and rebuilding the body under a user who is mid-drag on a
+    colour slider loses the grab, which is the Gtk.Scale rule CLAUDE.md already
+    records. So the widgets are kept and only their three mutable facts move:
+    the fraction, the tint, and the text.
+
+    `zip` over the two lists is safe because both come from `_usage_rows`, which
+    answers one row per `usage.WINDOWS` in a fixed order whatever the reading.
+    """
+    from gi.repository import Gtk
+
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    lines = []
+    for row in rows:
+        line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        key = Gtk.Label(label=row["label"], xalign=0)
+        key.add_css_class("ccas-usage-key")
+        line.append(key)
+        bar = _usage_bar(row)
+        bar.set_hexpand(True)
+        bar.set_valign(Gtk.Align.CENTER)
+        line.append(bar)
+        text = Gtk.Label(label=_usage_text(row), xalign=1)
+        text.add_css_class("ccas-usage-label")
+        line.append(text)
+        box.append(line)
+        # The colour is held rather than read back off the widget: a class has
+        # to be removed by name, and asking the bar which tint it wears means
+        # searching every class it has for one of ours.
+        lines.append((bar, text, {"color": row["color"]}))
+
+    def apply_rows(new_rows):
+        for (bar, text, held), row in zip(lines, new_rows):
+            bar.set_fraction(0.0 if row["percent"] is None
+                             else row["percent"] / 100)
+            if held["color"] != row["color"]:
+                if held["color"]:
+                    bar.remove_css_class(_tint(held["color"]))
+                if row["color"]:
+                    bar.add_css_class(_tint(row["color"]))
+                held["color"] = row["color"]
+            text.set_label(_usage_text(row))
+
+    return box, apply_rows
+
+
+def _usage_delivery(ui_state):
+    """A `deliver(rows)` that paints only if the body that asked is still up.
+
+    The fetch is for the account the panel was opened on, and it answers
+    whenever the network gets around to it. By then a chip click may have
+    swapped the body — and `apply_usage` then names the *other* account's bars,
+    so painting would put one account's quota under the other's name. The
+    generation says whether the body that asked is the body on screen.
+
+    A counter rather than a widget liveness check on purpose: this is the hazard
+    `_retire` documents, where a callback reaches a body whose closure cells
+    CPython has already cleared, and a comparison made before any of that can
+    happen cannot be defeated by when the collector runs.
+
+    Answers False, so it can be handed straight to GLib.idle_add.
+    """
+    generation = ui_state.get("generation")
+
+    def deliver(rows):
+        if ui_state.get("generation") != generation:
+            return False
+        apply_rows = ui_state.get("apply_usage")
+        if apply_rows is not None:
+            apply_rows(rows)
+        return False
+
+    return deliver
+
+
+def _start_usage_poll(slug, ui_state, GLib) -> None:
+    """Ask the endpoint once, off the main loop, and paint what comes back.
+
+    A **daemon** thread. `poll.fetch` waits up to `poll.TIMEOUT` seconds, and a
+    non-daemon one would hold the process open for that long after Escape — the
+    panel gone from the screen, `ccs --gui` still running, the lock still
+    claimed by a pid that is still alive. Daemon means the process exits and the
+    fetch is abandoned, which is safe precisely because `poll_on_demand` stamped
+    the guard before it started: an abandoned fetch is not a retry on the next
+    open.
+
+    `panel.poll_and_refresh` cannot raise, and this catches anyway: an exception
+    escaping a thread prints a traceback into Waybar's log, which is the one
+    thing a silent refresh must not do.
+    """
+    deliver = _usage_delivery(ui_state)
+
+    def worker():
+        try:
+            GLib.idle_add(deliver, panel.poll_and_refresh(slug))
+        except Exception:  # noqa: BLE001 — see the docstring
+            pass
+
+    threading.Thread(target=worker, daemon=True, name="ccas-panel-poll").start()
+
+
 def _build_header(state, pick, close):
     from gi.repository import Gtk
 
@@ -602,21 +722,10 @@ def _build_header(state, pick, close):
         email.add_css_class("ccas-email")
         header.append(email)
 
-    for row in state["usage"]:
-        line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        key = Gtk.Label(label=row["label"], xalign=0)
-        key.add_css_class("ccas-usage-key")
-        line.append(key)
-        bar = _usage_bar(row)
-        bar.set_hexpand(True)
-        bar.set_valign(Gtk.Align.CENTER)
-        line.append(bar)
-        text = Gtk.Label(label=_usage_text(row), xalign=1)
-        text.add_css_class("ccas-usage-label")
-        line.append(text)
-        header.append(line)
+    usage_box, apply_usage = _build_usage(state["usage"])
+    header.append(usage_box)
 
-    return header
+    return header, apply_usage
 
 
 def _project_row(project):
@@ -707,6 +816,12 @@ def build_body(state, chosen, window, apply=None, ui_state=None, rebuild=None):
             return
         chosen["action"] = action
         window.close()
+
+    # This body's number, and the only place it moves. A refresh in flight
+    # captured the previous one and will decline to paint these widgets, which
+    # belong to a different account than the one it asked about.
+    ui_state["generation"] = ui_state.get("generation", 0) + 1
+
     root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
     # SLIDE_UP, and it grows over the panes rather than above them: the card is
@@ -717,7 +832,12 @@ def build_body(state, chosen, window, apply=None, ui_state=None, rebuild=None):
     revealer = Gtk.Revealer()
     revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
     revealer.set_valign(Gtk.Align.END)
-    root.append(_build_header(state, pick, window.close))
+    header, apply_usage = _build_header(state, pick, window.close)
+    # Published for the refresh, which is started once by _open and outlives any
+    # number of bodies. It always names the newest one; the generation above is
+    # what says whether that is the one the answer in flight was asked for.
+    ui_state["apply_usage"] = apply_usage
+    root.append(header)
 
     # ── verbs ────────────────────────────────────────────────────────────
     verbs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
