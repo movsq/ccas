@@ -30,13 +30,18 @@ HIST_SLOTS = 300
 # definition — a link to a shared one would report the wrong account's quota.
 USAGE_FILE = "usage.json"
 
+# When this account last *asked* the usage endpoint, as against when its answer
+# last changed — which is what USAGE_FILE's `fetched_at` records, and why this
+# cannot be a key in there. The panel's on-demand poll is rate limited on it.
+POLL_STAMP_FILE = "poll-stamp"
+
 # Never symlinked into an account: the first two are the account's identity, and
 # the rest are per-account files CCAS itself used to generate. Nothing writes
 # menu.xml or history.tsv any more, but an account directory made before that
 # still has them, and a blocklist entry costs nothing where a stray link would
 # make one account read another's.
 BLOCKLIST = {".credentials.json", ".claude.json", "menu.xml", "history.tsv",
-             USAGE_FILE}
+             USAGE_FILE, POLL_STAMP_FILE}
 
 
 def _env(name: str, default: Path) -> Path:

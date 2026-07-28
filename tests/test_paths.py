@@ -30,6 +30,14 @@ def test_usage_file_is_never_relinked_over(monkeypatch):
     assert paths.USAGE_FILE in paths.BLOCKLIST
 
 
+def test_the_poll_stamp_is_never_relinked_over(monkeypatch):
+    """Same reasoning as the reading beside it: when this account last asked the
+    endpoint is per-account by definition, and a link would make one account's
+    rate limit hold another's panel off."""
+    importlib.reload(paths)
+    assert paths.POLL_STAMP_FILE in paths.BLOCKLIST
+
+
 def test_trash_dir_is_under_home_and_never_deleted(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_TRASH", str(tmp_path / "trash"))
     importlib.reload(paths)

@@ -196,6 +196,81 @@ def poll_account(slug: str, now=None, fetcher=None, force=False,
     return Outcome(slug, UNCHANGED, "same numbers")
 
 
+# ── the on-demand poll ────────────────────────────────────────────────────────
+
+# The shortest gap between two panel-driven fetches for one account. Separate
+# from INTERVAL on purpose: that one answers "how often should this account be
+# refreshed in the background", and this one answers "how often may a human
+# asking spend a request". They are free to differ, and do.
+PANEL_INTERVAL = 60.0
+
+
+def asked_at(slug: str):
+    """When this account last asked the endpoint, or None.
+
+    Its own file, not a key in the reading. `usage.record` defines `fetched_at`
+    as *when this reading was first seen* — the write-on-change rule leaves it
+    alone while the numbers hold steady — so for an idle account whose usage is
+    not moving it is permanently older than any interval, and `due()` built on
+    it is permanently true. That is right for the timer, whose cadence is the
+    point, and useless as a rate limit. This is the other fact: when we last
+    asked, whatever the answer was.
+
+    Unreadable reads as never asked. Failing open costs one request; failing
+    shut would wedge an account's panel refresh on a stray byte.
+    """
+    try:
+        return float((paths.account_dir(slug) / paths.POLL_STAMP_FILE)
+                     .read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def stamp(slug: str, now: float) -> None:
+    """Record that we asked. Never raises — a read-only account directory means
+    no rate limiting, not a panel that fails to open."""
+    try:
+        path = paths.account_dir(slug) / paths.POLL_STAMP_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{now:.3f}\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _never_renew(_slug: str) -> None:
+    """The renewer the on-demand path passes: it asks claude nothing.
+
+    Renewal is a process and up to RENEW_TIMEOUT seconds, and the five-minute
+    timer has already done it by the time a panel is opened. `renew()` re-reads
+    the credentials after calling this, finds the same expired token, and
+    poll_account reports EXPIRED without spending a request.
+    """
+
+
+def poll_on_demand(slug: str, now=None, fetcher=None,
+                   interval: float = PANEL_INTERVAL) -> Outcome:
+    """One account, because someone opened the panel and is looking at it.
+
+    The stamp is written **before** the fetch. A fetch that fails, or hangs for
+    the full TIMEOUT, still counts as having asked — stamping on success only
+    would turn a broken network into an unthrottled retry, one request per panel
+    open, which is the precise behaviour the limit is here to prevent. The
+    endpoint is rate limited on Anthropic's side (Claude Code's own bundle
+    carries a `rateLimitedVia` fallback; `fetch` has none), so spending requests
+    that cannot succeed is the worst thing this could do.
+
+    `force=True` into poll_account, deliberately: the stamp above is this path's
+    gate, and `due()` is the timer's. Letting both apply would put the 5-minute
+    interval back in front of a question a human just asked.
+    """
+    now = time.time() if now is None else now
+    last = asked_at(slug)
+    if last is not None and (now - last) < interval:
+        return Outcome(slug, SKIPPED, f"asked {age(now - last)} ago")
+    stamp(slug, now)
+    return poll_account(slug, now, fetcher, force=True, renewer=_never_renew)
+
+
 TIMER = "ccas-poll.timer"
 
 

@@ -7,6 +7,8 @@ either: CCAS_ACCOUNTS_ROOT points at tmp_path.
 import importlib
 import json
 
+import pytest
+
 import ccas.paths as paths
 import ccas.poll as poll
 import ccas.usage as usage
@@ -401,3 +403,118 @@ def test_timer_state_is_unknown_when_systemd_cannot_be_asked():
         raise FileNotFoundError("systemctl")
 
     assert poll.timer_state(runner=runner) == "unknown"
+
+
+# ── the on-demand poll, and its own guard ─────────────────────────────────────
+
+def test_the_on_demand_interval_is_its_own_constant():
+    """Not INTERVAL. The timer's cadence answers "how often should this account
+    be refreshed in the background"; this answers "how often may a human asking
+    spend a request", and they are free to differ."""
+    assert poll.PANEL_INTERVAL != poll.INTERVAL
+
+
+def test_an_on_demand_poll_fetches_and_records(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 3600) * 1000))
+    fetcher = answering(body())
+    outcome = poll.poll_on_demand("work", now=NOW, fetcher=fetcher)
+    assert outcome.status == poll.OK
+    assert fetcher.seen == ["sk-tok"]
+    assert usage.load("work")["five_hour"]["percent"] == 3.0
+
+
+def test_a_second_open_inside_the_interval_spends_no_request(monkeypatch, tmp_path):
+    """The rate limit. The endpoint is rate limited on Anthropic's side — the
+    bundle has a whole `rateLimitedVia` fallback path — and poll.fetch has none,
+    so a 429 would read as exactly the staleness this exists to remove."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 3600) * 1000))
+    poll.poll_on_demand("work", now=NOW, fetcher=answering(body()))
+    again = answering(body(five=9.0))
+    outcome = poll.poll_on_demand("work", now=NOW + 30, fetcher=again)
+    assert outcome.status == poll.SKIPPED
+    assert again.seen == []
+
+
+def test_an_open_past_the_interval_asks_again(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 3600) * 1000))
+    poll.poll_on_demand("work", now=NOW, fetcher=answering(body()))
+    again = answering(body(five=9.0))
+    outcome = poll.poll_on_demand("work", now=NOW + poll.PANEL_INTERVAL,
+                                  fetcher=again)
+    assert outcome.status == poll.OK
+    assert again.seen == ["sk-tok"]
+
+
+def test_the_guard_is_stamped_before_the_fetch_not_after(monkeypatch, tmp_path):
+    """A fetch that fails or hangs still counts as having asked.
+
+    Stamping on success only would make a broken network an unthrottled retry —
+    every panel open spending a request that cannot succeed, which is the
+    precise behaviour the limit is here to prevent.
+    """
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 3600) * 1000))
+
+    def exploding(_token):
+        raise RuntimeError("the network went away mid-request")
+
+    with pytest.raises(RuntimeError):
+        poll.poll_on_demand("work", now=NOW, fetcher=exploding)
+    assert poll.asked_at("work") == NOW
+
+
+def test_a_reading_the_hook_just_wrote_does_not_hold_the_guard_off(
+        monkeypatch, tmp_path):
+    """due() is not the guard, and this is why it cannot be.
+
+    `fetched_at` means "when this reading was first seen" — the write-on-change
+    rule leaves it alone while the numbers hold steady, so for the idle account
+    this feature serves it is permanently older than any interval. A guard built
+    on it would let every open through. The stamp is a separate fact: when we
+    last *asked*, as against when the answer last changed.
+    """
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 3600) * 1000))
+    # A reading recorded a moment ago, exactly as the hook leaves it...
+    usage.record_reading("work", usage.from_oauth(body(), NOW - 5))
+    assert poll.due("work", NOW) is False          # the timer would skip it
+    outcome = poll.poll_on_demand("work", now=NOW, fetcher=answering(body(five=9.0)))
+    assert outcome.status == poll.OK               # the panel does not
+
+
+def test_an_on_demand_poll_never_spawns_claude(monkeypatch, tmp_path):
+    """Renewal is the timer's alone. It is a process and up to RENEW_TIMEOUT
+    seconds, and by the time a panel is opened the five-minute timer has already
+    done it — so an expired token here is simply no fetch."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW - 60) * 1000))
+
+    def forbidden(*a, **kw):
+        raise AssertionError("the panel must not spawn claude")
+
+    monkeypatch.setattr(poll, "ask_claude", forbidden)
+    fetcher = answering(body())
+    outcome = poll.poll_on_demand("work", now=NOW, fetcher=fetcher)
+    assert outcome.status == poll.EXPIRED
+    assert fetcher.seen == []
+
+
+def test_an_unreadable_stamp_reads_as_never_asked(monkeypatch, tmp_path):
+    """Fail open: a torn or hand-edited stamp must not wedge the account shut."""
+    env(monkeypatch, tmp_path)
+    (tmp_path / "accts" / "work" / paths.POLL_STAMP_FILE).write_text("nonsense")
+    assert poll.asked_at("work") is None
+
+
+def test_an_on_demand_poll_never_touches_claude_home(monkeypatch, tmp_path):
+    """The invariant, on the newest path to reach a credentials file."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 3600) * 1000))
+    home = tmp_path / "claude"
+    (home / "settings.json").write_text("{}")
+    before = {p.name: p.stat().st_mtime_ns for p in home.iterdir()}
+    poll.poll_on_demand("work", now=NOW, fetcher=answering(body()))
+    assert {p.name: p.stat().st_mtime_ns for p in home.iterdir()} == before
