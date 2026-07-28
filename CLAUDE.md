@@ -287,9 +287,13 @@ user timer runs `ccs poll` every five minutes. Four rules there:
   same write-only-on-change rule the hook obeys — which also means an idle
   account whose numbers have not moved is correctly *not* repainted.
 
-**The panel asks for itself, and `fetched_at` cannot be what limits it.** Opening
-the panel starts one background fetch for the account it opened on, and the two
-usage bars update in place when it lands. Its guard is `poll-stamp`, a separate
+**The panel asks for itself, and `fetched_at` cannot be what limits it.** Every
+body starts one background fetch for the account it shows — the panel opening,
+and a chip switch too, because the account switched *to* is the idle one this
+whole feature is for. The two usage bars update in place when it lands. Whether
+an ask costs a request is `poll.py`'s question and not a rule about which clicks
+count, so flicking between two chips spends one request per account per minute
+and no more. Its guard is `poll-stamp`, a separate
 per-account file recording *when we last asked* — not `due()`, which reads
 `fetched_at`, *when the answer last changed*. The write-on-change rule leaves
 that alone while an account's numbers are steady, so `due()` is permanently true
@@ -368,6 +372,16 @@ existed. Four things about it are load-bearing and were each a bug first:
   editor's preview swatch is the one widget that needs its own provider (a
   colour mid-drag is in neither set `_load_tints()` built classes from, so
   `_tint()` names a class that does not exist), and it uses `PRIORITY_USER + 1`.
+
+  `_load_tints()` splits on the same line, and the split is the rule: **a colour
+  the user chose goes below `menu.css`; a colour that is a function of the
+  reading goes above it.** Palette and account colours at `PRIORITY_APPLICATION`,
+  `usage.RAMP` at `PRIORITY_USER + 1`. Both sat at APPLICATION once, under
+  `menu.css`'s `.ccas-usage-bar progress { background: #89b4fa }`, and the
+  panel's bars therefore never drew the ramp at any level, from the day they were
+  built — class on the widget, painting nothing. Note where that fix had to go:
+  not in `assets/menu.css`, which `install.sh` copies once and never overwrites,
+  so correcting it there would have reached nobody who already had a panel.
 
 - **Never put a `GestureClick` on a `Gtk.Scale`.** It claims the event sequence
   and denies the scale's own drag gesture: the press registers and the knob then

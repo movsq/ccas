@@ -1299,9 +1299,10 @@ tightened to spend them continuously whether or not anyone is looking.
 
 ## The panel's usage bars have never shown the ramp (2026-07-28)
 
-Found while photographing the on-demand refresh, and **not fixed** — it is in
-`assets/menu.css`, which is the user's the moment `install.sh` copies it, and the
-fix is a choice about which of the two rules should win.
+Found while photographing the on-demand refresh. Recorded as **not fixed** at
+first, on the grounds that it lives in `assets/menu.css`, which is the user's the
+moment `install.sh` copies it — see the bottom of this section for why that was
+the wrong read of where the fix belongs.
 
 `_load_tints()` installs `progressbar.ccas-tint-fab387 progress { background:
 #fab387; }` and friends at `STYLE_PROVIDER_PRIORITY_APPLICATION`, covering the
@@ -1322,3 +1323,30 @@ the other side: a per-widget provider at `PRIORITY_APPLICATION` is outranked by
 anything in `menu.css`, silently, because a losing rule is not an error. The
 claim in CLAUDE.md that `usage.color()` "still ramps inside `usage.bar()` and the
 panel's bars" holds for the first and not the second.
+
+Fixed the same day, in the code rather than the stylesheet. That the rule *lived*
+in `menu.css` did not mean the fix did — the opposite: `install.sh` copies that
+file once and never again, so a corrected `assets/menu.css` would have fixed
+nobody who already had a panel, which is everyone who has one. The provider is
+what moved. `_load_tints()` now adds two: the colours the *user* chose — palette
+entries, account colours — stay at `PRIORITY_APPLICATION`, below `menu.css`,
+because they say what a colour is and the stylesheet should stay free to override
+them; `usage.RAMP` goes in at `PRIORITY_USER + 1`, above it, because a colour
+that is a function of the reading is not a theme choice. That is the priority the
+preview swatch already uses, for the neighbouring reason.
+
+Verified at 85% and 60% seeded together: peach and yellow, where both had been
+blue. The panel was mapped on a `swaymsg create_output` headless output and
+unplugged afterwards — both real monitors were in use, and the rule about never
+mapping a test surface onto one the user is working on does not have an exception
+for "it is only for a second". A headless output is the escape from that rule,
+and it is cheaper than every offscreen-render approach tried before it:
+`Gtk.WidgetPaintable` over an unmapped widget snapshots to a `None` node however
+carefully it is realized and allocated, and `Gsk.Renderer` then aborts the
+process on dispose rather than raising.
+
+What the stylesheet keeps is the resting colour below 50%, where the ramp names
+nothing, and every other property in the rule — the height and the radius are
+untouched by any of this. The rule now says so beside itself, because a
+`background` that silently stops applying above 50% is exactly the kind of thing
+that costs someone ten minutes.
