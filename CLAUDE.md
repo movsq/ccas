@@ -296,6 +296,15 @@ user timer runs `ccs poll` every five minutes. Four rules there:
   a process every five minutes for an account that needs nothing.
 - **`due()` skips an account the hook is already keeping fresh**, so a live
   session is never polled for and the request is spent on the idle account.
+  Fresh means **its 5-hour window is `BOUNDED`**, not that its file was written
+  recently: Claude Code names the two windows independently, so a tick carrying
+  only `seven_day` writes, `_carried` keeps the stored 5-hour window, and
+  `fetched_at` moves without anyone having measured that window. Read as
+  freshness it renewed the claim every two minutes on a window that had rolled
+  over mid-session, and the bar read idle for twenty minutes with the answer
+  sitting at the endpoint unasked. Three timestamps, three questions, not
+  interchangeable: `fetched_at` is when the answer last *changed*, `poll-stamp`
+  is when we last *asked*, `resets_at` is whether either still means anything.
 - **The signal still rides on the write.** `record_reading` is the half of
   `record` that takes an already-normalised reading, so the poll reaches the
   same write-only-on-change rule the hook obeys — which also means an idle
