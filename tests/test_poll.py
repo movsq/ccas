@@ -518,3 +518,38 @@ def test_an_on_demand_poll_never_touches_claude_home(monkeypatch, tmp_path):
     before = {p.name: p.stat().st_mtime_ns for p in home.iterdir()}
     poll.poll_on_demand("work", now=NOW, fetcher=answering(body()))
     assert {p.name: p.stat().st_mtime_ns for p in home.iterdir()} == before
+
+
+def test_a_carried_five_hour_window_does_not_count_as_freshness(monkeypatch, tmp_path):
+    """Found on the bar 2026-07-28: an account idle for a whole live session.
+
+    vsed's 5-hour window cleared at 23:10 and the user resumed a session at
+    23:14. Claude Code names each window independently — the bundle builds
+    `rate_limits` from whichever of the two the last response carried headers
+    for — so a statusline tick naming only `seven_day` is an ordinary shape, and
+    `usage._carried` rightly refuses to erase the 5-hour window with silence.
+
+    But the carry also moved `fetched_at`, and `due()` read that as "the hook is
+    keeping this account fresh". The timer then skipped the account every five
+    minutes — `skipped, recorded 3s ago` in the journal from 23:18 on — so the
+    one source that knew about the new window was never asked, and the label
+    stayed idle until a panel click, which is gated by `poll-stamp` instead.
+
+    Freshness is about the 5-hour window, not about when the file was last
+    written: a reading whose 5-hour window is not running is not being kept
+    fresh by anybody, whatever its timestamp says.
+    """
+    env(monkeypatch, tmp_path)
+    usage.record_reading("work", {
+        "fetched_at": NOW - 3000, "source": "oauth",
+        # cleared twenty minutes ago
+        "five_hour": {"percent": 86.0, "resets_at": int(NOW - 1200)},
+        "seven_day": {"percent": 20.0, "resets_at": int(NOW + 400000)}})
+
+    # the live session's tick: seven_day moved, five_hour was not named
+    assert usage.record("work", {"rate_limits": {
+        "seven_day": {"used_percentage": 21.0,
+                      "resets_at": int(NOW + 400000)}}}, now=NOW) is True
+
+    assert usage.state(usage.load("work"), "five_hour", NOW).kind == usage.IDLE
+    assert poll.due("work", now=NOW) is True

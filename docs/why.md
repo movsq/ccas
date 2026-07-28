@@ -1553,3 +1553,66 @@ the process itself, which only whatever launches the session can see. Absent
 that, a recurrence after 2026-07-28 says the atomic install was not it either —
 which is itself worth knowing, and is why the negative results above are written
 down instead of the theory they killed.
+
+## The hook that locked the timer out of its own account (2026-07-28)
+
+The bar read idle for `pendecho` through an entire live session — a session
+223k tokens deep. The account's numbers only started moving when the user
+clicked the widget, which is the shape of a bug rather than of a quiet feature.
+
+The journal is the whole story. The timer wrote the account at 22:26 —
+`vsed ok 5h ≥86% clears 23:10` — and the window did clear at 23:10, so IDLE from
+then on was correct. The user resumed a vsed session at 23:14. From 23:18:30
+onward every single timer run says the same thing:
+
+```
+23:18:30  vsed  skipped    recorded 3s ago
+23:23:30  vsed  skipped    recorded 2m ago
+23:29:00  vsed  skipped    recorded 2m ago
+```
+
+Something was writing the account every couple of minutes, and `due()` read that
+as *the hook is keeping this account fresh, do not spend a request on it*. The
+panel's on-demand fetch at 23:32 — gated by `poll-stamp` and not by `due()` —
+asked the endpoint and got `5h 21% clears 04:10`: a window that had started at
+23:10 and had been sitting there, knowable, for twenty minutes, while the one
+component whose job is to find it declined to ask.
+
+What was writing was the statusline hook, and what it was writing was true. The
+bundle builds the payload's two windows **independently** —
+
+```js
+let I = {...C.five_hour&&{five_hour:{…}}, ...C.seven_day&&{seven_day:{…}}};
+… (I.five_hour||I.seven_day)&&{rate_limits:I}
+```
+
+— and `C` is filled from the response headers, one window per
+`anthropic-ratelimit-unified-{5h,7d}-*` pair, each included only when both its
+headers are present. A tick naming only `seven_day` is an ordinary shape, not a
+malformed one. `_carried` handles it exactly as [An account with a live window
+read 100% out of nowhere](#an-account-with-a-live-window-read-100-out-of-nowhere-2026-07-28)
+says it must: silence about a window does not erase it, so the stored 5-hour
+window is carried forward.
+
+The gap is what the carry does to `fetched_at`. That timestamp means *when the
+file last changed*, and a seven_day-only tick changes the file without anybody
+having measured the 5-hour window at all. So the carry — correct in itself, and
+correct at keeping a rolled-over window rather than a null — silently renewed
+the freshness claim on a window nothing had looked at, every two minutes,
+indefinitely. Two rules that are each right composed into an account that could
+not be polled: the hook cannot report the window and the timer is not allowed to.
+
+`due()` now asks about the window rather than about the file. A reading whose
+5-hour window is not BOUNDED is due whatever its timestamp says — BOUNDED is the
+only state the hook can be said to be keeping up with. Nothing is polled more
+often than before: an account genuinely idle had a stale `fetched_at` too,
+because nothing was writing its file either. The one account whose behaviour
+changes is this one, which is the point.
+
+Note which of the two timestamps this is, because CCAS now has three files
+answering three different questions about one account and they are not
+interchangeable: `usage.json`'s `fetched_at` is *when the answer last changed*,
+`poll-stamp` is *when we last asked* (see [`fetched_at` cannot be a rate
+limit](#fetched_at-cannot-be-a-rate-limit-2026-07-28)), and `resets_at` is the
+absolute anchor that decides whether either is still worth anything. The bug was
+reading the first as if it were a measurement of the window.

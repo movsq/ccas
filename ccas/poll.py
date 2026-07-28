@@ -118,13 +118,32 @@ def renew(slug: str, asker=None):
 
 
 def due(slug: str, now: float, interval: float = INTERVAL) -> bool:
-    """Has it been long enough since this account last recorded anything?
+    """Is this account's 5-hour window one the hook is not keeping up with?
 
     `usage.load`, not `usage.read`: the question is when the account last had a
     reading of its own, which is what the hook writes.
+
+    Two tests, and the second one is not redundant. `fetched_at` says when the
+    *file* last changed, and Claude Code names the two windows independently —
+    a statusline tick carrying only `seven_day` writes, because seven_day moved,
+    and `usage._carried` rightly keeps the stored 5-hour window rather than
+    erasing it with silence. That write moves `fetched_at` without anybody
+    having measured the 5-hour window at all. Read alone it says "the hook has
+    this account", and on 2026-07-28 it locked the timer out of an account whose
+    5-hour window had rolled over mid-session: the endpoint knew about the new
+    window for twenty minutes and was never asked, the bar read idle throughout,
+    and only a panel click — gated by `poll-stamp`, not by this — broke it.
+
+    So a reading whose 5-hour window is not running is due whatever its
+    timestamp says. It is the window the freshness is *about*: BOUNDED is the
+    only state the hook can be said to be keeping up with, and an account that
+    is genuinely idle was being polled at the interval anyway, because nothing
+    was writing its file either.
     """
     reading = usage.load(slug)
     if reading is None:
+        return True
+    if usage.state(reading, "five_hour", now).kind is not usage.BOUNDED:
         return True
     return (now - reading.get("fetched_at", 0.0)) >= interval
 
