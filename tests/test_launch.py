@@ -18,6 +18,15 @@ def _isolate(monkeypatch, tmp_path):
     # History is scanned live now, so an unseeded test would read the real
     # ~/.claude/projects. Empty by default; seed() replaces it.
     monkeypatch.setattr(launch.history, "scan", lambda: [])
+    # A spawn guard, not a stub. `run()` opens a real kitty on the user's real
+    # screen, and a test that forgets to intercept it does exactly that — it
+    # did, on 2026-07-29, once the gui branch moved from `run` to `Popen` and
+    # the one test stubbing `run` stopped covering it. Failing here is how that
+    # is noticed; a test that means to watch the spawn replaces this.
+    for name in ("run", "Popen"):
+        monkeypatch.setattr(launch.subprocess, name,
+                            lambda *a, _n=name, **k: pytest.fail(
+                                f"un-stubbed subprocess.{_n}{a[:1]} — this spawns for real"))
     return tmp_path
 
 
@@ -130,8 +139,7 @@ def test_a_typed_tilde_path_is_expanded_before_the_existence_check(tmp_path, mon
 def test_run_creates_the_confirmed_directory(tmp_path, monkeypatch):
     monkeypatch.setattr(launch.accounts, "relink", lambda slug: None)
     monkeypatch.setattr(launch.pickers, "confirm_create", lambda path: True)
-    monkeypatch.setattr(launch.subprocess, "run",
-                        lambda *a, **k: type("R", (), {"returncode": 0})())
+    monkeypatch.setattr(launch.subprocess, "Popen", lambda *a, **k: None)
     target = tmp_path / "brand" / "new"
     assert launch.run("work", "new", str(target), True, None) == 0
     assert target.is_dir()
