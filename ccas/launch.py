@@ -117,10 +117,19 @@ def run(slug: str, mode: str, arg, gui: bool, cwd) -> int:
         os.makedirs(workdir, exist_ok=True)
     env = accounts.env_for(slug)
     if gui:
+        # Detached, and never waited on. This runs inside the panel process,
+        # which Waybar spawned as its `on-click` child and whose module thread
+        # is sitting in waitpid() on it — so waiting for kitty here freezes that
+        # account's widget for the entire life of the session. It did: the copy
+        # on the bar that was clicked stopped repainting, ignoring both its 30 s
+        # interval and its signal, while the copy on the other monitor stayed
+        # live. `start_new_session` also detaches the terminal from the panel,
+        # so closing one no longer reaches the other. `docs/why.md` has it.
         inner = " ".join(f"'{a}'" for a in argv)
-        return subprocess.run(
+        subprocess.Popen(
             ["kitty", "--class", "ccas", "-e", "bash", "-lc", f"cd {workdir!r} && exec {inner}"],
-            env=env, check=False,
-        ).returncode
+            env=env, start_new_session=True,
+        )
+        return 0
     os.chdir(workdir)
     os.execve(argv[0], argv, env)

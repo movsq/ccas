@@ -1616,3 +1616,50 @@ interchangeable: `usage.json`'s `fetched_at` is *when the answer last changed*,
 limit](#fetched_at-cannot-be-a-rate-limit-2026-07-28)), and `resets_at` is the
 absolute anchor that decides whether either is still worth anything. The bug was
 reading the first as if it were a measurement of the window.
+
+## A widget froze on one monitor for the life of a session (2026-07-29)
+
+The user reported one bar stale and the other live: `✳ 09:10 0%` on HDMI-A-1
+against `✳ 14:10 80%` on DP-1, same account, same Waybar process. Only the
+account they were using; the other account agreed on both bars. The clock and
+the stopwatch beside it ticked normally on the stale bar, so the bar was alive
+and one module in it was not.
+
+It ignored **both** of its refresh routes — the 30 s `interval` and an explicit
+`SIGRTMIN+1` — which rules out anything about what `ccs render` prints, because
+neither route was reaching `ccs render` at all. `ps` confirmed it: no `render`
+process spawned, over the whole window.
+
+What it was, from `/proc/<pid>/task/*/wchan`: one Waybar thread in `do_wait`,
+blocked in `waitpid()` on a child. Waybar had exactly one child —
+
+```
+1483596  Sl  1257  python3 /home/fixed/.local/bin/ccs --gui vsed
+```
+
+— a panel process 21 minutes old, itself in `do_wait` on *its* child, the
+`kitty` running the user's session. Waybar spawns `on-click` as a child and a
+module thread waits on it; `launch.run`'s gui branch used a blocking
+`subprocess.run(["kitty", …])`, so the panel process outlived the click by the
+entire length of the session. Waybar → panel → kitty, three processes in one
+`waitpid` chain, and the module at the top of it could not repaint until the
+user closed their terminal. On the bar they clicked, and only there, because the
+other monitor's copy of the module is a separate instance that spawned nothing.
+
+`subprocess.Popen(…, start_new_session=True)`, returning 0 at once. Same change
+in `cli._in_terminal`, which has the same shape for the three manage verbs — a
+rename left open in a terminal froze the widget just as well. `start_new_session`
+also detaches the terminal from the panel rather than merely un-waiting it, and
+Popen's default `close_fds` stops the session inheriting Waybar's own
+descriptors, which it was doing: the panel held `pipe:[25294846]` on fds 6 and 7,
+the same inode and the same fd numbers as Waybar.
+
+Confirmed by the fault clearing itself. While the fix was being written the
+user's session ended; the widget went to `14:10 73%` on its own, matching
+`ccs render` exactly, with no signal sent and no reload — which is what the
+`waitpid` story predicts and what no explanation involving the label, the
+registry or the poll does.
+
+The general shape, and it is not only Waybar's: **a process spawned by something
+that waits for it must not itself wait for anything long-lived.** The panel is
+not a leaf. It is the middle of a chain whose top is a repaint loop.

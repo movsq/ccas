@@ -137,6 +137,25 @@ def test_run_creates_the_confirmed_directory(tmp_path, monkeypatch):
     assert target.is_dir()
 
 
+def test_a_gui_launch_does_not_wait_for_the_terminal(tmp_path, monkeypatch):
+    """The panel's process is a child of Waybar, and Waybar's module thread
+    waits on it — so a blocking spawn here freezes that module for the whole
+    life of the session. Measured 2026-07-29: the widget on the bar that was
+    clicked stopped repainting, ignoring both its 30 s interval and its signal,
+    while the copy on the other monitor stayed live. Detach, and return at once.
+    """
+    monkeypatch.setattr(launch.accounts, "relink", lambda slug: None)
+    monkeypatch.setattr(launch.subprocess, "run",
+                        lambda *a, **k: pytest.fail("a gui launch must not wait"))
+    spawned = []
+    monkeypatch.setattr(launch.subprocess, "Popen",
+                        lambda argv, **kw: spawned.append((argv, kw)))
+    assert launch.run("work", "new", str(tmp_path / "proj"), True, None) == 0
+    (argv, kw), = spawned
+    assert argv[0] == "kitty"
+    assert kw["start_new_session"] is True, "own session, or it dies with the panel"
+
+
 def test_never_invokes_claude_by_bare_name(tmp_path):
     _, argv = launch.resolve("work", "new", str(tmp_path / "proj"), True, None)
     assert argv[0] != "claude"

@@ -309,12 +309,18 @@ def _in_terminal(args) -> int:
     So they go to the same `ccs` the user could have typed, in a terminal where
     the fzf and input() paths are real. That is also why the GUI branches of
     pickers.py could be retired rather than reimplemented in GTK.
+
+    Detached and not waited on, for the reason `launch.run` spells out: this
+    runs in the panel's process, which is Waybar's `on-click` child, and a
+    Waybar module thread waits on that child — so a terminal left open here
+    would stop the account's widget repainting until it was closed.
     """
     inner = " ".join(f"'{a}'" for a in [str(paths.ccs_bin()), *args])
-    return subprocess.run(
+    subprocess.Popen(
         ["kitty", "--class", "ccas", "-e", "bash", "-lc", inner],
-        env=accounts.clean_env(), check=False,
-    ).returncode
+        env=accounts.clean_env(), start_new_session=True,
+    )
+    return 0
 
 
 def cmd_render(slug: str) -> int:

@@ -1512,9 +1512,15 @@ def test_the_open_panel_is_findable_and_stops_being_so(monkeypatch, tmp_path):
 
 
 def _spawns(monkeypatch):
+    """Popen, not run: a terminal opened from the panel is detached and never
+    waited on — see `test_a_manage_terminal_does_not_wait_for_itself`. `run` is
+    stubbed alongside it so that a path taking the old route fails loudly here
+    rather than spawning a real kitty."""
     seen = []
+    monkeypatch.setattr(cli.subprocess, "Popen",
+                        lambda cmd, **k: seen.append((cmd, k)))
     monkeypatch.setattr(cli.subprocess, "run",
-                        lambda cmd, **k: seen.append((cmd, k)) or types.SimpleNamespace(returncode=0))
+                        lambda cmd, **k: pytest.fail(f"blocking spawn: {cmd}"))
     return seen
 
 
@@ -1751,3 +1757,19 @@ def test_format_edit_warns_about_an_unknown_token(monkeypatch, capsys):
 def test_display_command_is_gone():
     """An unknown command returns non-zero rather than silently doing nothing."""
     assert cli.main(["display", "a", "custom"]) != 0
+
+
+def test_a_manage_terminal_does_not_wait_for_itself(monkeypatch):
+    """Same rule as `launch.run`'s gui branch, and for the same reason: this is
+    reached from the panel, whose process Waybar's module thread is waiting on.
+    A rename left open in a terminal must not stop that account's widget from
+    repainting."""
+    monkeypatch.setattr(cli.subprocess, "run",
+                        lambda *a, **k: pytest.fail("a manage terminal must not wait"))
+    spawned = []
+    monkeypatch.setattr(cli.subprocess, "Popen",
+                        lambda argv, **kw: spawned.append((argv, kw)))
+    assert cli._in_terminal(["manage", "rename", "work"]) == 0
+    (argv, kw), = spawned
+    assert argv[0] == "kitty"
+    assert kw["start_new_session"] is True
