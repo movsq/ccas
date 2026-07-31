@@ -1,4 +1,5 @@
 import re
+import time
 
 import ccas.format as fmt
 import ccas.usage as usage
@@ -147,6 +148,21 @@ def test_seven_day_tokens():
     assert bare({}, "%7dtimeleft", r) == "2d21h"
     assert bare({}, "%7dused", r) == "100%"
     assert bare({}, "%7dquotaleft", r) == "0%"
+
+
+def test_seven_day_reset_splits_into_a_day_and_a_time():
+    """%7dreset is one field, so it cannot be coloured or placed as two. The
+    split pair is for a label that wants the weekday and the clock apart."""
+    at = int(NOW + 2 * 86400 + 21 * 3600)
+    r = reading(seven_pct=100.0, seven_at=at)
+    assert bare({}, "%7dresetday", r) == time.strftime("%a", time.localtime(at))
+    assert bare({}, "%7dresettime", r) == time.strftime("%H:%M", time.localtime(at))
+
+
+def test_seven_day_split_reset_says_idle_like_the_other_clocks():
+    r = reading(seven_pct=None, seven_at=None)
+    assert bare({}, "%7dresetday", r) == usage.IDLE_MARK
+    assert bare({}, "%7dresettime", r) == usage.IDLE_MARK
 
 
 def test_timeleft_under_an_hour_drops_the_hours():

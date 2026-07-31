@@ -161,6 +161,23 @@ def _reset(key, absolute):
     return text
 
 
+def _reset_part(key, fmt_string):
+    """Half of a reset clock: the weekday, or the time of day.
+
+    `%7dreset` is one field, so it can only be placed and coloured as one. A
+    label that wants "Mon" dim and "06:00" bright, or the day and the clock at
+    opposite ends of the widget, needs two tokens. The weekday is unconditional
+    here where `_reset(absolute=True)` drops it for a reset later today — a
+    slot that empties itself moves everything beside it.
+    """
+    def text(ctx):
+        st = _state(ctx, key)
+        if st.kind != usage_mod.BOUNDED:
+            return _no_clock(st.kind)
+        return time.strftime(fmt_string, time.localtime(st.resets_at))
+    return text
+
+
 def _timeleft_token(key):
     def text(ctx):
         st = _state(ctx, key)
@@ -207,6 +224,8 @@ TOKENS = {
     "%5h": _smart,
 
     "%7dreset": _reset("seven_day", True),
+    "%7dresetday": _reset_part("seven_day", "%a"),
+    "%7dresettime": _reset_part("seven_day", "%H:%M"),
     "%7dtimeleft": _timeleft_token("seven_day"),
     "%7dused": _percent("seven_day", False),
     "%7dquotaleft": _percent("seven_day", True),
@@ -234,6 +253,8 @@ NAMES = {
     "%5h": "usage clock",
 
     "%7dreset": "7d reset",
+    "%7dresetday": "7d reset day",
+    "%7dresettime": "7d reset time",
     "%7dtimeleft": "7d remaining",
     "%7dused": "7d used",
     "%7dquotaleft": "7d left",

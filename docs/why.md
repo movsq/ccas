@@ -1663,3 +1663,27 @@ registry or the poll does.
 The general shape, and it is not only Waybar's: **a process spawned by something
 that waits for it must not itself wait for anything long-lived.** The panel is
 not a leaf. It is the middle of a chain whose top is a repaint loop.
+
+## An inserted token had no colour chip until the account was switched and back
+
+Found on 2026-07-31 by the user, adding `%7dreset` to a label from the panel:
+the token appeared in the format entry and in the preview, but the "Color of"
+row still offered only the tokens that were there before. Clicking the other
+account's chip and then back brought its chip in.
+
+The chip row is built from `panel.color_targets()`, which reads the **stored**
+format — and a token chip inserted its text into the entry and committed
+nothing, on purpose: typing `%5hused` passes through `%5`, `%5h` and `%5hus`,
+each a valid but different format, so nothing in this editor writes per
+keystroke. What the rule missed is that a chip is not a keystroke. It inserts a
+whole token, so there is no half-typed state to protect by waiting, and until
+something else committed the entry the panel showed a format string one token
+ahead of every control built from it. Switching account committed it as a
+focus-out, which is why the round trip "fixed" it.
+
+So `insert()` commits, and carries the caret across the rebuild in
+`ui_state["format_caret"]` — the rebuilt entry used to take the focus at
+end-of-line, which for a token inserted in the middle of a label put the next
+one somewhere else entirely. Enter and focus-out are unchanged, and the chips
+stay unfocusable: a focus-out there would commit the same text a second time
+from inside the click that just committed it.

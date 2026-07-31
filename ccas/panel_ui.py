@@ -1266,6 +1266,15 @@ def _build_format_editor(state, pick, ui_state):
         position = entry.get_position()
         entry.get_buffer().insert_text(position, token, len(token))
         entry.set_position(position + len(token))
+        # And committed, unlike a keystroke. Typing passes through %5, %5h and
+        # %5hus on its way to %5hused, so a pause mid-word must write nothing —
+        # but a chip inserts a whole token, so there is no half-typed state to
+        # protect, and the colour chip row is built from the *stored* format.
+        # Without this the token had no colour chip until something else
+        # committed the entry, which for the user was clicking to the other
+        # account and back.
+        ui_state["format_caret"] = entry.get_position()
+        commit()
 
     for token in fmt.TOKENS:
         chip = Gtk.Button(label=fmt.NAMES[token])
@@ -1290,10 +1299,15 @@ def _build_format_editor(state, pick, ui_state):
         # next keystroke went nowhere. Mapping is the first moment it is really
         # in the tree. One shot: the handler disconnects itself, or reopening
         # the drawer later would pull the focus back here.
+        # Where the caret was, when the commit came from a chip: an inserted
+        # token belongs in the middle of a label as often as at its end, and
+        # end-of-line would put the next one somewhere else entirely.
+        caret = ui_state.pop("format_caret", -1)
+
         def take_focus(widget):
             widget.disconnect(handler)
             widget.grab_focus()
-            widget.set_position(-1)
+            widget.set_position(caret)
 
         handler = entry.connect("map", take_focus)
     return box

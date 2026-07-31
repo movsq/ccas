@@ -238,14 +238,23 @@ def test_a_token_chip_inserts_at_the_caret(gtk, monkeypatch):
     assert entry.get_text() == "%name %email"
 
 
-def test_a_token_chip_does_not_commit(gtk, monkeypatch):
-    """A focusable chip steals focus, which is a focus-out, which would write
-    the registry between every inserted token."""
-    entry, chips, picked, _ui = _format_editor(gtk, monkeypatch)
+def test_a_token_chip_commits_what_it_inserted(gtk, monkeypatch):
+    """A whole token, not a half-typed one — so there is nothing to protect by
+    waiting, and the colour chip row is built from the *stored* format. Left
+    uncommitted, a token added here had no colour chip until the user clicked
+    to the other account and back.
+
+    The chips stay unfocusable all the same: a focus-out would commit the same
+    text a second time from inside the click that just committed it.
+    """
+    entry, chips, picked, ui = _format_editor(gtk, monkeypatch, stored="%name")
     for chip in chips:
         assert chip.get_focusable() is False
-    chips[0].emit("clicked")
-    assert picked == []
+    entry.set_position(-1)
+    chip = next(c for c in chips if c.get_child().get_label() == "email")
+    chip.emit("clicked")
+    assert picked == [panel.Action("format", "vsed", "%name%email")]
+    assert ui["format_caret"] == len("%name%email")
 
 
 def test_a_commit_asks_for_the_focus_back(gtk, monkeypatch):
@@ -663,3 +672,50 @@ def test_the_usage_ramp_outranks_the_users_stylesheet(gtk, monkeypatch):
     above = "\n".join(p.to_string() for level, p in added if level > user)
     for color in ramp:
         assert f"progressbar.{panel_ui._tint(color)} progress" in above
+
+
+def test_a_new_token_gets_its_colour_chip_without_a_switch(gtk, monkeypatch):
+    """Committing a format is what tells the chip row which tokens exist. The
+    rebuild it triggers read the state captured when the body was built, so a
+    token added in the entry had no colour chip until a chip switch rebuilt the
+    body from disk — the user found it by clicking the other account and back."""
+    stored = {"format": "%name"}
+
+    def state(slug, now=None):
+        out = _state(slug)
+        out["format"] = stored["format"]
+        out["color_targets"] = panel.color_targets(
+            {"color": "#89b4fa", "format": stored["format"]})
+        return out
+
+    monkeypatch.setattr(panel, "format_previewer",
+                        lambda slug, now=None: lambda text: (text, []))
+    monkeypatch.setattr(panel, "build_state", state)
+
+    def apply(action):
+        if action.kind == "format":
+            stored["format"] = action.value
+
+    window = gtk.Window()
+    frame = gtk.Box(orientation=gtk.Orientation.VERTICAL)
+    ui_state = {"expanded": True, "target": 0}
+    frame.append(panel_ui.build_body(state("one"), {"action": None}, window,
+                                     apply, ui_state,
+                                     panel_ui._body_swapper(
+                                         frame, {"action": None}, window,
+                                         apply, ui_state)))
+
+    entry = _walk(frame, lambda w: isinstance(w, Gtk.Entry)
+                  and w.has_css_class("ccas-format-entry"))[0]
+    entry.set_text("%name ")
+    entry.set_position(-1)
+    chip = next(c for c in _walk(frame, lambda w: isinstance(w, Gtk.Button)
+                                 and w.has_css_class("ccas-token-chip"))
+                if c.get_child().get_label() == "7d reset")
+    chip.emit("clicked")
+    _settle()
+
+    labels = [_walk(c, lambda w: isinstance(w, Gtk.Label))[0].get_label()
+              for c in _walk(frame, lambda w: isinstance(w, Gtk.Button)
+                             and w.has_css_class("ccas-color-chip"))]
+    assert labels == ["icon", "nickname", "7d reset"]
