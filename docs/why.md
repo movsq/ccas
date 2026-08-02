@@ -1732,3 +1732,27 @@ Worth stating as a rule, because the two rules genuinely pull against each other
 **for a tracked file, "move it to the trash" is two operations, not one** — the
 move, which is the never-delete rule, and the untracking, which is git. Check
 `git ls-files | grep claude_trash` before committing; it must be empty.
+
+## A history rewrite does not reach the remote
+
+`filter-branch`, `refs/original` dropped, `gc --prune=now`, force-push — the
+local object database really is clean afterwards. The remote's is not. A push
+moves refs; it does not delete objects, and the host is under no obligation to
+collect what the push orphaned. GitHub still served a stripped blob by sha hours
+later, both over `raw.githubusercontent.com/<owner>/<repo>/<sha>/<path>` and
+through the web blob page.
+
+Cloning the remote fresh and searching its history cannot catch that. A clone
+transfers what is reachable from refs, so it reports an unreachable object absent
+whether or not it is there — the vacuous test two sections up, in other clothes.
+Ask the remote for the object instead, with an id from the pre-rewrite mirror:
+
+```bash
+git fetch --depth=1 origin <old-sha>          # into an empty repo
+curl -sL https://raw.githubusercontent.com/<owner>/<repo>/<old-sha>/<path> | git hash-object --stdin
+```
+
+Keep that mirror until one of them has answered; once the rewrite lands it is the
+only place the ids survive, and without an id there is nothing to ask about.
+Nothing in git removes the objects — they are the host's, freed by a support
+request or by deleting the repository, and a fork shares the object store.
