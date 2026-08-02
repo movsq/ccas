@@ -1681,3 +1681,54 @@ end-of-line, which for a token inserted in the middle of a label put the next
 one somewhere else entirely. Enter and focus-out are unchanged, and the chips
 stay unfocusable: a focus-out there would commit the same text a second time
 from inside the click that just committed it.
+
+## The trash directory was one machine's, and every other install trashed into a path that did not exist
+
+Found on 2026-08-02 while preparing the repo to go public. `paths.REPO_ROOT` was
+the literal `/home/fixed/ccas`, with a comment explaining that it had to be one:
+the installed package runs out of `~/.local/share/ccas` and cannot find the
+checkout it was copied from, so anyone else must override `CCAS_TRASH`.
+
+The comment was right about the constraint and wrong about the conclusion. That
+literal is `trash_dir()`'s base, and `trash_dir()` is where the never-delete rule
+lands everything — a removed account, a replaced staged package, a retimed
+systemd unit. On any machine that was not this one, all of that moved into a
+directory under a home that does not exist, which `mkdir -p` in `install.sh`
+would happily create, one stranger's username deep in another stranger's `$HOME`.
+Nothing failed loudly. It is the quietest possible way to lose an account
+directory.
+
+The package does know where it is — `<root>/ccas/paths.py`, so two parents up —
+and from a checkout that *is* the checkout. From the staged copy it is
+`~/.local/share/ccas`: not the checkout, but a real directory that certainly
+exists, which is the whole difference. The checkout is then supplied by the one
+component that knows both, which is `install.sh`: it stamps `CCAS_TRASH` into the
+generated launcher with `setdefault`, so an explicit one from the environment
+still wins and the test suite's sandboxing is untouched.
+
+Note what the test for this had to be aimed at. Asserting `REPO_ROOT ==
+Path(paths.__file__).resolve().parent.parent` inside the suite passes against the
+literal too, because on the machine that wrote the literal those are the same
+path — green, and measuring nothing. It runs a subprocess against a copy of the
+package in a tmpdir instead, where the two answers differ.
+
+## `git mv` into `.claude_trash` publishes the thing you were removing
+
+Same session, thirty seconds later. The never-delete rule says a removed file
+moves to `.claude_trash/`, and `.claude_trash/` is in `.gitignore` — so moving a
+**tracked** file there with `git mv` reads as safe and is not. `.gitignore` only
+governs files git does not already track. `git mv` stages a rename, the file
+stays tracked at its new path, and `git status` showed 27 rows of
+
+    R  hdmi2.png -> .claude_trash/public-prep-.../hdmi2.png
+
+A commit there would have re-published the desktop screenshot that was the entire
+reason for the exercise, at a new path, inside the directory whose name says it
+is gone. The trash keeps the local copy, which is what the rule is for, but the
+index has to be told separately: `git rm -r --cached .claude_trash`. Then the
+originals show as deletions and nothing tracked points into the trash.
+
+Worth stating as a rule, because the two rules genuinely pull against each other:
+**for a tracked file, "move it to the trash" is two operations, not one** — the
+move, which is the never-delete rule, and the untracking, which is git. Check
+`git ls-files | grep claude_trash` before committing; it must be empty.
