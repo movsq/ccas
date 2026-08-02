@@ -625,11 +625,11 @@ def test_add_names_the_directory_after_the_email(monkeypatch):
     """The nickname is optional, so it cannot be what the directory is called.
     It only got the job because the directory has to exist *before* login and
     the email is not known until after — so rename once the email arrives."""
-    _stub_login(monkeypatch, "vsedlacek1337@gmail.com")
+    _stub_login(monkeypatch, "someone1337@gmail.com")
     assert cli.main(["add"]) == 0
     reg = registry.load()
-    assert [a["slug"] for a in reg["accounts"]] == ["vsedlacek1337"]
-    assert paths.account_dir("vsedlacek1337").is_dir()
+    assert [a["slug"] for a in reg["accounts"]] == ["someone1337"]
+    assert paths.account_dir("someone1337").is_dir()
     assert not paths.account_dir("account").exists(), "the temp name must not linger"
 
 

@@ -8,12 +8,6 @@ without it, and a rule you do not understand is a rule you will "simplify".
 Nothing here is status. It is history, and it does not go stale: add a section
 when a new bug is found, and leave the rest alone.
 
-Background from the build session: the spec is
-`docs/superpowers/specs/2026-07-25-ccas-design.md`, the plan
-`docs/superpowers/plans/2026-07-25-ccas.md`, the Waybar spike
-`docs/superpowers/spike-waybar-menu.md`, and the first live integration run
-`docs/superpowers/task-11-live-integration.md`.
-
 ---
 
 ## Deviations from the written plan
@@ -398,8 +392,8 @@ wrong in ways no scrub inside CCAS can see.
 
 ### The usage row outlived the menu it was designed for
 
-`docs/superpowers/specs/2026-07-25-usage-limits-design.md` puts the per-account
-usage row in `menu.xml`, as an insensitive `GtkMenuItem` under the email and the
+The usage-limits design put the per-account usage row in `menu.xml`, as an
+insensitive `GtkMenuItem` under the email and the
 nickname. Between that spec and its implementation, `menu.xml` was retired
 altogether — the bar's click now runs `ccs --gui <slug>` and the rows are
 generated fresh per click.

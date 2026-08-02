@@ -26,6 +26,26 @@ suite (`test_relink_never_touches_mtimes_in_claude_home`) as well as live.
 added to `~/.claude`, so new top-level entries never get stranded inside a
 single account.
 
+## Requirements
+
+Wayland with a layer-shell compositor (developed on sway) and Waybar. Python
+3.14 is what it is developed and tested against; there is no build step and no
+Python dependencies — everything outside the panel is stdlib-only.
+
+Three external programs are named directly in the code, with no fallback if they
+are absent:
+
+| Program | Needed for |
+|---|---|
+| PyGObject, GTK 4, gtk4-layer-shell | the panel — `ccs --gui`, which is what the bar's click runs |
+| `fzf` | the terminal door — `ccs` and `ccs <slug>` |
+| `kitty` | launching a session, and the add/rename/remove verbs, which open a terminal of their own |
+
+On Arch: `sudo pacman -S python-gobject gtk4 gtk4-layer-shell fzf kitty`.
+`ccs doctor` reports the GTK ones if they are missing, and the terminal door
+works without them. Swapping the terminal emulator means editing the three
+`kitty` invocations in `ccas/cli.py` and `ccas/launch.py`.
+
 ## Install
 
 ```bash
@@ -41,11 +61,6 @@ copy is written alongside it before the first modification.
 
 With no accounts configured, a dim `✻` appears in Waybar; click it to add your
 first account.
-
-The panel needs PyGObject, GTK 4 and gtk4-layer-shell
-(`sudo pacman -S python-gobject gtk4 gtk4-layer-shell`). `ccs doctor` says so if
-they are missing, and the terminal door works without them. Everything CCAS runs
-outside the panel is stdlib-only.
 
 ```bash
 ./uninstall.sh            # strips the managed blocks, leaves account data
@@ -82,8 +97,10 @@ has no stdin to ask on.
 | `ccs rm <slug>` | Move the account directory to `.claude_trash/`, drop it from the registry. |
 | `ccs manage <action> [<slug>]` | `add`, `rename <slug>`, `remove <slug>`. |
 | `ccs nick <slug> [name]` | Set or clear the nickname. Empty falls back to the email. |
-| `ccs color <slug> <n>` | Set the palette index, 0–7. |
-| `ccs display <slug> <mode>` | `nickname` \| `index` \| `claude code` \| `icon only`. |
+| `ccs color <slug> <#rrggbb\|n>` | The widget's colour. A palette index 0–7 is shorthand for its hex. |
+| `ccs format <slug> ['<fmt>']` | Show or set the format string — the whole label. |
+| `ccs format --tokens` | Every token, with the name the panel shows. |
+| `ccs format <slug> --color %5h '#rrggbb'` | One token's colour. `-` clears it back to white. |
 | `ccs hide <slug> toggle\|on\|off` | Render the glyph invisible but still clickable. |
 | `ccs headless [<slug>]` | Show or set which account answers `ccs -p`. Exclusive: setting one clears the rest. |
 | `ccs dangerous [<slug>]` | Show or toggle `--dangerously-skip-permissions` per account. |
@@ -157,8 +174,7 @@ and that is reported from the timestamp alone.
 What is displayed is the **reset time**, not the percentage. `resets_at` is an
 absolute anchor: past means the window rolled over, and future makes the
 recorded percentage a lower bound — hence `≥`. See
-`docs/usage-limits-research.md` for what was measured, and
-`docs/superpowers/specs/2026-07-27-usage-poll-design.md` for why the poll exists.
+`docs/usage-limits-research.md` for what was measured.
 
 ## Notes
 
@@ -183,9 +199,13 @@ recorded percentage a lower bound — hence `≥`. See
 ## Development
 
 ```bash
-python -m pytest        # ~330 tests, under a second; pytest is dev-only
+python -m pytest        # ~570 tests, a few seconds; pytest is dev-only
 ```
 
 `CLAUDE.md` is the rules that must not be broken. `docs/why.md` is the story
 behind them — every bug found on the real system, with the symptom and the
 cause.
+
+## License
+
+MIT — see `LICENSE`.

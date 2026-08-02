@@ -6,7 +6,7 @@ Claude Code Account Switcher: one Waybar module per account, each account a
 
 ## Start here
 
-1. `python -m pytest` (~557 tests, under four seconds). They are the specification —
+1. `python -m pytest` (~570 tests, under four seconds). They are the specification —
    every rule below is pinned by one, and the docstrings say which bug it was.
 2. `ccs doctor` — is the live install healthy *before* you change anything?
 3. `docs/why.md` when a rule here looks arbitrary — it has the bug that caused
@@ -140,7 +140,7 @@ not capture is a value you cannot restore. A nickname was lost this way.
 
 ## Waybar facts, measured not assumed
 
-Established by the Task 0 spike (`docs/superpowers/spike-waybar-menu.md`);
+Established by a spike against the live bar, before any of this was written;
 `docs/waybar-setup.md` is the user-facing version, plus the styling CCAS does
 *not* own.
 
@@ -155,9 +155,9 @@ Established by the Task 0 spike (`docs/superpowers/spike-waybar-menu.md`);
 CCAS no longer uses `menu-file` at all: the bar's click runs `ccs --gui <slug>`,
 which opens the GTK panel, built fresh per click. The facts above are why — a
 menu you cannot invalidate has to be invalidated by rebuilding the bar, and that
-is what blinked the bar every time a new session appeared. The two steps out of
-`menu-file` are `docs/superpowers/specs/2026-07-25-fuzzel-only-menu-design.md`
-and `docs/superpowers/specs/2026-07-26-gtk4-panel-design.md`.
+is what blinked the bar every time a new session appeared. It took two steps to
+get out: first the menu became a fuzzel list built per click, then that list
+became the GTK panel.
 
 So the only thing that still reloads is a change to the **set of modules**
 (`cmd_add`, `cmd_rm`), because that rewrites `config.jsonc`, which Waybar reads
@@ -588,8 +588,11 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   a working fix was nearly reported as broken. **Re-run `./install.sh` before
   every live check**, and if a live result contradicts a passing test, suspect
   a stale install before suspecting the test.
-- `git remote origin` is `github.com/movsq/ccas` (private). Push when the user
-  asks; the user set it up so work is not only on this disk.
+- `git remote origin` is `github.com/movsq/ccas`, **public**. Push when the user
+  asks; the user set it up so work is not only on this disk. Public means a
+  screenshot, a log paste or a scratch file committed here is published — check
+  what a file actually contains before adding it. A desktop screenshot with the
+  user's chat windows in it went in once and had to be stripped from history.
 - Add a section to `docs/why.md` when you fix a bug found on the real system, or
   deviate from what a plan said. Not for routine changes, and never for status —
   it holds no test counts and no "as of today", which is exactly why it survives
@@ -621,7 +624,7 @@ still generated files.
 ## Commands
 
 ```bash
-cd ~/ccas && python -m pytest    # ~555 tests, under four seconds
+cd ~/ccas && python -m pytest    # ~570 tests, under four seconds
 ./install.sh                     # idempotent; re-run after any code change
 ccs                              # terminal: pick account → mode (fzf)
 ccs --gui <slug>                 # the bar's click: the GTK panel. A second one closes it.

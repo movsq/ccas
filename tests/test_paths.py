@@ -1,4 +1,8 @@
 import importlib
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import ccas.paths as paths
@@ -42,6 +46,34 @@ def test_trash_dir_is_under_home_and_never_deleted(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_TRASH", str(tmp_path / "trash"))
     importlib.reload(paths)
     assert paths.trash_dir() == tmp_path / "trash"
+
+
+def test_repo_root_is_derived_from_the_package_not_hardcoded(tmp_path):
+    """It was a literal `/home/fixed/ccas` — one machine's checkout, baked in, so
+    every other install trashed into a directory that does not exist. The package
+    knows where it is: `<root>/ccas/paths.py`.
+
+    Asserted against a *copy* of the package somewhere else, on purpose. Compared
+    to `paths.__file__` in this process the check passes even against the literal,
+    since this checkout is that path — a test that cannot fail measures nothing.
+    """
+    shutil.copytree(Path(paths.__file__).resolve().parent, tmp_path / "ccas")
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "import ccas.paths as p; print(p.REPO_ROOT)"],
+        cwd=tmp_path, capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": str(tmp_path)})
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == str(tmp_path)
+
+
+def test_trash_dir_falls_back_to_the_package_root(monkeypatch):
+    """No CCAS_TRASH set — a checkout run without installing. It must still land
+    somewhere real rather than under another user's home."""
+    monkeypatch.delenv("CCAS_TRASH", raising=False)
+    importlib.reload(paths)
+    assert paths.trash_dir() == paths.REPO_ROOT / ".claude_trash"
+    assert paths.trash_dir().parent.is_dir(), "the parent must really exist"
 
 
 def test_menu_css_defaults_under_config_home(monkeypatch):

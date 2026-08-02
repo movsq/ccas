@@ -4,12 +4,18 @@ from pathlib import Path
 
 GLYPH = "✻"
 
-# The checkout CCAS was installed from. The trash lives here rather than under
-# $HOME so that a home directory shared with other tooling stays clean. It has
-# to be a literal: the installed package runs out of ~/.local/share/ccas and has
-# no way to find the repo it was copied from. Anyone installing CCAS elsewhere
-# must override CCAS_TRASH, or set this.
-REPO_ROOT = Path("/home/fixed/ccas")
+# Where this package sits: `<root>/ccas/paths.py`, so two parents up. The trash
+# lives here rather than under $HOME so that a home directory shared with other
+# tooling stays clean.
+#
+# Run from a checkout this is the checkout. Run from the staged copy it is
+# ~/.local/share/ccas — not the checkout, but a real directory, which is the
+# point: this was a literal `/home/fixed/ccas` once and every install that was
+# not that one machine's trashed into a path that did not exist. The staged copy
+# genuinely cannot find the repo it came from, so install.sh — the one thing
+# that knows both — stamps CCAS_TRASH into the launcher, and this stays the
+# fallback for a checkout run without installing.
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 PALETTE = [
     ("peach", "#fab387"),

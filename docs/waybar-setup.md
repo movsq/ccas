@@ -38,9 +38,8 @@ instead, because a TTY and an ssh session cannot run GTK.
 CCAS used to emit `menu`, `menu-file` and `menu-actions` here, pointing at a
 generated `menu.xml` per account; it no longer does. Waybar parses `menu-file`
 once when the module is built, so keeping that menu current meant reloading the
-whole bar every time a Claude session appeared — see
-`docs/superpowers/specs/2026-07-25-fuzzel-only-menu-design.md` and
-`docs/superpowers/specs/2026-07-26-gtk4-panel-design.md`.
+whole bar every time a Claude session appeared. `docs/why.md` has the two steps
+that replaced it.
 
 ## Styling the panel
 

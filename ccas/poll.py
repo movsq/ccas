@@ -4,8 +4,7 @@ The statusline hook is the only source while a session runs, and there is no
 session for the account you are *not* using — so its numbers freeze the moment
 the last one closes. This asks the endpoint Claude Code itself asks,
 `GET /api/oauth/usage`, with the token already sitting in the account's
-credentials file. `docs/superpowers/specs/2026-07-27-usage-poll-design.md` has
-why that route, and `docs/usage-limits-research.md` has the three that lost.
+credentials file. `docs/usage-limits-research.md` has the three routes that lost.
 
 Two rules hold it up:
 

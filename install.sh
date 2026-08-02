@@ -46,9 +46,16 @@ fi
 # Written beside the launcher and renamed over it: rename(2) is atomic, so a
 # spawn either gets the whole old file or the whole new one. `cat >` truncates
 # the file a live session is about to exec.
+#
+# The trash location is stamped in because the staged package cannot derive it:
+# it runs out of $SHARE and has no way back to the checkout it was copied from,
+# and the never-delete rule puts the trash in that checkout. setdefault, so an
+# explicit CCAS_TRASH in the environment still wins — the tests rely on that.
 cat > "$BIN_DIR/.ccs.$$" <<EOF
 #!/usr/bin/env python3
+import os
 import sys
+os.environ.setdefault("CCAS_TRASH", "$TRASH")
 sys.path.insert(0, "$SHARE")
 from ccas.cli import main
 if __name__ == "__main__":

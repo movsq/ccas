@@ -58,6 +58,38 @@ def test_install_is_idempotent_in_a_sandbox(tmp_path):
     assert (tmp_path / "bin" / "ccs").exists()
 
 
+def test_launcher_stamps_the_trash_at_the_checkout_it_installed_from(tmp_path):
+    """The staged package under ~/.local/share/ccas cannot find the checkout it
+    was copied from, and the never-delete rule puts the trash in that checkout.
+    install.sh is the one thing that knows both, so it writes CCAS_TRASH into the
+    launcher — setdefault, so an explicit one from the environment still wins."""
+    env = dict(os.environ)
+    env.update({
+        "CCAS_HOME": str(tmp_path / "claude"),
+        "CCAS_CLAUDE_JSON": str(tmp_path / "claude.json"),
+        "CCAS_ACCOUNTS_ROOT": str(tmp_path / "accts"),
+        "CCAS_TRASH": str(tmp_path / "trash"),
+        "CCAS_WAYBAR_CONFIG": str(tmp_path / "config.jsonc"),
+        "CCAS_WAYBAR_STYLE": str(tmp_path / "style.css"),
+        "CCAS_BIN_DIR": str(tmp_path / "bin"),
+        "CCAS_SHARE_DIR": str(tmp_path / "share"),
+        "CCAS_SYSTEMD_DIR": str(tmp_path / "systemd"),
+        "CCAS_SKIP_SYSTEMD": "1",
+        "CCAS_SKIP_RELOAD": "1",
+    })
+    (tmp_path / "claude").mkdir()
+    (tmp_path / "config.jsonc").write_text('{\n    "modules-right": ["clock"]\n}\n')
+
+    proc = subprocess.run(["bash", str(ROOT / "install.sh")], env=env,
+                          capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+
+    launcher = (tmp_path / "bin" / "ccs").read_text()
+    assert "CCAS_TRASH" in launcher, "the launcher must carry the trash location"
+    assert str(tmp_path / "trash") in launcher
+    assert "setdefault" in launcher, "an explicit CCAS_TRASH must still win"
+
+
 def test_install_emits_the_placeholder_and_leaves_bare_claude_alone(tmp_path):
     env = dict(os.environ)
     env.update({
