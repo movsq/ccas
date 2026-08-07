@@ -97,6 +97,90 @@ def test_project_dirs_are_distinct_existing_and_recent_first(tmp_path):
     assert history.project_dirs(history.scan()) == [live]
 
 
+def write_moved_session(tmp_path, uuid, old_cwd, new_cwd, pad=0, tail_pad=0):
+    """A session that began in old_cwd and continued in new_cwd after a move.
+
+    Claude Code stamps every line with the cwd as it was when that line was
+    written, so a directory renamed mid-session leaves the head of the file
+    naming a path that no longer exists.
+    """
+    root = tmp_path / "claude" / "projects" / "-proj"
+    path = root / f"{uuid}.jsonl"
+    lines = [json.dumps({"type": "user", "cwd": old_cwd, "sessionId": uuid})]
+    for _ in range(pad):
+        lines.append(json.dumps({"type": "assistant", "cwd": old_cwd, "filler": "x" * 900}))
+    lines.append(json.dumps({"type": "user", "cwd": new_cwd, "sessionId": uuid}))
+    for _ in range(tail_pad):
+        lines.append(json.dumps({"type": "assistant", "cwd": new_cwd, "filler": "y" * 900}))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_extract_follows_a_session_whose_directory_was_moved(tmp_path):
+    """The head names a directory that is gone; the tail says where it went."""
+    live = str(tmp_path / "moved-here")
+    (tmp_path / "moved-here").mkdir()
+    p = write_moved_session(tmp_path, "m" * 8, "/nonexistent/was-here", live)
+    assert history.extract(p)[0] == live
+
+
+def test_extract_follows_a_move_across_a_multi_megabyte_transcript(tmp_path):
+    """The two cwds are in different reads: one in the head, one in the tail."""
+    live = str(tmp_path / "landed")
+    (tmp_path / "landed").mkdir()
+    p = write_moved_session(tmp_path, "n" * 8, "/nonexistent/gone", live, pad=200, tail_pad=200)
+    assert p.stat().st_size > 2 * 64 * 1024
+    assert history.extract(p)[0] == live
+
+
+def test_extract_keeps_the_head_cwd_when_it_still_exists(tmp_path):
+    """No move happened, so the tail is never consulted and the start wins."""
+    start = str(tmp_path / "start")
+    later = str(tmp_path / "later")
+    (tmp_path / "start").mkdir()
+    (tmp_path / "later").mkdir()
+    p = write_moved_session(tmp_path, "k" * 8, start, later)
+    assert history.extract(p)[0] == start
+
+
+def test_extract_ignores_a_nested_cwd_in_a_tool_result(tmp_path):
+    """Only a line's own top-level cwd counts.
+
+    A structured tool result carries its own keys, and a nested "cwd" is written
+    unescaped in the raw bytes — so searching the tail with the regex finds it
+    and attributes the session to whatever directory a tool happened to report.
+    Parsing each line and reading only its top-level key is what excludes it.
+    """
+    live = str(tmp_path / "real")
+    (tmp_path / "real").mkdir()
+    root = tmp_path / "claude" / "projects" / "-proj"
+    path = root / "tttttttt.jsonl"
+    path.write_text(
+        json.dumps({"type": "user", "cwd": "/nonexistent/gone"})
+        + "\n"
+        + json.dumps({"type": "user", "cwd": live})
+        + "\n"
+        + json.dumps({"type": "assistant", "toolUseResult": {"cwd": str(tmp_path)}})
+        + "\n",
+        encoding="utf-8",
+    )
+    assert history.extract(path)[0] == live
+
+
+def test_extract_keeps_the_head_cwd_when_the_whole_project_is_gone(tmp_path):
+    """Nothing to follow — the directory really was deleted, not moved."""
+    p = write_moved_session(tmp_path, "g" * 8, "/nonexistent/a", "/nonexistent/b")
+    assert history.extract(p)[0] == "/nonexistent/a"
+
+
+def test_project_dirs_lists_a_project_that_moved(tmp_path):
+    """The user-visible bug: a moved project vanished from the picker."""
+    live = str(tmp_path / "Games")
+    (tmp_path / "Games").mkdir()
+    write_moved_session(tmp_path, "p" * 8, "/nonexistent/Downloads", live)
+    assert history.project_dirs(history.scan()) == [live]
+
+
 def test_humanise_age():
     assert history.humanise_age(90) == "1m"
     assert history.humanise_age(3600 * 2.5) == "2.5h"

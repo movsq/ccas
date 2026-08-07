@@ -9,6 +9,7 @@ from pathlib import Path
 from . import paths
 
 HEAD = 64 * 1024
+TAIL = 256 * 1024
 
 # Whitespace after the colon is tolerated: Claude Code writes compact JSON, but
 # test fixtures built with json.dumps default to ": ". Both must match.
@@ -37,6 +38,38 @@ def _decode(raw: bytes):
         return raw.decode("utf-8", "replace")
 
 
+def _last_cwd(path: Path):
+    """The cwd on a line's own top level, taken from the last line that has one.
+
+    Whole lines are parsed rather than the raw bytes regex-matched: a structured
+    tool result carries its own keys, and a nested "cwd" sits unescaped in the
+    bytes, so a backwards search finds it before the line's real one. Quoted
+    tool *output* is not the hazard it looks like — that is escaped in the file,
+    and _CWD does not match `\\"cwd\\"`.
+    """
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - TAIL))
+            buf = fh.read()
+    except OSError:
+        return None
+    lines = buf.split(b"\n")
+    if size > TAIL:
+        lines = lines[1:]  # the first slice is half a line
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if isinstance(record, dict) and record.get("cwd"):
+            return record["cwd"]
+    return None
+
+
 def extract(path: Path):
     """Return (cwd, title). Reads a 64 KB head; full re-read only on a miss."""
     try:
@@ -53,10 +86,19 @@ def extract(path: Path):
             return None, None
         title = _TITLE.search(buf)
     cwd = _CWD.search(buf)
-    return (
-        _decode(cwd.group(1)) if cwd else None,
-        _decode(title.group(1)) if title else None,
-    )
+    cwd = _decode(cwd.group(1)) if cwd else None
+    # The head says where the session *started*. Every line carries the cwd as
+    # it was when that line was written, so moving a project mid-session leaves
+    # a head naming a directory that is gone — and `project_dirs` then drops the
+    # project out of the picker entirely, which is how a live one disappeared
+    # after ~/Downloads/… became ~/Games/…. A gone directory is far more often a
+    # move than a deletion, so ask the tail where it went; if that is gone too,
+    # keep the original and let the caller filter it as before.
+    if cwd and not os.path.isdir(cwd):
+        moved = _last_cwd(path)
+        if moved and os.path.isdir(moved):
+            cwd = moved
+    return cwd, _decode(title.group(1)) if title else None
 
 
 def scan():

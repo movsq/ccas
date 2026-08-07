@@ -1756,3 +1756,56 @@ Keep that mirror until one of them has answered; once the rewrite lands it is th
 only place the ids survive, and without an id there is nothing to ask about.
 Nothing in git removes the objects — they are the host's, freed by a support
 request or by deleting the repository, and a fork shares the object store.
+
+## A moved project fell out of the picker, and the transcript knew where it went
+
+Reported as "ccs cannot see the sessions in this folder, but `claude --resume`
+can". The folder had been moved, `~/Downloads/World of Warcraft 1.12` to
+`~/Games/…`, and the session spanned the move.
+
+`history.extract` took the **first** `cwd` in the file's 64 KB head, and
+`project_dirs` filtered on `os.path.isdir(s.cwd)`. Claude Code stamps every line
+with the cwd as it was when that line was written, so the head of a session that
+outlived a move names a directory that is gone — 1034 lines of that transcript
+said `Downloads`, 111 said `Games`, and the one that counted was line 1. The
+project vanished from the picker while the session itself was perfectly intact,
+which is why the two commands disagreed: `claude --resume` resolves by the
+project directory's slug, which Claude Code had already renamed.
+
+The fix asks the **tail** where the session went, and only when the head's
+directory is gone — so the common path still reads 64 KB and stops. It is not a
+heuristic: the last line's `cwd` is a record of where the session actually was,
+not a guess at where a directory with that name might have ended up. Nothing
+matches on names.
+
+Two details that are the whole of `_last_cwd`:
+
+- **Parse whole lines; do not regex the tail.** A structured tool result carries
+  its own keys, and a nested `"cwd"` sits unescaped in the raw bytes, so a
+  backwards regex search attributes the session to whatever directory a tool
+  happened to report. Only a line's own top-level key counts.
+- **Follow the move only if it lands somewhere real.** If the tail's directory
+  is gone too, the project was deleted rather than moved; keep the head's answer
+  and let `project_dirs` filter it exactly as before. Written the other way
+  first, and the test for it caught the code disagreeing with its own comment.
+
+The test that pins the first detail was **written twice**. The first version put
+the decoy in a quoted string, `{"type":"assistant","text":"{\"cwd\":\"…\"}"}` —
+which is escaped in the file, so the regex never matched it and the mutation to
+regex-last stayed green. A test that goes red before the fix has only proved the
+fix does *something*; mutating the implementation is what proves it measures the
+part you think it does.
+
+**To be done — the filter itself.** This fixes one of its failure modes, not the
+filter. A directory that is merely unreachable — an unmounted external disk, an
+sshfs share — still disappears silently, and so does a project moved while no
+session was running, since no line records the new path. Both read as lost data.
+The answer is to stop filtering and mark those rows unavailable instead, which
+is a change to what the pickers and the panel show rather than to
+`history.extract`.
+
+Deliberately not done here, because it was measured first: across all 346
+sessions the filter drops three, all untitled, all under one deleted `/tmp`
+scratchpad path. Today the change would surface nothing anyone wants. It is
+worth doing when a real directory goes unreachable — an external disk is the
+likely first — and not before.
