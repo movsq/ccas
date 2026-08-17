@@ -140,6 +140,14 @@ def _mutate(slug: str, field: str, value) -> int:
     return 0
 
 
+# Both token tables are columns, and the widest token is not a constant any
+# more — %fablequotaleft is fifteen characters where %7dresettime was thirteen.
+# Measured off the table itself so that adding a token cannot silently unalign
+# the rest of it.
+_TOKEN_W = max(len(token) for token in fmt.TOKENS) + 1
+_NAME_W = max(len(name) for name in fmt.NAMES.values()) + 1
+
+
 def cmd_format(rest) -> int:
     """`ccs format` — the terminal door to the custom mode's format string.
 
@@ -149,7 +157,7 @@ def cmd_format(rest) -> int:
     """
     if rest and rest[0] == "--tokens":
         for token in fmt.TOKENS:
-            print(f"{token:<14} {fmt.NAMES[token]}")
+            print(f"{token:<{_TOKEN_W}} {fmt.NAMES[token]}")
         return 0
     if not rest:
         return 1
@@ -206,9 +214,9 @@ def _format_edit(reg, slug: str, account: dict) -> int:
     for token in fmt.TOKENS:
         shown = _MARKUP.sub("", fmt.render(account, index, seen,
                                            format_override=token))
-        print(f"  {token:<14} {fmt.NAMES[token]:<14} "
+        print(f"  {token:<{_TOKEN_W}} {fmt.NAMES[token]:<{_NAME_W}} "
               f"{shown or '(empty — nothing recorded yet)'}")
-    print("  %%             a literal %")
+    print(f"  {'%%':<{_TOKEN_W}} a literal %")
     print()
 
     typed = pickers.prompt_edit("format:", current)
@@ -382,11 +390,17 @@ def cmd_list() -> int:
 
 
 def cmd_usage(slug=None) -> int:
-    """Both windows, their age and their source — the bar without a bar.
+    """Every window an account has, its age and its source — the bar without a
+    bar.
 
     Where the label shows only pressure and the picker only what is worth
     saying, this shows everything recorded, so that "nothing on the bar" can be
     told apart from "nothing recorded" without opening a picker.
+
+    Both plan windows always, however quiet either is. A model-scoped window
+    only for an account the endpoint reports one for: quiet and not there are
+    the distinction this command exists to draw, and `fable —` for an account
+    with no Fable limit would answer a question nobody asked.
     """
     reg = registry.load()
     accounts_ = [registry.find(reg, slug)] if slug else reg["accounts"]
@@ -399,10 +413,12 @@ def cmd_usage(slug=None) -> int:
             print(f"{account['slug']:<14} {usage.NO_DATA}")
             continue
         age = history.humanise_age(max(0.0, now - reading["fetched_at"]))
-        print(f"{account['slug']:<14} "
-              f"{usage.column(reading, 'five_hour', now):<28}"
-              f"{usage.column(reading, 'seven_day', now):<28}"
-              f"{reading['source']}, {age} ago")
+        windows = [key for key in usage.WINDOWS
+                   if key not in usage.SCOPED
+                   or usage.state(reading, key, now).kind != usage.ABSENT]
+        columns = "".join(f"{usage.column(reading, key, now):<28}"
+                          for key in windows)
+        print(f"{account['slug']:<14} {columns}{reading['source']}, {age} ago")
     return 0
 
 

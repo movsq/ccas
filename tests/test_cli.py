@@ -3,6 +3,7 @@ import os
 import time
 import io
 import json
+from datetime import datetime, timezone
 import types
 import pytest
 
@@ -1117,12 +1118,19 @@ def test_an_account_with_no_reading_is_told_the_hook_is_not_wired(monkeypatch):
 
 # ── ccs usage ─────────────────────────────────────────────────────────────────
 
-def _record(monkeypatch, slug, five=None, seven=None):
+def _record(monkeypatch, slug, five=None, seven=None, fable=None):
     limits = {}
     if five:
         limits["five_hour"] = {"used_percentage": five[0], "resets_at": five[1]}
     if seven:
         limits["seven_day"] = {"used_percentage": seven[0], "resets_at": seven[1]}
+    if fable:
+        # The hook's own spelling for a model-scoped window: `utilization`, and
+        # an ISO string where its siblings above carry epoch seconds.
+        limits["model_scoped"] = [
+            {"display_name": "Fable", "utilization": fable[0],
+             "resets_at": datetime.fromtimestamp(
+                 fable[1], timezone.utc).isoformat()}]
     _feed(monkeypatch, json.dumps({"rate_limits": limits}), paths.account_dir(slug))
     cli.main(["statusline"])
 
@@ -1138,6 +1146,25 @@ def test_usage_shows_both_windows_with_the_readings_age(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "5h ≥94% clears " in out and "7d ≥19% clears " in out
     assert "statusline, 0m ago" in out
+
+
+def test_usage_shows_the_fable_window_only_for_an_account_that_has_one(
+        monkeypatch, capsys):
+    """`ccs usage` is the one place that shows a window however quiet it is —
+    but a model-scoped window an account was never told about is not quiet, it
+    is not there. Measured on the two real accounts 2026-08-17: one endpoint
+    body carried a weekly Fable entry and the other named none.
+    """
+    make_account("a")
+    make_account("b")
+    _record(monkeypatch, "a", five=(94.0, time.time() + 3600),
+            fable=(5.0, time.time() + 86400))
+    _record(monkeypatch, "b", five=(20.0, time.time() + 3600))
+    capsys.readouterr()
+    assert cli.main(["usage"]) == 0
+    lines = {l.split()[0]: l for l in capsys.readouterr().out.splitlines() if l.strip()}
+    assert "fable ≥5% clears " in lines["a"]
+    assert "fable" not in lines["b"]
 
 
 def test_usage_names_the_state_of_an_account_with_nothing_recorded(capsys):
@@ -1730,12 +1757,27 @@ def test_format_edit_lists_the_tokens_first(monkeypatch, capsys):
 
 def test_format_edit_names_each_token_beside_it(monkeypatch, capsys):
     """The token stays — the prompt under the table wants it typed — but a
-    column saying what it is spares reading the render to find out."""
+    column saying what it is spares reading the render to find out.
+
+    Three columns that line up for *every* token, checked rather than a width
+    spelled out here: the widest token stopped being a constant when the Fable
+    set arrived — `%fablequotaleft` is two characters past what the table used
+    to reserve — and a hardcoded pad turns adding a token into a ragged table
+    nobody notices until they read one.
+    """
     make_account()
     monkeypatch.setattr(cli.pickers, "prompt_edit", lambda *_: None)
     cli.main(["format", "work", "--edit"])
-    out = capsys.readouterr().out
-    assert f"%5hused{' ' * 8}{fmt.NAMES['%5hused']}" in out
+    rows = [line for line in capsys.readouterr().out.splitlines()
+            if line.startswith("  %")]
+    assert len(rows) == len(fmt.TOKENS) + 1          # every token, and %%
+    def name_column(token, row):
+        # Searched past the token, or `%email` finds "email" inside itself.
+        return row.index(fmt.NAMES[token], 2 + len(token))
+
+    for token, row in zip(fmt.TOKENS, rows):
+        assert row.startswith(f"  {token} ")
+        assert name_column(token, row) == name_column("%name", rows[0])
 
 
 def test_format_edit_cancelled_leaves_the_format_alone(monkeypatch):

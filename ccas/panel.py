@@ -48,21 +48,26 @@ STAYS_OPEN = frozenset({
 # which tokens exist, so the chip row below it is now wrong.
 NO_REBUILD = frozenset({"color", "format_color"})
 
-WINDOW_LABELS ={"five_hour": "5h", "seven_day": "wk"}
+WINDOW_LABELS ={"five_hour": "5h", "seven_day": "wk", usage.FABLE: "fable"}
 
 UNTITLED = "(untitled)"
 
 
 def _usage_rows(slug: str, now: float):
-    """One row per window, always both, in a fixed order.
+    """One row per window this account has, in a fixed order.
 
-    An absent window keeps its row rather than disappearing: a bar that is not
-    drawn and a bar at zero look identical, and they mean opposite things.
+    An absent *plan* window keeps its row rather than disappearing: a bar that is
+    not drawn and a bar at zero look identical, and they mean opposite things.
+    A model-scoped window has no such pair to tell apart — ABSENT there means
+    the account was never told about that model, so the row is left out
+    altogether rather than drawn as a limit nobody has measured.
     """
     reading = usage.read(slug)
     rows = []
     for key in usage.WINDOWS:
         st = usage.state(reading, key, now)
+        if st.kind == usage.ABSENT and key in usage.SCOPED:
+            continue
         rows.append({
             "key": key,
             "label": WINDOW_LABELS[key],

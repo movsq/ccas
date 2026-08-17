@@ -56,6 +56,11 @@ PROBE_MS = 1500
 # min_content_height(28) set.
 CHIP_ROW_H = 22 + 15
 
+# The usage rows' name column, in characters. Wide enough for the longest of
+# panel.WINDOW_LABELS — `fable`, beside `5h` and `wk` — so that every bar starts
+# at the same x whichever windows an account has.
+KEY_CHARS = max(len(name) for name in panel.WINDOW_LABELS.values())
+
 # How long the colour sliders wait after the last movement before writing. Long
 # enough that a drag is one write rather than dozens, short enough that letting
 # go and looking at the bar shows the new colour already there.
@@ -590,17 +595,28 @@ def _build_usage(rows):
     records. So the widgets are kept and only their three mutable facts move:
     the fraction, the tint, and the text.
 
-    `zip` over the two lists is safe because both come from `_usage_rows`, which
-    answers one row per `usage.WINDOWS` in a fixed order whatever the reading.
+    The two lists are paired by **window key**, not by position. They used to be
+    the same thing — `_usage_rows` answered one row per `usage.WINDOWS` in a
+    fixed order whatever the reading — but a model-scoped window is a row only
+    for an account the endpoint reports one for, so the row set is per-account
+    and the answer that lands may name a different set than the body was built
+    from. Paired by position, a missing row would slide every window's numbers
+    onto the bar above it.
     """
     from gi.repository import Gtk
 
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-    lines = []
+    lines = {}
     for row in rows:
         line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         key = Gtk.Label(label=row["label"], xalign=0)
         key.add_css_class("ccas-usage-key")
+        # Sized here rather than in menu.css: `5h` and `fable` are two
+        # characters and five, so a label sized to its own text starts each bar
+        # at a different x — and install.sh copies the stylesheet once and never
+        # again, so a fix living there would reach nobody who already has a
+        # panel. The same reason usage.RAMP's providers are in code.
+        key.set_width_chars(KEY_CHARS)
         line.append(key)
         bar = _usage_bar(row)
         bar.set_hexpand(True)
@@ -613,10 +629,18 @@ def _build_usage(rows):
         # The colour is held rather than read back off the widget: a class has
         # to be removed by name, and asking the bar which tint it wears means
         # searching every class it has for one of ours.
-        lines.append((bar, text, {"color": row["color"]}))
+        lines[row["key"]] = (bar, text, {"color": row["color"]})
 
     def apply_rows(new_rows):
-        for (bar, text, held), row in zip(lines, new_rows):
+        for row in new_rows:
+            line = lines.get(row["key"])
+            if line is None:
+                # A window this body has no bar for — the fetch discovered one
+                # the account had never reported. It shows on the next open,
+                # which is a body built for it; there is nothing to widen here
+                # without rebuilding under whatever the user is doing.
+                continue
+            bar, text, held = line
             bar.set_fraction(0.0 if row["percent"] is None
                              else row["percent"] / 100)
             if held["color"] != row["color"]:

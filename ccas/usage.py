@@ -33,8 +33,12 @@ YELLOW, PEACH, RED = "#f9e2af", "#fab387", "#f38ba8"
 DIM = "40000"
 RAMP = ((95, RED), (80, PEACH), (50, YELLOW))
 
-# Above this the 7-day window is the binding constraint and takes the label.
-SEVEN_DAY_TAKES_OVER = 90
+# Above this a weekly window is the binding constraint and takes the label. It
+# was SEVEN_DAY_TAKES_OVER, and the rule was never about that window in
+# particular: a weekly reset is days away, so above the threshold the number is
+# the actionable fact where the 5-hour clock is. The model-scoped window is
+# weekly too, and binds the same way.
+WEEKLY_TAKES_OVER = 90
 
 NOT_WIRED = "usage — statusline hook not wired"
 # The same fact where the command itself already says the subject is usage.
@@ -49,7 +53,30 @@ IDLE_TEXT = "0% used"
 # place says which of the two it is without needing the format string changed.
 IDLE_MARK = "idle"
 
-WINDOWS = ("five_hour", "seven_day")
+# The two windows every subscription has, and the one it may not.
+PLAN_WINDOWS = ("five_hour", "seven_day")
+
+# The model-scoped weekly window: the key it is stored under, and — because the
+# key is the model's own name in lower case — the prefix its display name is
+# matched on. Claude Code meters one bucket per model its allowlist names
+# (`tengu_usage_overage_included_models`, which on this machine reads
+# ["Fable", "Fable 5"]), and Fable is the only bucket either account has been
+# sent. A prefix so the version in the display name cannot retire the match;
+# another model appearing is another commit, not a read path that understands
+# both.
+FABLE = "fable"
+
+# Windows an account may simply not have, where the plan windows are only ever
+# quiet. It is the whole difference between a meter and a meter for a limit that
+# does not exist: measured 2026-08-17, one account's body carried a Fable window
+# and the other's did not name one at all.
+SCOPED = (FABLE,)
+
+WINDOWS = PLAN_WINDOWS + SCOPED
+
+# How each is named in a line the user reads. `fable` is spelled out: "7d" says
+# which window by its length, and two weekly windows cannot both do that.
+SHORT = {"five_hour": "5h", "seven_day": "7d", FABLE: "fable"}
 
 ABSENT, IDLE, BOUNDED = "absent", "idle", "bounded"
 State = namedtuple("State", "kind percent resets_at")
@@ -63,9 +90,64 @@ def _window(percent, resets_at):
     return {"percent": float(percent), "resets_at": int(resets_at)}
 
 
+def _scoped_window(percent, resets_at):
+    """A model-scoped window, which a missing reset does not erase.
+
+    The plan windows drop both halves together because a five_hour entry with no
+    reset is a window that is not running, and a null reads as IDLE anyway. Here
+    the entry is the *only* evidence the account has this window at all, so the
+    percentage is kept without one: a Fable window that exists and is idle must
+    not read as an account with no Fable window.
+    """
+    if percent is None:
+        return None
+    return {"percent": float(percent),
+            "resets_at": None if resets_at is None else int(resets_at)}
+
+
+def _is_fable(name) -> bool:
+    return isinstance(name, str) and name.casefold().startswith(FABLE)
+
+
+def _from_limits(limits):
+    """The Fable window out of a `limits[]` array — the cache's shape and the
+    endpoint's, which are the same shape.
+
+    It is not a top-level key beside five_hour and seven_day: the body carries
+    `seven_day_opus` and `seven_day_sonnet` as nulls and names the model bucket
+    only here, as the weekly entry whose `scope.model` is set. Measured on the
+    live endpoint 2026-08-17; `docs/usage-limits-research.md` quotes it.
+    """
+    for entry in limits or []:
+        if not isinstance(entry, dict) or entry.get("kind") != "weekly_scoped":
+            continue
+        scope = entry.get("scope") or {}
+        model = (scope.get("model") or {}) if isinstance(scope, dict) else {}
+        if _is_fable(model.get("display_name")):
+            return _scoped_window(entry.get("percent"),
+                                  _epoch(entry.get("resets_at")))
+    return None
+
+
+def _from_model_scoped(entries):
+    """The Fable window out of the hook's `rate_limits.model_scoped`.
+
+    The bundle projects the same `limits[]` into this array, filtered by its
+    allowlist — and rewrites it on the way: `utilization` where its siblings in
+    the same payload say `used_percentage`, and an **ISO string** where their
+    `resets_at` is epoch seconds. Two spellings inside one payload, so this
+    cannot share `from_statusline`'s reader.
+    """
+    for entry in entries or []:
+        if isinstance(entry, dict) and _is_fable(entry.get("display_name")):
+            return _scoped_window(entry.get("utilization"),
+                                  _epoch(entry.get("resets_at")))
+    return None
+
+
 def _reading(source, fetched_at, windows):
     if not any(windows.values()):
-        return None  # a payload naming neither window is not a reading
+        return None  # a payload naming no window is not a reading
     return {"fetched_at": float(fetched_at), "source": source, **windows}
 
 
@@ -73,9 +155,10 @@ def from_statusline(payload: dict, now: float):
     """The hook's JSON. used_percentage is 0-100, resets_at is epoch seconds."""
     limits = (payload or {}).get("rate_limits") or {}
     return _reading("statusline", now, {
-        key: _window(limits.get(key, {}).get("used_percentage"),
-                     limits.get(key, {}).get("resets_at"))
-        for key in WINDOWS})
+        **{key: _window(limits.get(key, {}).get("used_percentage"),
+                        limits.get(key, {}).get("resets_at"))
+           for key in PLAN_WINDOWS},
+        FABLE: _from_model_scoped(limits.get("model_scoped"))})
 
 
 def _epoch(iso: str):
@@ -108,9 +191,10 @@ def from_cache(blob: dict):
     cached = (blob or {}).get("cachedUsageUtilization") or {}
     util = cached.get("utilization") or {}
     return _reading("cache", cached.get("fetchedAtMs", 0) / 1000, {
-        key: _window(util.get(key, {}).get("utilization"),
-                     _epoch(util.get(key, {}).get("resets_at")))
-        for key in WINDOWS})
+        **{key: _window(util.get(key, {}).get("utilization"),
+                        _epoch(util.get(key, {}).get("resets_at")))
+           for key in PLAN_WINDOWS},
+        FABLE: _from_limits(util.get("limits"))})
 
 
 def from_oauth(payload: dict, now: float):
@@ -119,14 +203,15 @@ def from_oauth(payload: dict, now: float):
     Same spelling as the cache (0-100 under `utilization`, an ISO 8601
     `resets_at`) without the `cachedUsageUtilization` wrapper, because this is
     what Claude Code stores *into* that key. The real body also carries
-    `seven_day_opus` and friends as nulls; naming neither of the two windows we
-    read makes it a non-reading, not an empty one.
+    `seven_day_opus` and friends as nulls; naming none of the windows we read
+    makes it a non-reading, not an empty one.
     """
     payload = payload or {}
     return _reading("oauth", now, {
-        key: _window((payload.get(key) or {}).get("utilization"),
-                     _epoch((payload.get(key) or {}).get("resets_at")))
-        for key in WINDOWS})
+        **{key: _window((payload.get(key) or {}).get("utilization"),
+                        _epoch((payload.get(key) or {}).get("resets_at")))
+           for key in PLAN_WINDOWS},
+        FABLE: _from_limits(payload.get("limits"))})
 
 
 # ── which account ─────────────────────────────────────────────────────────────
@@ -268,12 +353,23 @@ def state(reading, key: str, now=None) -> State:
     and it makes a bar at zero *mean* zero — ignorance is a separate kind now.
     The percentage from before the reset is not carried across; it is dead the
     moment the window rolls over.
+
+    That last rule inverts for a SCOPED window, and only for the unnamed case.
+    "The payload did not name it" means the quota refilled when every account
+    has the window; for a model-scoped one it means this account was never told
+    about that model, which is ignorance of a limit rather than a measurement of
+    one. So an unnamed Fable window is ABSENT and drops out of the panel and the
+    label entirely, while a Fable window that was named once and has since
+    rolled over is IDLE from its own timestamp, exactly like the other two.
     """
     now = time.time() if now is None else now
     if reading is None:
         return State(ABSENT, None, None)
     window = reading.get(key)
-    if not window or window["resets_at"] <= now:
+    if not window:
+        return State(ABSENT, None, None) if key in SCOPED \
+            else State(IDLE, 0.0, None)
+    if not window["resets_at"] or window["resets_at"] <= now:
         return State(IDLE, 0.0, None)
     return State(BOUNDED, window["percent"], window["resets_at"])
 
@@ -301,6 +397,22 @@ def reset_time(epoch: int, now: float) -> str:
     return time.strftime("%H:%M" if same_day else "%a %H:%M", time.localtime(epoch))
 
 
+# The weekly windows, in the order a tie between them is broken. Ties do not
+# happen in practice — one is every model's usage and the other one model's —
+# but "the highest one binds" needs an order to be a function.
+WEEKLY_WINDOWS = ("seven_day", FABLE)
+
+
+def _binding_weekly(reading, now):
+    """`(key, State)` for the weekly window that is over the threshold, highest
+    first, or None. A window an account does not have cannot bind: ABSENT and
+    IDLE are both simply not BOUNDED here."""
+    over = [(key, state(reading, key, now)) for key in WEEKLY_WINDOWS]
+    over = [pair for pair in over if pair[1].kind == BOUNDED
+            and pair[1].percent >= WEEKLY_TAKES_OVER]
+    return max(over, key=lambda pair: pair[1].percent) if over else None
+
+
 def bar(reading, now=None):
     """`(text, pango attributes)` for the label, or None when there is nothing
     to warn about — open and absent both render as the bar you have today.
@@ -309,13 +421,14 @@ def bar(reading, now=None):
     the text stay the one fact that is still true from a stale reading.
     """
     five = state(reading, "five_hour", now)
-    seven = state(reading, "seven_day", now)
 
-    if seven.kind == BOUNDED and seven.percent >= SEVEN_DAY_TAKES_OVER \
-            and seven.percent > (five.percent if five.kind == BOUNDED else -1):
-        # Its reset is days away, so the number is the actionable fact, not the
-        # clock. The only case where the label mentions the 7-day window at all.
-        return f"7d {seven.percent:.0f}%", f"color='{RED}'"
+    binding = _binding_weekly(reading, now)
+    if binding is not None:
+        key, week = binding
+        if week.percent > (five.percent if five.kind == BOUNDED else -1):
+            # Its reset is days away, so the number is the actionable fact, not
+            # the clock. The only case where the label names a weekly window.
+            return f"{SHORT[key]} {week.percent:.0f}%", f"color='{RED}'"
 
     if five.kind != BOUNDED:
         return None
@@ -325,34 +438,37 @@ def bar(reading, now=None):
 
 
 def _line(key: str, st: State, now: float) -> str:
-    short = "5h" if key == "five_hour" else "7d"
     if st.kind == IDLE:
-        return f"{short} {IDLE_TEXT}"
+        return f"{SHORT[key]} {IDLE_TEXT}"
     # ≥ because usage only climbs within a window: the recorded percentage is a
     # lower bound for as long as its reset is still ahead.
-    return f"{short} ≥{st.percent:.0f}% · clears {reset_time(st.resets_at, now)}"
+    return (f"{SHORT[key]} ≥{st.percent:.0f}% · "
+            f"clears {reset_time(st.resets_at, now)}")
 
 
 def column(reading, key: str, now: float) -> str:
-    """One window, said in full — for `ccs usage`, which shows both however
-    quiet either is, and so cannot leave one out the way the picker does."""
+    """One window, said in full — for `ccs usage`, which shows both plan windows
+    however quiet either is, and so cannot leave one out the way the picker
+    does."""
     st = state(reading, key, now)
-    short = "5h" if key == "five_hour" else "7d"
     if st.kind == ABSENT:
-        return f"{short} —"
+        return f"{SHORT[key]} —"
     if st.kind == IDLE:
-        return f"{short} {IDLE_TEXT}"
-    return f"{short} ≥{st.percent:.0f}% clears {reset_time(st.resets_at, now)}"
+        return f"{SHORT[key]} {IDLE_TEXT}"
+    return (f"{SHORT[key]} ≥{st.percent:.0f}% "
+            f"clears {reset_time(st.resets_at, now)}")
 
 
 def lines(reading, now=None):
-    """What the picker says: one line always, a second only when 7d binds."""
+    """What the picker says: one line always, a second only when a weekly window
+    binds."""
     now = time.time() if now is None else now
     five = state(reading, "five_hour", now)
     seven = state(reading, "seven_day", now)
     if five.kind == ABSENT and seven.kind == ABSENT:
         return [NOT_WIRED]
     out = [_line("five_hour", five, now)] if five.kind != ABSENT else []
-    if seven.kind == BOUNDED and seven.percent >= SEVEN_DAY_TAKES_OVER:
-        out.append(_line("seven_day", seven, now))
+    binding = _binding_weekly(reading, now)
+    if binding is not None:
+        out.append(_line(binding[0], binding[1], now))
     return out or [NOT_WIRED]

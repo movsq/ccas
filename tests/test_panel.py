@@ -75,6 +75,41 @@ def test_build_state_reports_both_usage_windows_in_order(reg):
     assert all(w["resets"] == "" for w in state["usage"])
 
 
+def test_a_reported_fable_window_earns_a_third_bar(reg):
+    """The model-scoped window is a row like the others when the account has
+    one — measured on the real account 2026-08-17, where the endpoint's
+    `limits[]` carried a weekly Fable entry."""
+    now = 1_700_000_000.0
+    (paths.account_dir("one") / paths.USAGE_FILE).write_text(json.dumps({
+        "fetched_at": now, "source": "oauth",
+        "five_hour": {"percent": 61.0, "resets_at": int(now + 3600)},
+        "seven_day": {"percent": 3.0, "resets_at": int(now + 86400)},
+        usage.FABLE: {"percent": 5.0, "resets_at": int(now + 86400)},
+    }))
+    rows = panel.build_state("one", now=now)["usage"]
+    assert [w["key"] for w in rows] == ["five_hour", "seven_day", usage.FABLE]
+    assert [w["label"] for w in rows] == ["5h", "wk", "fable"]
+    assert rows[2]["kind"] == usage.BOUNDED and rows[2]["percent"] == 5.0
+
+
+def test_an_account_with_no_fable_window_gets_no_fable_bar(reg):
+    """The other half of the same measurement: the second account's body names
+    no scoped window at all. An absent *plan* window keeps its row, because a
+    bar that vanishes and a bar at zero mean opposite things — but there is no
+    such ambiguity to protect here. The account has no Fable limit, and a row
+    reading "no data" would claim it has one nobody has measured.
+    """
+    now = 1_700_000_000.0
+    (paths.account_dir("one") / paths.USAGE_FILE).write_text(json.dumps({
+        "fetched_at": now, "source": "oauth",
+        "five_hour": {"percent": 61.0, "resets_at": int(now + 3600)},
+        "seven_day": None, usage.FABLE: None,
+    }))
+    rows = panel.build_state("one", now=now)["usage"]
+    assert [w["key"] for w in rows] == ["five_hour", "seven_day"]
+    assert panel.refresh_usage("one", now=now) == rows
+
+
 def test_build_state_reads_a_bounded_window(reg):
     """A future resets_at makes the percentage a live reading, and the reset time
     is the headline — usage.py's rule, unchanged by the new rendering."""

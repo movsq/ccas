@@ -230,6 +230,18 @@ TOKENS = {
     "%7dused": _percent("seven_day", False),
     "%7dquotaleft": _percent("seven_day", True),
     "%7d": _smart,
+
+    # The model-scoped weekly window, shaped like the 7-day set because that is
+    # what it is: a week's quota with a reset days out. Every one of them
+    # renders empty for an account the endpoint reports no such window for —
+    # ABSENT, not idle — so one format string can be shared by an account that
+    # has a Fable limit and one that does not, and _collapse closes the gap.
+    "%fablereset": _reset(usage_mod.FABLE, True),
+    "%fableresetday": _reset_part(usage_mod.FABLE, "%a"),
+    "%fableresettime": _reset_part(usage_mod.FABLE, "%H:%M"),
+    "%fabletimeleft": _timeleft_token(usage_mod.FABLE),
+    "%fableused": _percent(usage_mod.FABLE, False),
+    "%fablequotaleft": _percent(usage_mod.FABLE, True),
 }
 
 
@@ -259,6 +271,13 @@ NAMES = {
     "%7dused": "7d used",
     "%7dquotaleft": "7d left",
     "%7d": "usage clock",
+
+    "%fablereset": "Fable reset",
+    "%fableresetday": "Fable reset day",
+    "%fableresettime": "Fable reset time",
+    "%fabletimeleft": "Fable remaining",
+    "%fableused": "Fable used",
+    "%fablequotaleft": "Fable left",
 }
 
 

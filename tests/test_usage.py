@@ -59,8 +59,14 @@ def test_a_payload_without_rate_limits_is_not_a_reading():
 
 
 def oauth(five=(3.0, "2026-07-27T02:39:59.757453+00:00"),
-          seven=(0.0, "2026-08-02T18:59:59.757477+00:00")):
-    """The /api/oauth/usage body, as measured on 2026-07-27."""
+          seven=(0.0, "2026-08-02T18:59:59.757477+00:00"), fable=None):
+    """The /api/oauth/usage body, as measured on 2026-07-27.
+
+    `fable` is `(percent, resets_at)` for the model-scoped weekly window, which
+    the body carries nowhere near the other two: not as a top-level key but as
+    an entry in `limits[]`, measured 2026-08-17 and quoted in
+    `docs/usage-limits-research.md`.
+    """
     body = {}
     if five:
         body["five_hour"] = {"utilization": five[0], "resets_at": five[1],
@@ -68,7 +74,155 @@ def oauth(five=(3.0, "2026-07-27T02:39:59.757453+00:00"),
     if seven:
         body["seven_day"] = {"utilization": seven[0], "resets_at": seven[1]}
     body["seven_day_opus"] = None          # the real body carries several of these
+    body["limits"] = [{"kind": "session", "group": "session", "percent": 3,
+                       "severity": "normal", "scope": None, "is_active": True}]
+    if fable:
+        body["limits"].append(scoped_limit(*fable))
     return body
+
+
+def scoped_limit(percent, resets_at, name="Fable"):
+    """One `limits[]` entry, spelled as the endpoint spells it."""
+    return {"kind": "weekly_scoped", "group": "weekly", "percent": percent,
+            "severity": "normal", "resets_at": resets_at, "is_active": False,
+            "scope": {"model": {"id": None, "display_name": name},
+                      "surface": None}}
+
+
+FABLE_AT = "2026-08-23T19:00:00.350093+00:00"
+FABLE_EPOCH = 1787511600      # 2026-08-23 19:00 UTC, the minute it anchors to
+FIVE_AT = "2026-08-17T09:00:00Z"
+FIVE_EPOCH = 1786957200
+
+
+# ── the model-scoped window ───────────────────────────────────────────────────
+
+def test_the_fable_window_is_read_out_of_the_scoped_limits():
+    """It is not a window beside five_hour and seven_day in the body: the
+    endpoint names it only inside `limits[]`, as the weekly entry whose scope
+    carries a model. Measured on the real account 2026-08-17."""
+    reading = usage.from_oauth(oauth(fable=(5.0, FABLE_AT)), now=1_000.0)
+    assert reading[usage.FABLE] == {"percent": 5.0, "resets_at": FABLE_EPOCH}
+
+
+def test_an_account_that_is_not_told_about_fable_has_no_fable_window():
+    """The measured difference between the two accounts on 2026-08-17: one
+    body's `limits[]` carries a weekly_scoped entry and the other's does not.
+
+    ABSENT, not IDLE — and this is the one place the two plan windows' rule is
+    wrong. Silence about five_hour says the quota refilled, because every
+    subscription has a 5-hour window. Silence about a model-scoped one says the
+    account has no such window at all, and "fable 0% used" would be a meter for
+    a limit that does not exist.
+    """
+    reading = usage.from_oauth(oauth(), now=1_000.0)
+    assert reading[usage.FABLE] is None
+    assert usage.state(reading, usage.FABLE, now=1_000.0).kind == usage.ABSENT
+    assert usage.state(reading, "five_hour", now=1_000.0).kind == usage.BOUNDED
+
+
+def test_the_statusline_names_the_fable_window_in_a_third_spelling():
+    """`rate_limits.model_scoped`, added by the bundle from the same `limits[]`
+    it filters through its own allowlist. Two traps in one payload: the
+    percentage is `utilization` where its siblings use `used_percentage`, and
+    the reset is an **ISO string** where five_hour's is epoch seconds — the
+    bundle converts it on the way out.
+    """
+    payload = statusline()
+    payload["rate_limits"]["model_scoped"] = [
+        {"display_name": "Fable", "utilization": 5, "resets_at": FABLE_AT}]
+    reading = usage.from_statusline(payload, now=1_000.0)
+    assert reading[usage.FABLE] == {"percent": 5.0, "resets_at": FABLE_EPOCH}
+    assert usage.from_statusline(statusline(), now=1_000.0)[usage.FABLE] is None
+
+
+def test_the_bucket_is_matched_however_the_server_spells_the_model():
+    """Claude Code's own allowlist for this machine reads ["Fable", "Fable 5"]
+    (`tengu_usage_overage_included_models`, 2026-08-17), so the display name is
+    the model's marketing name and it carries a version. The prefix is the
+    stable half of it."""
+    for name in ("Fable", "Fable 5", "fable"):
+        body = {"limits": [scoped_limit(7.0, FABLE_AT, name=name)]}
+        assert usage.from_oauth(body, now=1.0)[usage.FABLE]["percent"] == 7.0
+    other = {"limits": [scoped_limit(7.0, FABLE_AT, name="Opus")]}
+    assert usage.from_oauth(other, now=1.0) is None
+
+
+def test_a_fable_window_the_account_has_but_is_not_using_is_idle():
+    """The endpoint answers an unused window as a zero with no reset — measured
+    on the 5-hour window of an idle account the same day. The percentage alone
+    is what says the account *has* the window, so it is recorded without a
+    reset rather than dropped, and reads IDLE where a missing entry reads
+    ABSENT.
+    """
+    reading = usage.from_oauth({"limits": [scoped_limit(0.0, None)]}, now=1.0)
+    assert reading[usage.FABLE] == {"percent": 0.0, "resets_at": None}
+    assert usage.state(reading, usage.FABLE, now=1.0).kind == usage.IDLE
+
+
+def test_a_rolled_over_fable_window_is_idle_from_its_timestamp():
+    """The same anchor rule as the other two: past means it refilled."""
+    reading = usage.from_oauth(oauth(fable=(90.0, FABLE_AT)), now=1.0)
+    assert usage.state(reading, usage.FABLE, FABLE_EPOCH - 60).kind == usage.BOUNDED
+    assert usage.state(reading, usage.FABLE, FABLE_EPOCH + 60).kind == usage.IDLE
+
+
+def test_silence_about_fable_does_not_erase_it_either(monkeypatch, tmp_path):
+    """`_carried`, which is why the hook can be quiet about a window the poll
+    measured. The allowlist that decides whether the bundle emits `model_scoped`
+    is a remote config, so a statusline tick may name the two plan windows and
+    nothing else while the endpoint is still reporting a live Fable window.
+    """
+    env(monkeypatch, tmp_path)
+    assert usage.record_reading(
+        "work", usage.from_oauth(oauth(fable=(5.0, FABLE_AT)), now=100.0)) is True
+    usage.record_reading("work", usage.from_statusline(
+        statusline(five=(50.0, 1785000600)), now=200.0))
+    assert usage.load("work")[usage.FABLE] == {"percent": 5.0,
+                                               "resets_at": FABLE_EPOCH}
+
+
+def test_a_moved_fable_window_is_a_change_worth_writing(monkeypatch, tmp_path):
+    """It is in WINDOWS, so it reaches the write-on-change rule the other two
+    obey — and with it the signal that rides on the write."""
+    env(monkeypatch, tmp_path)
+    usage.record_reading("work", usage.from_oauth(oauth(fable=(5.0, FABLE_AT)),
+                                                  now=100.0))
+    assert usage.record_reading(
+        "work", usage.from_oauth(oauth(fable=(5.0, FABLE_AT)), now=200.0)) is False
+    assert usage.record_reading(
+        "work", usage.from_oauth(oauth(fable=(6.0, FABLE_AT)), now=300.0)) is True
+
+
+def test_the_fable_window_takes_the_label_when_it_is_the_binding_one():
+    """The rule the 7-day window already had, and it was never about that window
+    in particular: a weekly reset is days away, so above the threshold the
+    number is the actionable fact and the 5-hour clock is not."""
+    reading = usage.from_oauth(
+        oauth(five=(40.0, FIVE_AT), fable=(94.0, FABLE_AT)),
+        now=1.0)
+    now = FIVE_EPOCH - 3600     # both windows still running
+    assert usage.bar(reading, now) == ("fable 94%", f"color='{usage.RED}'")
+    assert usage.lines(reading, now)[1] == \
+        f"fable ≥94% · clears {usage.reset_time(FABLE_EPOCH, now)}"
+
+
+def test_a_quiet_fable_window_stays_off_the_bar_and_out_of_the_lines():
+    reading = usage.from_oauth(
+        oauth(five=(40.0, FIVE_AT), fable=(12.0, FABLE_AT)),
+        now=1.0)
+    now = FIVE_EPOCH - 3600
+    assert usage.bar(reading, now)[0] == usage.reset_clock(FIVE_EPOCH)
+    assert len(usage.lines(reading, now)) == 1
+
+
+def test_the_column_says_the_fable_window_like_any_other():
+    now = FABLE_EPOCH - 86400
+    reading = usage.from_oauth(oauth(fable=(5.0, FABLE_AT)), now=1.0)
+    assert usage.column(reading, usage.FABLE, now) == \
+        f"fable ≥5% clears {usage.reset_time(FABLE_EPOCH, now)}"
+    assert usage.column(usage.from_oauth(oauth(), now=1.0), usage.FABLE, now) == \
+        "fable —"
 
 
 def test_the_endpoint_is_a_third_shape_of_the_same_fact():

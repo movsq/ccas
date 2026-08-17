@@ -112,13 +112,16 @@ NOW = 1_800_000_000.0            # a fixed epoch, so the clocks are stable
 IN_2H20 = NOW + 2 * 3600 + 20 * 60
 
 
-def reading(five_pct=62.0, five_at=IN_2H20, seven_pct=None, seven_at=None):
+def reading(five_pct=62.0, five_at=IN_2H20, seven_pct=None, seven_at=None,
+            fable_pct=None, fable_at=None):
     out = {"fetched_at": NOW, "source": "statusline",
-           "five_hour": None, "seven_day": None}
+           "five_hour": None, "seven_day": None, usage.FABLE: None}
     if five_pct is not None:
         out["five_hour"] = {"percent": five_pct, "resets_at": int(five_at)}
     if seven_pct is not None:
         out["seven_day"] = {"percent": seven_pct, "resets_at": int(seven_at)}
+    if fable_pct is not None:
+        out[usage.FABLE] = {"percent": fable_pct, "resets_at": int(fable_at)}
     return out
 
 
@@ -148,6 +151,43 @@ def test_seven_day_tokens():
     assert bare({}, "%7dtimeleft", r) == "2d21h"
     assert bare({}, "%7dused", r) == "100%"
     assert bare({}, "%7dquotaleft", r) == "0%"
+
+
+FABLE_AT = NOW + 2 * 86400 + 21 * 3600
+
+
+def test_fable_tokens():
+    """The model-scoped weekly window, with the 7-day set's shape: its reset is
+    days out, so the clock carries a weekday."""
+    r = reading(fable_pct=94.0, fable_at=FABLE_AT)
+    assert bare({}, "%fablereset", r) == usage.reset_time(int(FABLE_AT), NOW)
+    assert bare({}, "%fableresetday", r) == time.strftime("%a", time.localtime(FABLE_AT))
+    assert bare({}, "%fableresettime", r) == time.strftime("%H:%M", time.localtime(FABLE_AT))
+    assert bare({}, "%fabletimeleft", r) == "2d21h"
+    assert bare({}, "%fableused", r) == "94%"
+    assert bare({}, "%fablequotaleft", r) == "6%"
+
+
+def test_the_fable_tokens_render_empty_for_an_account_without_the_window():
+    """The two accounts differ in whether the endpoint reports a Fable window at
+    all, and one format string is shared between them by hand. ABSENT renders
+    every one of these empty — including the clocks, which say `idle` only for a
+    window that exists and is resting — so the label of an account with no Fable
+    limit closes over the gap instead of claiming 100% of a quota it has not got.
+    """
+    r = reading()
+    for token in ("%fablereset", "%fableresetday", "%fableresettime",
+                  "%fabletimeleft", "%fableused", "%fablequotaleft"):
+        assert bare({}, token, r) == ""
+    assert bare({}, "%5hused %fableused", r) == "62%"
+
+
+def test_an_idle_fable_window_says_so_like_the_other_clocks():
+    """It exists, it is simply not running — the one thing a missing window may
+    not be confused with."""
+    r = reading(fable_pct=94.0, fable_at=NOW - 60)
+    assert bare({}, "%fablereset", r) == usage.IDLE_MARK
+    assert bare({}, "%fableused", r) == "0%"
 
 
 def test_seven_day_reset_splits_into_a_day_and_a_time():

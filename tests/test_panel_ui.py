@@ -554,6 +554,52 @@ def _rows(percent, color, kind=usage.BOUNDED):
              "percent": percent, "resets": "in 2h", "color": color}]
 
 
+def _fable_row(percent, color):
+    return {"key": usage.FABLE, "label": "fable", "kind": usage.BOUNDED,
+            "percent": percent, "resets": "Sun 19:00", "color": color}
+
+
+def test_a_refresh_pairs_the_rows_by_window_not_by_position(gtk):
+    """The row set is per-account now: an account the endpoint has never named a
+    Fable window for has two bars, and the on-demand fetch is what may first
+    discover it has three. Pairing by position was safe while every reading gave
+    the same rows in the same order — with a row that comes and goes it would
+    paint one window's numbers onto another window's bar, which is the hazard
+    the generation guard already covers for accounts.
+    """
+    box, apply_rows = panel_ui._build_usage(
+        _rows(20.0, "#a6e3a1") + [_fable_row(90.0, "#f38ba8")])
+    five, fable = _walk(box, lambda w: isinstance(w, Gtk.ProgressBar))
+
+    # One row, and it is not the first one: by position it lands on the 5-hour
+    # bar, by name on the one it is about.
+    apply_rows([_fable_row(95.0, "#f38ba8")])
+    assert fable.get_fraction() == pytest.approx(0.95)
+    assert five.get_fraction() == pytest.approx(0.20)
+
+    # A window the body was never built for paints nothing rather than shifting
+    # the ones that follow it.
+    apply_rows([dict(_fable_row(10.0, None), key="seven_day"),
+                _rows(40.0, "#a6e3a1")[0]])
+    assert five.get_fraction() == pytest.approx(0.40)
+    assert fable.get_fraction() == pytest.approx(0.95)
+
+
+def test_the_window_names_share_one_column_width(gtk):
+    """`5h`, `wk` and `fable` are two, two and five characters, so a label sized
+    to its text starts each bar at a different x. The width is set here rather
+    than in menu.css because install.sh copies that file once and never again —
+    a stylesheet fix would reach nobody who already has a panel.
+    """
+    box, _apply = panel_ui._build_usage(
+        _rows(20.0, None) + [_fable_row(5.0, None)])
+    keys = [w for w in _walk(box, lambda w: isinstance(w, Gtk.Label))
+            if w.has_css_class("ccas-usage-key")]
+    assert [w.get_label() for w in keys] == ["5h", "fable"]
+    assert {w.get_width_chars() for w in keys} == {panel_ui.KEY_CHARS}
+    assert panel_ui.KEY_CHARS >= len("fable")
+
+
 def test_a_refresh_moves_the_bar_and_its_label(gtk):
     """In place, not by rebuilding the body. A fetch landing half a second after
     the panel opened would otherwise tear the widget tree out from under someone
