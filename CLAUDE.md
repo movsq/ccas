@@ -250,6 +250,27 @@ unreadable, since `%5hreset %5hquotaleft` then collapsed to a bare `100%`, which
 on a usage widget reads as 100% *used*. `ABSENT` keeps the empty string there:
 "idle" would be a claim the reading cannot support.
 
+**A window an account does not have is not a window at rest.** `usage.SCOPED`
+holds the model-scoped windows — `usage.FABLE` is the only one — and it exists
+because the rule above inverts for them. Every subscription has the two plan
+windows, so silence about one says the quota refilled; a model-scoped window is
+named only for an account the server meters that model for, so silence says
+there is no such limit. Measured 2026-08-17 on the two real accounts: one
+endpoint body carried a weekly Fable entry and the other named none. An unnamed
+scoped window is therefore `ABSENT` — the panel drops its bar, `ccs usage` drops
+its column and every `%fable…` token renders empty — while one that was named
+once and has since passed its reset is `IDLE` like any other. It is also the one
+window recorded from its percentage alone: an idle window comes back as a zero
+with **no reset**, and dropping it for the missing half would erase the only
+evidence the account has the limit at all. It is not a top-level key in either
+payload — the endpoint carries it inside `limits[]` as the weekly entry whose
+`scope.model` is set, and the hook as `rate_limits.model_scoped`, which spells
+the percentage and the reset differently from its own siblings.
+`docs/usage-limits-research.md` has all three shapes. Matched on the display
+name by **prefix**, because Claude Code's own allowlist reads
+`["Fable", "Fable 5"]`; another model bucket appearing is another commit, not a
+read path that understands both.
+
 **Silence about a window is not a measurement of it.** `_reading()` refuses a
 payload naming neither window; `record_reading` handles the half of that rule the
 first version missed, carrying a window the incoming reading does not name over

@@ -152,3 +152,86 @@ rather than to fixed clock slots, then once it has rolled over there is no next
 `resets_at` until the account is used again. The display for that state is
 "open", not a time — and that is the *good* state, so it should not read like
 missing data.
+
+## The model-scoped window — measured 2026-08-17
+
+A third window exists, and only for some accounts. The user's two were the
+control pair: one reports a weekly **Fable** limit and the other names none.
+
+### Where it lives in the endpoint's body
+
+Not beside `five_hour` and `seven_day`. Those two are top-level keys, as are
+`seven_day_opus` and `seven_day_sonnet` — both `null` on every reading taken
+here. The Fable window is an entry in the body's `limits[]` array instead:
+
+```json
+{ "kind": "weekly_scoped", "group": "weekly", "percent": 5,
+  "severity": "normal", "resets_at": "2026-08-23T19:00:00.350093+00:00",
+  "scope": { "model": { "id": null, "display_name": "Fable" }, "surface": null },
+  "is_active": false }
+```
+
+`GET /api/oauth/usage`, both accounts, the same minute:
+
+| account | `limits[]` entries |
+|---|---|
+| vo.sedlacek@gmail.com | `session`, `weekly_all`, **`weekly_scoped` (Fable, 5%)** |
+| the other | `session`, `weekly_all` |
+
+Same plan-window shape on both, so this is a per-account fact about which model
+buckets the server meters — not a difference in how the two are read.
+
+### Where it lives in the hook's payload
+
+The bundle projects the same array into `rate_limits.model_scoped`, and its own
+schema says what for:
+
+```js
+model_scoped: array({
+  display_name: string.describe("Server-supplied label for the model bucket (e.g. 'Fable')."),
+  utilization: number.nullable(),
+  resets_at: string.nullable() })
+  .describe("Per-model weekly windows from the server limits[] array, filtered
+             by the overage-included-models allowlist. Additive — present only
+             when the server emits them.")
+```
+
+Built by the projection below, which is also where the filter lives:
+
+```js
+eQt(limits, allow) = (limits ?? [])
+  .filter(n => n.kind === "weekly_scoped" && n.scope?.model
+               && allow.map(x => x.toLowerCase())
+                       .includes(n.scope.model.display_name.toLowerCase()))
+  .map(n => ({ title: `Current week (${n.scope.model.display_name})`, … }))
+```
+
+Two traps in one payload, both load-bearing for `usage.py`:
+
+- the percentage is **`utilization`** where its `five_hour` sibling in the same
+  `rate_limits` object says `used_percentage`;
+- `resets_at` is an **ISO 8601 string** where its sibling's is epoch seconds —
+  the projection converts it (`new Date(x * 1000).toISOString()`).
+
+The allowlist is a remote config, `tengu_usage_overage_included_models`. Cached
+in each account's `.claude.json` under `cachedGrowthBookFeatures`, it read
+`["Fable", "Fable 5"]` on both accounts — so the display name carries a version
+and the match has to be a prefix rather than an equality. CCAS does not read the
+gate: `limits[]` is filtered by it only on the way into the hook payload, and
+the endpoint body carries the entry either way.
+
+### What it means when it is missing
+
+A window the body does not name is **not** the same fact for the two kinds. The
+plan windows are on every subscription, so silence about one says the quota
+refilled — that is the `IDLE` rule, and it was a bug once to read it as
+ignorance. A model-scoped window is missing when the account has no such limit
+at all, and reading *that* as "0% used" would put a meter on the bar for a quota
+that does not exist. So `usage.SCOPED` names the windows where an unnamed window
+is `ABSENT`, and only a window that was named once and has since passed its
+reset is `IDLE`.
+
+Corroborating shape, same day: an idle account's *plan* window comes back as
+`{"utilization": 0.0, "resets_at": null}` rather than disappearing. So a zero
+with no reset is how the endpoint says "this window exists and is not running",
+which is why a scoped window is recorded from its percentage alone.

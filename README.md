@@ -136,8 +136,13 @@ default account answers rather than blocking on a stdin nobody can type into.
 
 ## Usage limits
 
-Each account can report its own 5-hour and 7-day quota, shown as two bars in the
-panel. The reading comes from Claude Code's own statusline hook, so **CCAS never
+Each account can report its own 5-hour and 7-day quota, shown as bars in the
+panel. Some accounts are also metered per model — a weekly **Fable** window —
+and that one gets a third bar, a `fable` column in `ccs usage` and its own
+`%fable…` label tokens, but only for an account the server reports it for. An
+account with no such limit shows no such bar: a missing model window means the
+limit does not exist, where a missing 5-hour window only means the quota
+refilled. The reading comes from Claude Code's own statusline hook, so **CCAS never
 wires it for you** — every account's `settings.json` is a symlink to
 `~/.claude/settings.json`, and writing it would break the invariant above.
 `ccs doctor` prints the exact line to add:
