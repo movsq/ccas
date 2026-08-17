@@ -582,6 +582,39 @@ for — and is not evidence about an idle one. The keyboard has no such problem:
 uinput device is a real device, and that is why the Escape checks above hold
 without an asterisk.
 
+### The keyboard is not only for Escape (2026-08-17)
+
+The account-switch chip was the next thing that had to be shown working on a
+monitor the user was not using, and it went the same way: the panel opened on a
+`swaymsg create_output` headless connector, `grim` showed the pointer inside the
+chip and the chip drawing its hover, and the press did nothing at all. That is
+the finding above, met a second time — hover is a repaint the client makes from
+an `enter` it may still be holding, and it is not evidence that a *press* will
+be routed anywhere. Two sessions ended with the switch verified by tests and by
+opening each account directly, which is not the same claim as "the chip works".
+
+The escape was already written down one paragraph up and not read as a general
+tool: the keyboard has no such problem. `EXCLUSIVE` keyboard interactivity takes
+the seat's focus at map time on whatever output the surface opened on, so the
+whole focus chain is reachable there — Tab to the widget, Enter to activate it.
+A uinput keyboard, a Tab, a `grim`, and a search for the focus ring's colour
+locate the ring without eyeballing anything; one Tab on a freshly mapped panel
+lands on the first chip in the header, and Enter switched the account.
+
+What that bought, beyond the switch itself: the same window and the same pid,
+the lock rewritten in place from `<pid> vo-sedlacek HEADLESS-2` to
+`<pid> vsed HEADLESS-2` — the in-place body swap and `dispatch_panel`'s
+re-claim, both doing exactly what they are documented to — no `NameError` in the
+log behind the retired body, and the two accounts' usage rows side by side:
+three bars on the account the server meters Fable for, two on the account it
+does not, the missing one dropped rather than drawn at zero. The control pair,
+on screen, which is the argument for the whole `SCOPED` rule.
+
+One caution the walk cost: focus is the *seat's*, so the user touching a window
+on their own monitor takes it back, and the next Tab goes to them rather than to
+the panel. A walk cannot be resumed after that — relaunch the panel and start
+the chain again.
+
 
 ---
 

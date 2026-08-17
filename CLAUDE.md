@@ -527,6 +527,20 @@ moment it exists, the same stance CCAS takes toward `style.css`.
   verify a commit path end to end — but **motion delivered while the button is
   held does not**, so a drag there proves nothing. Design the check around a
   click, not a drag.
+- **To activate a widget on an idle output, drive the focus chain, not the
+  pointer.** The keyboard is the way in — a uinput device is real, and a panel
+  with `EXCLUSIVE` keyboard mode takes the focus at map time on whatever output
+  it opened on. So Tab reaches any focusable widget there and Enter activates
+  it, which is the whole of what a click was wanted for. Establish where the
+  ring is *before* pressing anything: tap Tab, `grim -o`, and look for the ring
+  colour — `(23, 67, 125)` under this theme — rather than eyeballing a
+  screenshot. On a freshly mapped panel one Tab lands on the first account chip
+  the header offers (the current account's chip is skipped, having no handler),
+  and Escape closes it, which re-checks the keyboard path on the way out. Two
+  cautions: focus is only reliable on a panel that has *just* mapped — the user
+  touching a window on their own monitor takes the seat's focus away and the
+  next Tap goes to them, so relaunch rather than resuming a walk — and never
+  send Enter until a capture says the ring is where you think it is.
 - **Never map a test window onto the output the user is working on.** Decide
   where a surface will land *before* spawning it, pin it to an idle output, and
   kill it once the capture is taken. Which output that is changes; ask or look
