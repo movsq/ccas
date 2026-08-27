@@ -1167,6 +1167,11 @@ def _build_toggles(state, pick, ui_state):
 
     box.append(toggle("headless runner", "headless", "headless"))
     box.append(toggle("hide the icon", "hide_icon", "hide_icon"))
+    # Below hide-the-icon because it is the same wish one step further: the
+    # glyph, then the whole widget. Ticking it here is not a one-way door — the
+    # panel is opened from any account's widget and every chip is in the header,
+    # so the switch that puts it back is still one click from the bar.
+    box.append(toggle("hide from the bar", "hidden", "hidden"))
 
     # A title and hint pair, reusing the Settings row's own classes rather than
     # inventing a second pair that would drift from it. It covers the format

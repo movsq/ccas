@@ -342,3 +342,25 @@ def test_doctor_says_when_an_accounts_token_is_past_its_horizon(monkeypatch):
                                   "usage freshness")
     assert row.ok is True
     assert "polling is quiet" in row.detail
+
+
+def test_a_hidden_account_is_not_missing_from_the_bar():
+    """Off the bar on purpose is not drift. Both halves have to agree, or
+    hiding an account would turn doctor red and send the user to `ccs config`,
+    which would put the widget straight back.
+
+    Two accounts, one of each: with only the hidden one the style check returns
+    early on an empty set and the per-slug loop — the half that has to learn
+    the difference — never runs at all.
+    """
+    reg = healthy()
+    registry.add(reg, "home", "home@x.com", "home")
+    registry.set_field(reg, "home", "hidden", True)
+    registry.save(reg)
+    accounts.create("home")
+    accounts.relink("home")
+    reg = registry.load()
+    waybar.apply(reg)
+    assert failures(reg) == []
+    assert "#custom-cc-home" not in \
+        paths.waybar_style().read_text(encoding="utf-8")

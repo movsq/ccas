@@ -901,7 +901,7 @@ def test_a_setting_is_applied_without_shutting_the_panel():
     The settings kinds are applied in place instead — you came to change several
     things, and reopening the panel per tick is not how that reads."""
     from ccas import panel
-    for kind in ("headless", "dangerous", "hide_icon",
+    for kind in ("headless", "dangerous", "hide_icon", "hidden",
                  "color", "format_color", "format"):
         assert kind in panel.STAYS_OPEN
     # A launch and anything that spawns a terminal still end it: the panel has
@@ -1073,3 +1073,12 @@ def test_a_format_change_rebuilds_the_colour_chips():
     assert "format" not in panel.NO_REBUILD
     assert "color" in panel.NO_REBUILD
     assert "format_color" in panel.NO_REBUILD
+
+
+def test_build_state_says_whether_the_account_is_on_the_bar(reg):
+    """The one toggle whose state cannot be read off the bar — a widget that is
+    not there says nothing — so the panel has to carry it."""
+    assert panel.build_state("one")["hidden"] is False
+    registry.set_field(reg, "one", "hidden", True)
+    registry.save(reg)
+    assert panel.build_state("one")["hidden"] is True

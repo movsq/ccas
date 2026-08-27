@@ -324,3 +324,29 @@ def test_a_new_accounts_format_colours_survive_set_field():
     reg = {"default": None, "accounts": []}
     a = registry.add(reg, "a", "a@x", None)
     registry.set_field(reg, "a", "format_colors", dict(a["format_colors"]))
+
+
+def test_a_new_account_is_on_the_bar():
+    """The reason to add an account is to see it. `hidden` is the opt-out."""
+    reg = registry.load()
+    assert registry.add(reg, "work", "w@example.com", None)["hidden"] is False
+
+
+def test_hidden_defaults_off_for_a_registry_written_before_it_existed():
+    """No migrations: the read path defaults what it needs, and an account
+    without the key is one that was never taken off the bar."""
+    paths.accounts_root().mkdir(parents=True, exist_ok=True)
+    paths.registry_file().write_text(json.dumps({
+        "default": "work",
+        "accounts": [{"slug": "work", "nickname": None, "email": "w@x.com",
+                      "color": "#fab387", "hide_icon": False, "signal": 1}],
+    }), encoding="utf-8")
+    assert registry.load()["accounts"][0]["hidden"] is False
+
+
+def test_hidden_survives_a_round_trip():
+    reg = registry.load()
+    registry.add(reg, "work", "w@example.com", None)
+    registry.set_field(reg, "work", "hidden", True)
+    registry.save(reg)
+    assert registry.find(registry.load(), "work")["hidden"] is True

@@ -32,6 +32,7 @@ def load() -> dict:
     for account in reg["accounts"]:
         account.setdefault("headless", False)
         account.setdefault("dangerous", False)
+        account.setdefault("hidden", False)
     return reg
 
 
@@ -87,6 +88,9 @@ def add(reg: dict, slug: str, email: str, nickname):
         "format_colors": format.default_format_colors(color),
         "headless": False,
         "dangerous": False,
+        # Off the bar, not gone. A new account is on it — the whole reason to
+        # add one is to see it.
+        "hidden": False,
         "warned_invisible": False,
         "signal": len(reg["accounts"]) + 1,
     }

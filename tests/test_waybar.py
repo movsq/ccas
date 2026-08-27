@@ -278,3 +278,59 @@ def test_strip_takes_the_style_block_out_too():
     waybar.apply(reg("work"))
     waybar.strip(style, "/*", "*/")
     assert style.read_text(encoding="utf-8") == "#clock { padding: 0 12px; }\n"
+
+
+# ── hidden accounts ──────────────────────────────────────────────────────────
+#
+# "Off the bar" is a different thing from "removed", and the registry is the
+# only place that can hold the difference: the account still resolves, still
+# runs and still shows in the panel — it just has no widget.
+
+
+def hide(reg_dict: dict, *slugs: str) -> dict:
+    for account in reg_dict["accounts"]:
+        if account["slug"] in slugs:
+            account["hidden"] = True
+    return reg_dict
+
+
+def bare(text: str) -> dict:
+    return json.loads("".join(
+        l for l in text.splitlines(keepends=True) if not l.strip().startswith("//")
+    ))
+
+
+def test_a_hidden_account_gets_no_module(_isolate):
+    waybar.apply(hide(reg("work", "home"), "home"))
+    data = bare(_isolate.read_text())
+    assert "custom/cc-home" not in data
+    assert data[waybar.HOST_LIST] == ["custom/cc-work"]
+
+
+def test_a_hidden_account_gets_no_style_rule(_isolate):
+    """The rules name the widgets that exist. A selector for a module Waybar
+    was never told to build is dead text in the user's stylesheet."""
+    waybar.apply(hide(reg("work", "home"), "home"))
+    text = paths.waybar_style().read_text(encoding="utf-8")
+    assert "#custom-cc-home" not in text
+    assert "#custom-cc-work:hover" in text
+
+
+def test_unhiding_puts_the_module_back(_isolate):
+    waybar.apply(hide(reg("work", "home"), "home"))
+    waybar.apply(reg("work", "home"))
+    data = bare(_isolate.read_text())
+    assert data[waybar.HOST_LIST] == ["custom/cc-work", "custom/cc-home"]
+
+
+def test_hiding_every_account_empties_the_bar_rather_than_offering_to_add_one(_isolate):
+    """The placeholder says "no accounts configured — click to add one", which
+    on a registry holding two accounts is a lie, and its click opens a login
+    the user did not ask for. Nothing is the honest answer to "none of them"."""
+    waybar.apply(hide(reg("work", "home"), "work", "home"))
+    text = _isolate.read_text()
+    assert "custom/cc-setup" not in text
+    data = bare(text)
+    assert not [k for k in data if k.startswith("custom/cc-")]
+    assert waybar.HOST_LIST not in data
+    assert "#custom-cc-" not in paths.waybar_style().read_text(encoding="utf-8")

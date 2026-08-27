@@ -283,7 +283,7 @@ def test_the_widget_settings_carry_a_heading(gtk, monkeypatch):
                         lambda slug, now=None: lambda text: (text, []))
     _visible, hidden = panel_ui._build_toggles(
         {"slug": "vsed", "format": "%name", "headless": False,
-         "dangerous": False, "hide_icon": False,
+         "dangerous": False, "hide_icon": False, "hidden": False,
          "color_targets": TARGETS},
         lambda _a: None, {"target": 0, "expanded": True})
 
@@ -300,6 +300,48 @@ def test_the_widget_settings_carry_a_heading(gtk, monkeypatch):
     walk(hidden)
     assert "Bar label" in found
     assert "What this account's widget says, and how it is coloured" in found
+
+
+def _drawer_checkboxes(gtk, monkeypatch, **state):
+    """Every checkbox in the drawer, by label, with the box that holds them."""
+    monkeypatch.setattr(panel, "format_previewer",
+                        lambda slug, now=None: lambda text: (text, []))
+    picked = []
+    base = {"slug": "vsed", "format": "%name", "headless": False,
+            "dangerous": False, "hide_icon": False, "hidden": False,
+            "color_targets": TARGETS}
+    _visible, drawer = panel_ui._build_toggles(
+        {**base, **state}, picked.append, {"target": 0, "expanded": True})
+    found = {}
+
+    def walk(widget):
+        child = widget.get_first_child()
+        while child is not None:
+            if isinstance(child, gtk.CheckButton):
+                found[child.get_label()] = child
+            walk(child)
+            child = child.get_next_sibling()
+
+    walk(drawer)
+    return found, picked
+
+
+def test_the_drawer_offers_to_take_the_account_off_the_bar(gtk, monkeypatch):
+    """The one setting whose state the bar cannot show — a widget that is not
+    there says nothing — so the panel is where it has to be readable."""
+    found, _picked = _drawer_checkboxes(gtk, monkeypatch)
+    assert "hide from the bar" in found
+    assert found["hide from the bar"].get_active() is False
+    found, _picked = _drawer_checkboxes(gtk, monkeypatch, hidden=True)
+    assert found["hide from the bar"].get_active() is True
+
+
+def test_ticking_it_asks_cli_to_hide_the_account(gtk, monkeypatch):
+    """"toggled", not "clicked": set_active() above would fire clicked and the
+    panel would act on its own initial render."""
+    found, picked = _drawer_checkboxes(gtk, monkeypatch)
+    found["hide from the bar"].set_active(True)
+    assert picked == [panel.Action("hidden", "vsed", None)]
 
 
 # ── switching account inside the one window ───────────────────────────────────
@@ -330,7 +372,8 @@ def _state(slug):
                       "current": s == slug} for s in ("one", "two")],
         "format": "%name", "format_colors": {},
         "color_targets": [{"token": None, "label": "icon", "color": "#89b4fa"}],
-        "hide_icon": False, "headless": False, "dangerous": False,
+        "hide_icon": False, "hidden": False, "headless": False,
+        "dangerous": False,
         "usage": [{"key": "five_hour", "label": "5h", "kind": usage.ABSENT,
                    "percent": None, "resets": "", "color": None}],
         "projects": PROJECTS, "sessions": SESSIONS,

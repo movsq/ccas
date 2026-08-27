@@ -128,6 +128,28 @@ def _toggle_dangerous(reg, slug: str) -> int:
     return 0
 
 
+def _toggle_hidden(reg, slug: str) -> int:
+    """Take one account's widget off the bar, or put it back.
+
+    Hidden is not removed: the directory, the slug, the signal, the usage
+    recording and the panel chip all stay, so the account is still one click
+    away from any other widget — it just stops paying for bar width of its own.
+
+    The only setting that changes the *set* of modules, which is why it is the
+    only one besides add and remove that rewrites config.jsonc and reloads.
+    A per-module signal re-runs `exec` for a module Waybar already knows about;
+    the change here is that it should not know about it at all.
+    """
+    account = registry.find(reg, slug)
+    if account is None:
+        return 1
+    registry.set_field(reg, slug, "hidden", not account.get("hidden"))
+    registry.save(reg)
+    waybar.apply(reg)
+    waybar.reload()
+    return 0
+
+
 def _mutate(slug: str, field: str, value) -> int:
     reg = registry.load()
     if registry.find(reg, slug) is None:
@@ -276,6 +298,8 @@ def dispatch_panel(action):
         return 0
     if kind == "dangerous":
         return _toggle_dangerous(registry.load(), slug)
+    if kind == "hidden":
+        return _toggle_hidden(registry.load(), slug)
     if kind == "hide_icon":
         account = registry.find(registry.load(), slug)
         if account is None:
@@ -384,8 +408,12 @@ def cmd_list() -> int:
         star = "*" if reg["default"] == a["slug"] else " "
         # Permission bypass is worth seeing without opening a menu.
         bang = "!" if a.get("dangerous") else " "
+        # Spelled out rather than given a third mark column: an account with no
+        # widget is the one state of these that cannot be checked by looking at
+        # the bar, so the listing is where it has to be legible.
+        off = "  (off the bar)" if a.get("hidden") else ""
         print(f"{star}{bang} {i}  {a['slug']:<14} {a['email']:<28} "
-              f"{a['color']}")
+              f"{a['color']}{off}")
     return 0
 
 
@@ -691,6 +719,8 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
                   else f"{label.MARK_OFF} Skip permissions (dangerous)")
     hide_row = (f"{label.MARK_ON if account and account['hide_icon'] else label.MARK_OFF}"
                 " Hide icon")
+    bar_row = (f"{label.MARK_ON if account and account.get('hidden') else label.MARK_OFF}"
+               " Hide from the bar")
     # Everything below this point is the terminal door alone — the bar's click
     # returned above. So the launch verbs name a directory and scope to it,
     # which is the whole reason a terminal is worth keeping: the cwd is one the
@@ -703,7 +733,7 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
                    f"History in  {short}…", "All projects…"]
     # The old menu's grouping: launch verbs, appearance, runner toggles, manage.
     options = [*launch_rows,
-               hide_row, "Color…",
+               hide_row, bar_row, "Color…",
                headless_row, danger_row, "Manage…"]
     # The account's identity, which used to be the menu's title row — a picker
     # prompted "mode" does not say which account it belongs to. Under it, where
@@ -718,6 +748,8 @@ def cmd_mode_menu(slug: str, gui: bool) -> int:
         return _color_menu(reg, slug, gui)
     if choice == hide_row:
         return _mutate(slug, "hide_icon", not account["hide_icon"])
+    if choice == bar_row:
+        return _toggle_hidden(reg, slug)
     if choice == headless_row:
         _toggle_headless(reg, slug)
         return 0
@@ -822,6 +854,14 @@ def main(argv) -> int:
                     print(account["slug"])
             return 0
         return _toggle_dangerous(reg, rest[0])
+    if command == "hidden":
+        reg = registry.load()
+        if not rest:
+            for account in reg["accounts"]:
+                if account.get("hidden"):
+                    print(account["slug"])
+            return 0
+        return _toggle_hidden(reg, rest[0])
     if command == "default":
         reg = registry.load()
         if not rest:

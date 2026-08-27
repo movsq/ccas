@@ -35,8 +35,8 @@ Action = namedtuple("Action", "kind slug value")
 # panel_ui swaps the body inside the one window instead, so a switch is the same
 # panel showing someone else, and cli's share of it is moving the lock.
 STAYS_OPEN = frozenset({
-    "headless", "dangerous", "hide_icon", "color", "format_color", "format",
-    "switch",
+    "headless", "dangerous", "hide_icon", "hidden", "color", "format_color",
+    "format", "switch",
 })
 
 # Of those, the ones applied *without* rebuilding the settings subtree. A
@@ -304,6 +304,10 @@ def build_state(slug: str, now=None) -> dict:
         # left to right the way the label does.
         "color_targets": color_targets(account),
         "hide_icon": bool(account.get("hide_icon")),
+        # Whether this account has a widget at all. Reachable from any other
+        # account's panel, which is what makes it safe to tick: the switch that
+        # undoes it does not live on the bar.
+        "hidden": bool(account.get("hidden")),
         "headless": bool(account.get("headless")),
         "dangerous": bool(account.get("dangerous")),
         "usage": _usage_rows(slug, now),

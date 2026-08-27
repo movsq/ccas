@@ -1815,3 +1815,60 @@ def test_a_manage_terminal_does_not_wait_for_itself(monkeypatch):
     (argv, kw), = spawned
     assert argv[0] == "kitty"
     assert kw["start_new_session"] is True
+
+
+def test_hidden_takes_the_widget_off_the_bar_and_leaves_the_account(monkeypatch):
+    """Off the bar is not removed: `ccs rm` trashes the directory, this does
+    not touch it. The account still resolves, still runs, still records."""
+    make_account("work")
+    make_account("home")
+    assert cli.main(["hidden", "home"]) == 0
+    assert registry.find(registry.load(), "home")["hidden"] is True
+    assert paths.account_dir("home").is_dir()
+    text = paths.waybar_config().read_text(encoding="utf-8")
+    assert "custom/cc-home" not in text
+    assert "custom/cc-work" in text
+    assert "#custom-cc-home" not in paths.waybar_style().read_text(encoding="utf-8")
+
+
+def test_hidden_toggles_back(monkeypatch):
+    make_account("work")
+    assert cli.main(["hidden", "work"]) == 0
+    assert cli.main(["hidden", "work"]) == 0
+    assert registry.find(registry.load(), "work")["hidden"] is False
+    assert "custom/cc-work" in paths.waybar_config().read_text(encoding="utf-8")
+
+
+def test_hidden_reloads_the_bar_rather_than_signalling_one_module(monkeypatch):
+    """The set of modules is what changed, and Waybar reads that at startup —
+    SIGRTMIN+n re-runs a module's exec, which cannot remove the module."""
+    make_account("work")
+    calls = []
+    monkeypatch.setattr(cli.waybar, "reload", lambda: calls.append("reload"))
+    monkeypatch.setattr(cli.waybar, "signal", lambda n: calls.append(f"signal{n}"))
+    assert cli.main(["hidden", "work"]) == 0
+    assert calls == ["reload"]
+
+
+def test_hidden_with_no_slug_lists_what_is_off_the_bar(capsys):
+    make_account("work")
+    make_account("home")
+    cli.main(["hidden", "home"])
+    capsys.readouterr()
+    assert cli.main(["hidden"]) == 0
+    assert capsys.readouterr().out == "home\n"
+
+
+def test_hidden_for_an_unknown_account_fails_quietly():
+    assert cli.main(["hidden", "ghost"]) == 1
+
+
+def test_list_says_which_account_is_off_the_bar(capsys):
+    make_account("work")
+    make_account("home")
+    cli.main(["hidden", "home"])
+    capsys.readouterr()
+    cli.main(["list"])
+    out = capsys.readouterr().out.splitlines()
+    assert "(off the bar)" in next(l for l in out if "home" in l)
+    assert "(off the bar)" not in next(l for l in out if "work" in l)

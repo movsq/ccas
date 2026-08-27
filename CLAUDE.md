@@ -126,6 +126,21 @@ can disagree with it.
 repair inside it would mask the fault it is looking for — including a `relink`,
 tempting as that is. It reports and says which command fixes it.
 
+**Off the bar is not removed.** `hidden` is a per-account bool and it reaches
+exactly two things: `waybar.visible()`, which every module and every CSS
+selector is built from. The account keeps its directory, its slug, its signal,
+its usage recording and its chip in the panel — `ccs rm` is still the only thing
+that trashes anything. It is the one setting besides add and remove that changes
+the *set* of modules, so `_toggle_hidden` rewrites `config.jsonc` and reloads
+where every other setting is a `waybar.signal()`; a per-module signal re-runs
+`exec` for a module Waybar already knows about, which cannot remove one. Hiding
+the last visible account leaves the managed block holding its own comments and
+nothing else — **not** the placeholder, which says "no accounts configured —
+click to add one" and whose click opens a login. On a registry holding accounts
+that is a lie twice over. `doctor` reads the same `visible()`, or hiding an
+account would turn it red and send the user to `ccs config`, which would put the
+widget straight back.
+
 **A slug is permanent; a nickname is not.** The slug is the account directory
 name and the Waybar module id. `cmd_add` names the directory after the email —
 but only *after* login returns it, via `accounts.rename()` in the one window
@@ -667,6 +682,7 @@ ccs list                         # accounts
 ccs doctor                       # audit the four places that drift; rc 1 if any failed
 ccs config                       # rewrite both managed blocks (config.jsonc, style.css) and reload
 ccs headless [<slug>]            # show / toggle which account runs `ccs -p`
+ccs hidden [<slug>]              # show / toggle which accounts have no widget
 ccs dangerous [<slug>]           # show / toggle --dangerously-skip-permissions per account
 ccs color <slug> <#rrggbb|n>     # the widget's colour; a palette index is shorthand
 ccs format <slug> ['<fmt>']      # show / set the format string — the whole label

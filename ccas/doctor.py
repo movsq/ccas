@@ -125,14 +125,17 @@ def _style_matches(reg: dict) -> Check:
     """
     label_ = "waybar style block matches the registry"
     path = paths.waybar_style()
-    if not reg["accounts"]:
+    # The widgets that exist, which is not every account: a hidden one has no
+    # module, so a rule naming it would be dead text rather than a fix.
+    shown = waybar.visible(reg)
+    if not shown:
         return Check(True, label_, "")
     if not path.exists():
         return Check(False, label_, f"{path} is missing; run `ccs config`")
     text = path.read_text(encoding="utf-8")
     block = text.split(waybar.START, 1)[-1].split(waybar.END, 1)[0] \
         if waybar.START in text else ""
-    missing = [a["slug"] for a in reg["accounts"]
+    missing = [a["slug"] for a in shown
                if f"#custom-cc-{a['slug']}:hover" not in block]
     return Check(not missing, label_,
                  f"no hover rule for {', '.join(missing)}; run `ccs config`"
