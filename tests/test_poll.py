@@ -39,15 +39,31 @@ def body(five=3.0):
                           "resets_at": "2026-08-02T18:59:59.757477+00:00"}}
 
 
-def answering(payload, error=""):
+def answering(payload, error="", retry_after=None):
     """A fetcher that answers without a socket, recording the token it saw."""
     seen = []
 
     def fetcher(token):
         seen.append(token)
-        return payload, error
+        return poll.Reply(payload, error, retry_after)
     fetcher.seen = seen
     return fetcher
+
+
+def failing(*replies):
+    """A fetcher whose answers are scripted, one per call, the last repeating."""
+    seen = []
+
+    def fetcher(token):
+        seen.append(token)
+        reply = replies[min(len(seen) - 1, len(replies) - 1)]
+        return reply
+    fetcher.seen = seen
+    return fetcher
+
+
+DENIED = poll.Reply(None, "http 401", None)
+LIMITED = poll.Reply(None, "http 429", None)
 
 
 NOW = 1785104289.0
@@ -351,7 +367,7 @@ def test_fetch_asks_the_endpoint_claude_code_asks():
         seen["timeout"] = timeout
         return FakeResponse(body())
 
-    payload, error = poll.fetch("sk-tok", opener=opener)
+    payload, error, _ = poll.fetch("sk-tok", opener=opener)
     assert seen["url"] == "https://api.anthropic.com/api/oauth/usage"
     assert seen["auth"] == "Bearer sk-tok"
     assert seen["timeout"] == poll.TIMEOUT
@@ -365,7 +381,7 @@ def test_fetch_turns_an_http_error_into_a_reason():
     def opener(request, timeout=None):
         raise urllib.error.HTTPError(poll.USAGE_URL, 401, "Unauthorized", {}, None)
 
-    payload, error = poll.fetch("sk-tok", opener=opener)
+    payload, error, _ = poll.fetch("sk-tok", opener=opener)
     assert payload is None
     assert "401" in error
 
@@ -374,7 +390,7 @@ def test_fetch_turns_a_timeout_into_a_reason():
     def opener(request, timeout=None):
         raise TimeoutError("timed out")
 
-    payload, error = poll.fetch("sk-tok", opener=opener)
+    payload, error, _ = poll.fetch("sk-tok", opener=opener)
     assert payload is None
     assert error
 
@@ -384,7 +400,7 @@ def test_fetch_survives_a_body_that_is_not_json():
         def read(self):
             return b"<html>nope"
 
-    payload, error = poll.fetch("sk-tok", opener=lambda r, timeout=None: Garbage(None))
+    payload, error, _ = poll.fetch("sk-tok", opener=lambda r, timeout=None: Garbage(None))
     assert payload is None
     assert error
 
@@ -553,3 +569,156 @@ def test_a_carried_five_hour_window_does_not_count_as_freshness(monkeypatch, tmp
 
     assert usage.state(usage.load("work"), "five_hour", NOW).kind == usage.IDLE
     assert poll.due("work", now=NOW) is True
+
+
+# ── backing off after a failure ───────────────────────────────────────────────
+
+def test_backoff_delay_doubles_from_the_cadence_and_stops_at_the_cap():
+    assert poll.backoff_delay(1) == poll.INTERVAL
+    assert poll.backoff_delay(2) == poll.INTERVAL * 2
+    assert poll.backoff_delay(3) == poll.INTERVAL * 4
+    assert poll.backoff_delay(99) == poll.BACKOFF_CAP
+
+
+def test_a_night_of_failures_is_not_a_night_of_requests(monkeypatch, tmp_path):
+    """The outage of 2026-09-02, replayed at the timer's real cadence.
+
+    A FAILED outcome writes no reading, so `fetched_at` never moved, so `due()`
+    was true at every tick: 62 requests between 00:01 and 06:25, 45 of them
+    answered 429, with the user asleep and no answer ever going to arrive. The
+    same six and a half hours, counted rather than reasoned about."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+    fetcher = failing(LIMITED)
+    at = NOW
+    while at < NOW + 6.5 * 3600:
+        poll.poll_account("work", now=at, fetcher=fetcher)
+        at += 330                       # OnUnitActiveSec=5min, AccuracySec=30s
+    assert len(fetcher.seen) <= 10
+
+
+def test_the_wait_grows_with_each_consecutive_failure(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+    fetcher = failing(LIMITED)
+    at = NOW
+    for expected in (1, 2, 4):
+        assert poll.poll_account("work", now=at, fetcher=fetcher).status == poll.FAILED
+        wait = poll.INTERVAL * expected
+        assert poll.due("work", now=at + wait - 1) is False
+        assert poll.due("work", now=at + wait + 1) is True
+        at += wait + 1
+    assert len(fetcher.seen) == 3
+
+
+def test_a_success_clears_the_backoff(monkeypatch, tmp_path):
+    """Nothing accumulates across a good answer: the next failure starts at the
+    cadence again rather than at the hour the last outage climbed to."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+    poll.poll_account("work", now=NOW, fetcher=failing(LIMITED))
+    poll.poll_account("work", now=NOW + 400, fetcher=failing(LIMITED))
+    poll.poll_account("work", now=NOW + 1300, fetcher=answering(body()))
+    assert usage.stall("work") is None
+    poll.poll_account("work", now=NOW + 2000, fetcher=failing(LIMITED))
+    assert usage.stall("work")["failures"] == 1
+
+
+def test_a_retry_after_header_wins_when_it_asks_for_longer(monkeypatch, tmp_path):
+    """A rate limiter that says when to come back is the only party who knows.
+    Shorter than our own schedule it is ignored — the schedule is also there to
+    stop us, not only to obey them."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+    poll.poll_account("work", now=NOW,
+                      fetcher=failing(poll.Reply(None, "http 429", 1800.0)))
+    assert usage.stall("work")["retry_at"] == NOW + 1800.0
+    assert poll.due("work", now=NOW + 1700) is False
+    assert poll.due("work", now=NOW + 1900) is True
+
+
+def test_a_short_retry_after_does_not_shorten_the_schedule(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+    poll.poll_account("work", now=NOW,
+                      fetcher=failing(poll.Reply(None, "http 429", 5.0)))
+    assert usage.stall("work")["retry_at"] == NOW + poll.INTERVAL
+
+
+def test_a_rejected_token_is_handed_to_claude_even_when_it_looks_live(
+        monkeypatch, tmp_path):
+    """401 is the server's word against the file's. The file said the token had
+    ten hours left and the endpoint said no, so CCAS re-sent it every five
+    minutes all night; renewal only ever ran off the local expiry."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+
+    def asker(slug):
+        credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000),
+                    token="sk-fresh")
+
+    fetcher = failing(DENIED, poll.Reply(body(), "", None))
+    outcome = poll.poll_account("work", now=NOW, fetcher=fetcher, renewer=asker)
+    assert fetcher.seen == ["sk-tok", "sk-fresh"]
+    assert outcome.status == poll.OK
+
+
+def test_a_401_does_not_spend_a_second_request_on_the_same_token(
+        monkeypatch, tmp_path):
+    """`renew` is a side effect claude does not promise. When it left the same
+    token on disk, re-sending it is one more rejected request for nothing."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+    fetcher = failing(DENIED)
+    outcome = poll.poll_account("work", now=NOW, fetcher=fetcher,
+                                renewer=lambda slug: None)
+    assert fetcher.seen == ["sk-tok"]
+    assert outcome.status == poll.FAILED
+
+
+def test_the_panel_does_not_ask_while_the_poll_is_backing_off(
+        monkeypatch, tmp_path):
+    """A click cannot lift a rate limit. The on-demand path's own gate counts
+    panel opens; this one counts the endpoint saying no."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+    poll.poll_account("work", now=NOW, fetcher=failing(LIMITED))
+    fetcher = answering(body())
+    outcome = poll.poll_on_demand("work", now=NOW + 120, fetcher=fetcher)
+    assert outcome.status == poll.SKIPPED
+    assert fetcher.seen == []
+
+
+def test_force_asks_through_a_backoff(monkeypatch, tmp_path):
+    """`ccs poll --force` is a person at a terminal deliberately retrying, which
+    is the one thing a backoff should not out-argue."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+    poll.poll_account("work", now=NOW, fetcher=failing(LIMITED))
+    fetcher = answering(body())
+    outcome = poll.poll_account("work", now=NOW + 10, fetcher=fetcher, force=True)
+    assert outcome.status == poll.OK
+    assert fetcher.seen == ["sk-tok"]
+
+
+def test_an_account_with_no_token_is_recorded_as_stalled_without_asking(
+        monkeypatch, tmp_path):
+    """Being logged out is the loudest stop of all, and it reaches this code as
+    an outcome that never touches the network."""
+    env(monkeypatch, tmp_path)
+    fetcher = answering(body())
+    outcome = poll.poll_account("work", now=NOW, fetcher=fetcher)
+    assert outcome.status == poll.NO_TOKEN
+    assert fetcher.seen == []
+    assert usage.stall("work")["reason"] == poll.NO_TOKEN
+
+
+def test_a_stall_that_says_the_same_thing_twice_is_not_rewritten(
+        monkeypatch, tmp_path):
+    """Write only on a change, the rule the whole feature obeys — a logged-out
+    account is polled every five minutes forever and must not repaint the bar
+    every time."""
+    env(monkeypatch, tmp_path)
+    assert poll.poll_account("work", now=NOW, fetcher=answering(body())).wrote
+    assert not poll.poll_account("work", now=NOW + 400,
+                                 fetcher=answering(body())).wrote

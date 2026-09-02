@@ -456,6 +456,10 @@ def cmd_poll(args) -> int:
     What the systemd timer runs every five minutes, and what the user runs by
     hand to see it work without waiting. The signal rides on the write, the same
     rule `cmd_statusline` obeys — the bar repaints only when the numbers moved.
+
+    On `outcome.wrote`, not on OK: a stall is a change to what the label says
+    too, and the one kind of change that arrives when nothing else is coming to
+    repaint the widget. Clearing one is a write for the same reason.
     """
     force = "--force" in args
     rest = [a for a in args if a != "--force"]
@@ -468,7 +472,7 @@ def cmd_poll(args) -> int:
     outcomes = poll.poll([a["slug"] for a in accounts_], force=force)
     for outcome in outcomes:
         print(f"{outcome.slug:<14} {outcome.status:<10} {outcome.detail}")
-        if outcome.status == poll.OK:
+        if outcome.wrote:
             account = registry.find(reg, outcome.slug)
             if account:
                 waybar.signal(account["signal"])

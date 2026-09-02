@@ -41,13 +41,20 @@ USAGE_FILE = "usage.json"
 # cannot be a key in there. The panel's on-demand poll is rate limited on it.
 POLL_STAMP_FILE = "poll-stamp"
 
+# Why the poll last could not answer, and when it may ask again. Its own file
+# for the same reason as the stamp: USAGE_FILE holds measurements, and a failure
+# is the absence of one. Kept beside the reading rather than in it so that a
+# stall can exist for an account nothing has ever recorded for, without a
+# windowless reading — which every read path would take for an idle account.
+POLL_FAIL_FILE = "poll-fail"
+
 # Never symlinked into an account: the first two are the account's identity, and
 # the rest are per-account files CCAS itself used to generate. Nothing writes
 # menu.xml or history.tsv any more, but an account directory made before that
 # still has them, and a blocklist entry costs nothing where a stray link would
 # make one account read another's.
 BLOCKLIST = {".credentials.json", ".claude.json", "menu.xml", "history.tsv",
-             USAGE_FILE, POLL_STAMP_FILE}
+             USAGE_FILE, POLL_STAMP_FILE, POLL_FAIL_FILE}
 
 
 def _env(name: str, default: Path) -> Path:

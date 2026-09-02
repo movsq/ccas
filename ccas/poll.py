@@ -21,6 +21,7 @@ Two rules hold it up:
 
 No signalling here. The caller owns the bar, the same way `cmd_statusline` does.
 """
+import email.utils
 import json
 import os
 import subprocess
@@ -43,10 +44,29 @@ LEEWAY = 60.0
 
 TIMEOUT = 5.0
 
+# The longest a failure may hold the poll off. The wait doubles from INTERVAL
+# and stops here: the account is expected to come back — a token is renewed, a
+# rate limit lifts — and an hour is short enough that the bar is right again
+# within one 5-hour window.
+BACKOFF_CAP = 3600.0
+
 OK, UNCHANGED, SKIPPED, EXPIRED, FAILED, NO_TOKEN = (
     "ok", "unchanged", "skipped", "expired", "failed", "no-token")
 
-Outcome = namedtuple("Outcome", "slug status detail")
+# `wrote` is what the signal rides on. It used to be "status is OK", which was
+# the same thing while a reading was the only thing this module wrote; a stall
+# is a change to what the label says too, and one that appears exactly when
+# nothing else is arriving to repaint it.
+Outcome = namedtuple("Outcome", "slug status detail wrote", defaults=(False,))
+
+# What `fetch` answers. `retry_after` is the server's own word on when to come
+# back, in seconds, or None — the third field rather than a code buried in the
+# reason string, because a rate limiter that says when is the only party that
+# knows, and the reason is written for a human to read in the journal.
+Reply = namedtuple("Reply", "payload reason retry_after")
+
+# The one failure that is about the token rather than about the endpoint.
+DENIED = "http 401"
 
 
 def access_token(slug: str):
@@ -116,6 +136,41 @@ def renew(slug: str, asker=None):
     return access_token(slug)
 
 
+def backoff_delay(failures: int) -> float:
+    """How long to wait after `failures` consecutive failures.
+
+    The cadence, doubling: 5m, 10m, 20m, 40m, then an hour and no longer. It
+    starts at INTERVAL because one failure is indistinguishable from a blip and
+    the timer would have waited that long anyway — the point is what happens at
+    the tenth, which before this was a tenth request into the same wall.
+    """
+    return min(INTERVAL * 2.0 ** max(0, failures - 1), BACKOFF_CAP)
+
+
+def blocked_until(slug: str):
+    """The earliest this account may be asked again, or None.
+
+    Read off the stall rather than recomputed, because `retry_at` may be the
+    server's `Retry-After` rather than our schedule.
+    """
+    record = usage.stall(slug)
+    return None if record is None else record.get("retry_at")
+
+
+def next_attempt(failures: int, now: float, retry_after=None) -> float:
+    """When to come back: our schedule, or the server's, whichever is later.
+
+    Later, not the server's outright. `Retry-After` is a rate limiter saying
+    when *it* will answer again, which is a floor and not a ceiling — a 429
+    answering "try in 5 seconds" to the fourth failure in a row would put the
+    poll straight back to asking every five seconds. The schedule is also there
+    to stop us, not only to obey them.
+    """
+    ours = now + backoff_delay(failures)
+    theirs = None if retry_after is None else now + float(retry_after)
+    return ours if theirs is None else max(ours, theirs)
+
+
 def due(slug: str, now: float, interval: float = INTERVAL) -> bool:
     """Is this account's 5-hour window one the hook is not keeping up with?
 
@@ -133,12 +188,21 @@ def due(slug: str, now: float, interval: float = INTERVAL) -> bool:
     window for twenty minutes and was never asked, the bar read idle throughout,
     and only a panel click — gated by `poll-stamp`, not by this — broke it.
 
+    A recorded stall comes first, ahead of both: a failed fetch writes no
+    reading at all, so neither test below can see that the last three attempts
+    were refused, and the answer would be "due" at every tick for as long as the
+    failure lasts. Measured on 2026-09-02 — 62 requests between midnight and
+    06:25, 45 of them answered 429, into an endpoint that was telling us to stop.
+
     So a reading whose 5-hour window is not running is due whatever its
     timestamp says. It is the window the freshness is *about*: BOUNDED is the
     only state the hook can be said to be keeping up with, and an account that
     is genuinely idle was being polled at the interval anyway, because nothing
     was writing its file either.
     """
+    blocked = blocked_until(slug)
+    if blocked is not None and now < blocked:
+        return False
     reading = usage.load(slug)
     if reading is None:
         return True
@@ -157,24 +221,76 @@ def age(seconds: float) -> str:
     return f"{seconds / 3600:.1f}h"
 
 
-def fetch(token: str, opener=None):
-    """`(payload, "")`, or `(None, reason)`. Never raises.
+def retry_after(headers, now: float):
+    """`Retry-After` in seconds, or None. Both spellings RFC 9110 allows.
+
+    Never raises and never returns a negative: a clock skewed the wrong way
+    against an HTTP date would otherwise read as "come back before you asked",
+    which `next_attempt` would then take the max against and silently ignore —
+    the same answer, arrived at by accident rather than on purpose.
+    """
+    try:
+        value = headers.get("Retry-After") if headers else None
+    except Exception:  # noqa: BLE001 — a header bag CCAS does not own
+        return None
+    if not value:
+        return None
+    try:
+        return max(0.0, float(str(value).strip()))
+    except ValueError:
+        pass
+    try:
+        when = email.utils.parsedate_to_datetime(str(value))
+    except (TypeError, ValueError):
+        return None
+    return None if when is None else max(0.0, when.timestamp() - now)
+
+
+def fetch(token: str, opener=None, now=None) -> Reply:
+    """A `Reply`: the payload, or a reason and what the server said about when.
 
     Everything that can go wrong here is the same event as far as the caller is
     concerned — no fresh reading this time — so the reason is a string for the
-    user to read rather than an exception for the timer to trip over.
+    user to read rather than an exception for the timer to trip over. The
+    `Retry-After` is kept apart from it because it is the one part of a failure
+    the caller can act on.
     """
     opener = urllib.request.urlopen if opener is None else opener
+    now = time.time() if now is None else now
     request = urllib.request.Request(USAGE_URL, headers={
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"})
     try:
         with opener(request, timeout=TIMEOUT) as response:
-            return json.loads(response.read().decode("utf-8", "replace")), ""
+            return Reply(json.loads(response.read().decode("utf-8", "replace")),
+                         "", None)
     except urllib.error.HTTPError as exc:
-        return None, f"http {exc.code}"
+        return Reply(None, f"http {exc.code}",
+                     retry_after(getattr(exc, "headers", None), now))
     except Exception as exc:  # noqa: BLE001 — see the docstring
-        return None, f"{type(exc).__name__}: {exc}"
+        return Reply(None, f"{type(exc).__name__}: {exc}", None)
+
+
+def _stall(slug: str, status: str, detail: str, now: float, note: str = "",
+           counts: bool = True, retry_at=None) -> Outcome:
+    """Record why the poll could not answer, and say so.
+
+    Every way out of `poll_account` that leaves the reading untouched comes
+    through here, so there is one place that cannot forget: a stop nobody
+    recorded is a stop `due()` cannot see and the label cannot say.
+    """
+    wrote = usage.record_stall(slug, status, now, retry_at=retry_at,
+                               counts=counts, note=note)
+    return Outcome(slug, status, detail, wrote)
+
+
+def _failed(slug: str, reason: str, now: float, after=None) -> Outcome:
+    """A failure that spent a request, with the wait it earns."""
+    failures = (usage.stall(slug) or {}).get("failures", 0) + 1
+    when = next_attempt(failures, now, after)
+    return _stall(slug, FAILED, f"{reason} — reading unchanged; "
+                  f"next attempt in {age(when - now)}", now, note=reason,
+                  retry_at=when)
 
 
 def poll_account(slug: str, now=None, fetcher=None, force=False,
@@ -184,34 +300,56 @@ def poll_account(slug: str, now=None, fetcher=None, force=False,
     fetcher = fetch if fetcher is None else fetcher
 
     if not force and not due(slug, now):
+        blocked = blocked_until(slug)
+        if blocked is not None and now < blocked:
+            return Outcome(slug, SKIPPED, f"backing off — {age(blocked - now)} to go")
         recorded = (usage.load(slug) or {}).get("fetched_at", now)
         return Outcome(slug, SKIPPED, f"recorded {age(now - recorded)} ago")
 
     credentials = access_token(slug)
     if credentials is None:
-        return Outcome(slug, NO_TOKEN, "no usable credentials — is it logged in?")
+        # Nothing was asked, so there is no failure to count and no wait to
+        # grow: being logged out is a stop the endpoint had no part in.
+        return _stall(slug, NO_TOKEN, "no usable credentials — is it logged in?",
+                      now, counts=False)
     token, expires_at = credentials
     if expires_at <= now + LEEWAY:
         when = (f"expired {age(now - expires_at)} ago" if expires_at <= now
                 else "expires within the minute")
         if not renewal_wanted():
-            return Outcome(slug, EXPIRED,
-                           f"token {when} — no fetch; renewal is switched off")
+            return _stall(slug, EXPIRED,
+                          f"token {when} — no fetch; renewal is switched off",
+                          now, counts=False)
         renewed = renew(slug, renewer)
         if renewed is None or renewed[1] <= now + LEEWAY:
-            return Outcome(slug, EXPIRED,
-                           f"token {when} — claude did not renew it; is it logged in?")
+            return _stall(slug, EXPIRED,
+                          f"token {when} — claude did not renew it; is it logged in?",
+                          now, counts=False)
         token, expires_at = renewed
 
-    payload, error = fetcher(token)
-    if payload is None:
-        return Outcome(slug, FAILED, f"{error} — reading unchanged")
-    reading = usage.from_oauth(payload, now)
+    reply = fetcher(token)
+    if reply.payload is None and reply.reason == DENIED and renewal_wanted():
+        # The server's word against the file's. Renewal ran off the local expiry
+        # alone until 2026-09-02, so a token the endpoint had stopped accepting
+        # was re-sent every five minutes with ten hours still on its clock.
+        # Only once, and only if claude actually left a different one: re-sending
+        # the same rejected token is one more refused request for nothing.
+        renewed = renew(slug, renewer)
+        if renewed is not None and renewed[0] != token \
+                and renewed[1] > now + LEEWAY:
+            token = renewed[0]
+            reply = fetcher(token)
+
+    if reply.payload is None:
+        return _failed(slug, reply.reason, now, reply.retry_after)
+    reading = usage.from_oauth(reply.payload, now)
     if reading is None:
-        return Outcome(slug, FAILED, "no windows in the response — reading unchanged")
+        return _failed(slug, "no windows in the response", now)
+    # The endpoint answered, which is the whole of what a stall records.
+    cleared = usage.clear_stall(slug)
     if usage.record_reading(slug, reading):
-        return Outcome(slug, OK, usage.column(reading, "five_hour", now))
-    return Outcome(slug, UNCHANGED, "same numbers")
+        return Outcome(slug, OK, usage.column(reading, "five_hour", now), True)
+    return Outcome(slug, UNCHANGED, "same numbers", cleared)
 
 
 # ── the on-demand poll ────────────────────────────────────────────────────────
@@ -279,9 +417,18 @@ def poll_on_demand(slug: str, now=None, fetcher=None,
 
     `force=True` into poll_account, deliberately: the stamp above is this path's
     gate, and `due()` is the timer's. Letting both apply would put the 5-minute
-    interval back in front of a question a human just asked.
+    interval back in front of a question a human just asked. The backoff is the
+    exception, checked here rather than left to `force` to skip — it is not a
+    guess about whether the answer would be interesting, it is the endpoint
+    having said no, and clicking twice does not change that answer.
     """
     now = time.time() if now is None else now
+    blocked = blocked_until(slug)
+    if blocked is not None and now < blocked:
+        # A click cannot lift a rate limit. `force` below means "a human asked",
+        # which is the right thing to say to the freshness gate and the wrong
+        # thing to say to the endpoint's own answer of "not yet".
+        return Outcome(slug, SKIPPED, f"backing off — {age(blocked - now)} to go")
     last = asked_at(slug)
     if last is not None and (now - last) < interval:
         return Outcome(slug, SKIPPED, f"asked {age(now - last)} ago")

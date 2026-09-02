@@ -303,6 +303,67 @@ def record_reading(slug: str, reading) -> bool:
     return True
 
 
+# ── the stall: why the poll stopped answering ─────────────────────────────────
+
+def stall(slug: str):
+    """What the poll last could not do, or None if it is answering.
+
+    A dict of `reason` (the outcome's own word, plus its detail for the ones
+    that have one), `since` and `at` — the first failure of this run and the
+    latest — `failures`, and `retry_at`, the earliest the poll may ask again.
+    """
+    path = paths.account_dir(slug) / paths.POLL_FAIL_FILE
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def record_stall(slug: str, reason: str, now: float, retry_at=None,
+                 counts: bool = True, note: str = "") -> bool:
+    """Note that the poll could not answer. True when it wrote.
+
+    Write-on-change, the rule the readings obey and for the same reason: a
+    logged-out account is polled every five minutes for as long as it stays
+    logged out, and the bar must not repaint at that cadence for a fact that has
+    not moved. `counts` is False where nothing was asked — no token is a stop
+    without a request behind it, so it has no failure to count and no wait to
+    grow, and after the first write every later tick is a no-op.
+    """
+    previous = stall(slug) or {}
+    failures = previous.get("failures", 0) + 1 if counts \
+        else previous.get("failures", 0)
+    record = {"reason": reason,
+              "note": note,
+              "since": previous.get("since", now),
+              "at": now,
+              "failures": failures,
+              "retry_at": retry_at}
+    if all(previous.get(key) == record[key]
+           for key in ("reason", "note", "failures", "retry_at")):
+        return False
+    _atomic_write(paths.account_dir(slug) / paths.POLL_FAIL_FILE,
+                  json.dumps(record, indent=2) + "\n")
+    return True
+
+
+def clear_stall(slug: str) -> bool:
+    """The poll answered. True when there was a stall to clear.
+
+    The file is removed rather than emptied — `stall()` reading None is the
+    absence of a stall, and one shape for that is one shape to get right. This
+    is the one place in CCAS that unlinks, and it is exempt from the trash rule
+    on purpose: it is a lock-shaped file CCAS wrote itself two minutes ago, not
+    anything the user could want back.
+    """
+    path = paths.account_dir(slug) / paths.POLL_FAIL_FILE
+    try:
+        path.unlink()
+        return True
+    except OSError:
+        return False
+
+
 def record(slug: str, payload: dict, now=None) -> bool:
     """Write the hook's payload if it says something new. True when it wrote.
 

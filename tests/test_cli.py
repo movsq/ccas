@@ -1196,20 +1196,39 @@ def test_usage_says_a_rolled_over_window_has_nothing_spent_in_it(monkeypatch, ca
 
 def test_poll_signals_only_the_accounts_that_changed(monkeypatch, capsys):
     """The signal rides on the write, exactly as it does for the hook: a poll
-    that finds the same numbers must not repaint anything."""
+    that finds the same numbers must not repaint anything.
+
+    On `wrote` rather than on OK, since a recorded stall is a write too — and
+    the one whose whole point is that no reading is coming to repaint the label
+    for it."""
     make_account("a")
     make_account("b")
     sent = []
     monkeypatch.setattr(cli.waybar, "signal", lambda n: sent.append(n))
     monkeypatch.setattr(cli.poll, "poll", lambda slugs, **kw: [
-        cli.poll.Outcome(slugs[0], cli.poll.OK, "5h ≥41%"),
-        cli.poll.Outcome(slugs[1], cli.poll.UNCHANGED, "same numbers")])
+        cli.poll.Outcome(slugs[0], cli.poll.OK, "5h ≥41%", True),
+        cli.poll.Outcome(slugs[1], cli.poll.UNCHANGED, "same numbers", False)])
 
     capsys.readouterr()
     assert cli.main(["poll"]) == 0
     assert sent == [registry.find(registry.load(), "a")["signal"]]
     out = capsys.readouterr().out
     assert "5h ≥41%" in out and "same numbers" in out
+
+
+def test_poll_signals_an_account_that_has_just_stalled(monkeypatch, capsys):
+    """A stall changes the label — from a reset clock to a word saying the
+    reading cannot be trusted — and nothing else is going to arrive to draw it.
+    """
+    make_account("a")
+    sent = []
+    monkeypatch.setattr(cli.waybar, "signal", lambda n: sent.append(n))
+    monkeypatch.setattr(cli.poll, "poll", lambda slugs, **kw: [
+        cli.poll.Outcome(slugs[0], cli.poll.NO_TOKEN, "is it logged in?", True)])
+
+    capsys.readouterr()
+    assert cli.main(["poll"]) == 0
+    assert sent == [registry.find(registry.load(), "a")["signal"]]
 
 
 def test_poll_takes_one_slug(monkeypatch):
