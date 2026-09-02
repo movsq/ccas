@@ -26,8 +26,8 @@ Python 3.14, **stdlib only** at runtime, no build step. The entry point is
 | `history.py` | scanning `~/.claude/projects` for sessions; row formatting. |
 | `label.py` | the bar label, `display_name()`, and the `MARK_ON`/`MARK_OFF` pair. |
 | `format.py` | the format string — the only way a label is built: the token table, `tokens_in`, `unknown_tokens`, `render()`, `random_color()`, and the hue/saturation maths. Pure — no I/O and no GTK, because `ccs statusline` reaches it. |
-| `usage.py` | the per-account usage reading: recording it, all three source shapes, the three states, and how each is said. |
-| `poll.py` | the session-free usage fetch: the credential read, the freshness gate, the request. Also the panel's on-demand poll and its separate `poll-stamp` guard. Its fetcher is injected, so no test opens a socket. |
+| `usage.py` | the per-account usage reading: recording it, all three source shapes, the four states, the stall record, and how each is said. |
+| `poll.py` | the session-free usage fetch: the credential read, the freshness gate, the backoff, the request. Also the panel's on-demand poll and its separate `poll-stamp` guard. Its fetcher is injected, so no test opens a socket. |
 | `pickers.py` | the terminal front-ends (fzf, `input()`), and `is_gui()`. |
 | `panel.py` | the GTK panel's state: `build_state`, `filter_state`, `poll_and_refresh`, the open-panel lock, which output. No GTK. |
 | `panel_ui.py` | the panel's widget tree. The only module that touches GTK. It decides nothing except *when* a colour is written (the settle timer) and *when* the body is swapped for another account's — both covered by `test_panel_ui.py`. |
@@ -249,7 +249,7 @@ one costs real quota. Four rules hold the feature up:
 - **Write only on a change**, and let `waybar.signal()` ride on the write. The
   hook fires every few hundred milliseconds; the numbers move every few minutes.
 
-**An idle window is a measurement, not a gap.** `usage.state()` has three kinds:
+**An idle window is a measurement, not a gap.** `usage.state()` has four kinds:
 `BOUNDED` (running, reset ahead), `IDLE` (there is a reading and this window is
 not running — the payload named no window, *or* its reset has passed), and
 `ABSENT` (no reading at all). The first two were one state once, and an account
@@ -264,6 +264,35 @@ slots (`%5hreset`, `%5htimeleft`) say `usage.IDLE_MARK` — empty was truthful a
 unreadable, since `%5hreset %5hquotaleft` then collapsed to a bare `100%`, which
 on a usage widget reads as 100% *used*. `ABSENT` keeps the empty string there:
 "idle" would be a claim the reading cannot support.
+
+**A window nobody is reading is not a window at rest either.** `STALLED` is the
+fourth kind, and it is what `IDLE` becomes once the poll has been stopped for
+`usage.STALL_GRACE` — three timer ticks, so a single refused tick stays the
+hiccup it usually is. IDLE's claim is "this window is not running, so nothing has
+been spent in it", and that is a measurement only while something is still
+asking; with the poll stopped the reading says one thing less, and whether the
+account has spent the window running *now* is exactly what nobody has looked at.
+On 2026-09-02 the bar read `idle 100%` all morning for an account the endpoint
+had been refusing since midnight. It carries `percent: None`, not `0.0` — the
+inverse of IDLE's rule and for the same reason, that the number is the fact:
+`%5hused` renders empty, `%5hquotaleft` does not turn that into a full tank, and
+the panel draws no bar rather than one at the bottom. In the clock slots it says
+**which stop it was** (`usage.STALL_WORDS`: "logged out", "rate limited",
+"stale"), because those ask for different things of the user. `BOUNDED` and
+`ABSENT` are untouched by it: a reset still ahead is a lower bound whoever is
+asking, and no reading is still no reading. The grace is on the **stall**, not on
+the reading — there is still no staleness cutoff anywhere, since for the 5-hour
+window stale and rolled over are the same test.
+
+**The stall is `usage.read()`'s, never `usage.load()`'s.** One is what to show
+and the other is the file — `due()` and `doctor` want the file, or the poll would
+decide whether to ask from a fact about how the answer is drawn. It also lets a
+stall exist for an account with no reading at all, without a windowless
+`usage.json` that every read path would take for an idle account. It lives in
+`poll-fail` beside `poll-stamp` for that reason, and `paths.BLOCKLIST` keeps it
+from ever being symlinked. `usage.py` owns the vocabulary, `poll.py` owns the
+classification of its own outcomes (`poll.stall_reason`) — 401 and 403 count as
+"logged out" whatever the credentials file still claims.
 
 **A window an account does not have is not a window at rest.** `usage.SCOPED`
 holds the model-scoped windows — `usage.FABLE` is the only one — and it exists
@@ -341,10 +370,37 @@ user timer runs `ccs poll` every five minutes. Four rules there:
   sitting at the endpoint unasked. Three timestamps, three questions, not
   interchangeable: `fetched_at` is when the answer last *changed*, `poll-stamp`
   is when we last *asked*, `resets_at` is whether either still means anything.
+- **A failure the schedule cannot see is a failure repeated forever.** A FAILED
+  outcome writes no reading, so `fetched_at` does not move, so `due()` answers
+  the same thing at the next tick and at every tick after it. Measured
+  2026-09-02: 62 requests between 00:01 and 06:25, 45 of them answered 429, into
+  an endpoint that had been saying stop since the twelfth minute. So every exit
+  that leaves the reading untouched records a **stall**, `due()` reads it ahead
+  of both its other tests, and the wait doubles from `INTERVAL` to `BACKOFF_CAP`.
+  `Retry-After` is honoured where it asks for **longer** than the schedule and
+  ignored where it asks for less: it is a rate limiter saying when *it* will
+  answer, which is a floor, and the schedule is also there to stop us. A
+  successful fetch clears the stall — nothing accumulates across a good answer.
+- **A 401 is the server's word against the file's.** Renewal ran off the local
+  expiry alone until 2026-09-02, so a token with ten hours left on its clock and
+  a `401` against its name went out every five minutes all night. It is handed
+  to claude **once** now, and re-tried only if claude left a *different* token on
+  disk — re-sending the same rejected one is another refused request for nothing.
+  The on-demand path still passes `_never_renew`; the panel never spawns claude.
+- **A click cannot lift a rate limit.** `poll_on_demand` checks the backoff
+  itself rather than letting its `force=True` skip it. That flag means "a human
+  asked", which is the right thing to say to the freshness gate and the wrong
+  thing to say to the endpoint's own "not yet". `ccs poll --force` is the one
+  thing that asks through a backoff, because that is a person at a terminal
+  deliberately retrying.
 - **The signal still rides on the write.** `record_reading` is the half of
   `record` that takes an already-normalised reading, so the poll reaches the
   same write-only-on-change rule the hook obeys — which also means an idle
-  account whose numbers have not moved is correctly *not* repainted.
+  account whose numbers have not moved is correctly *not* repainted. It rides on
+  `outcome.wrote` rather than on `OK`: a stall is a change to what the label
+  says, and the one that arrives when nothing else is coming to repaint it.
+  `usage.record_stall` is write-on-change too, and being logged out counts no
+  failure and grows no wait — nothing was asked.
 
 **The panel asks for itself, and `fetched_at` cannot be what limits it.** Every
 body starts one background fetch for the account it shows — the panel opening,
@@ -364,7 +420,11 @@ the panel never spawns `claude`.
 
 A poller that quietly died looks exactly like the staleness it exists to remove,
 so `ccs doctor` reports the timer's state and each account's reading age and
-token horizon. Tests must set `CCAS_SYSTEMD_DIR` and `CCAS_SKIP_SYSTEMD=1`
+token horizon. That row is informational — an expired token is the next poll's
+problem, a quiet account is a measurement — with one exception: a stall past
+`usage.STALL_GRACE` turns it **red**, names the stop and says which command
+fixes it. Same grace as the label, or doctor and the bar would disagree about
+whether anything is wrong. Tests must set `CCAS_SYSTEMD_DIR` and `CCAS_SKIP_SYSTEMD=1`
 around anything that runs `install.sh`, and stub `poll.timer_state` — otherwise
 they enable a real unit and shell out to the user's real systemctl.
 
