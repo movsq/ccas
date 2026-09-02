@@ -237,11 +237,21 @@ def _poll_timer() -> Check:
 
 
 def _usage_freshness(account: dict) -> Check:
-    """How old this account's reading is, and how long its token can still be
-    polled with. Always passes: both facts are expected states, not faults. An
-    expired token is the next poll's problem to hand to claude for renewal,
-    not a fault here — and with `CCAS_NO_TOKEN_REFRESH=1` set it is not even
-    that, just the account going quiet until it is next used."""
+    """How old this account's reading is, how long its token can still be polled
+    with, and whether the poll has stopped.
+
+    The first two are expected states rather than faults: an expired token is
+    the next poll's problem to hand to claude for renewal, and with
+    `CCAS_NO_TOKEN_REFRESH=1` set it is not even that, just the account going
+    quiet until it is next used.
+
+    A recorded stall past `usage.STALL_GRACE` is the exception, and the one this
+    row exists for. A poller that quietly died looks exactly like the staleness
+    it was built to remove — on 2026-09-02 an account's token was refused every
+    five minutes from midnight to 06:25 with doctor green throughout. The same
+    grace the label uses, deliberately: a doctor reading a different threshold
+    from the bar would have the two disagreeing about whether anything is wrong.
+    """
     name = label.display_name(account)
     now = time.time()
     reading = usage.load(account["slug"])
@@ -256,8 +266,20 @@ def _usage_freshness(account: dict) -> Check:
         token = f"token good for {poll.age(credentials[1] - now)}"
     # Named by the nickname and identified by the slug in the detail, the same
     # way `_account_checks` does it.
-    return Check(True, f"{name}: usage freshness",
-                 f"{account['slug']}: {age}; {token}")
+    detail = f"{account['slug']}: {age}; {token}"
+
+    record = usage.stall(account["slug"]) or {}
+    stalled = record and (now - record.get("since", now)) >= usage.STALL_GRACE
+    if not stalled:
+        return Check(True, f"{name}: usage freshness", detail)
+    word = usage.STALL_WORDS.get(record.get("reason"), "stale")
+    note = f" ({record['note']})" if record.get("note") else ""
+    fix = ("run `ccs add` to log it back in"
+           if record.get("reason") == usage.LOCKED_OUT
+           else "`journalctl --user -u ccas-poll` has the refusals")
+    return Check(False, f"{name}: usage freshness",
+                 f"{detail}\n    poll stopped {poll.age(now - record['since'])} "
+                 f"ago — {word}{note}, {record.get('failures', 0)} failures; {fix}")
 
 
 def run(reg: dict) -> list:

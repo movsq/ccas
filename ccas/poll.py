@@ -68,6 +68,20 @@ Reply = namedtuple("Reply", "payload reason retry_after")
 # The one failure that is about the token rather than about the endpoint.
 DENIED = "http 401"
 
+# Which stop each way out of poll_account is, in the vocabulary usage.py says
+# them in. The classification is this module's — it is the only one that knows
+# what a 429 was — and the words are not, because the label is where they land.
+# 401 and 403 sit with the credential failures on purpose: a token the endpoint
+# refuses is a login to redo, whatever the file on disk still claims.
+REFUSED = ("http 401", "http 403")
+THROTTLED = "http 429"
+
+
+def stall_reason(status: str, note: str = "") -> str:
+    if status in (NO_TOKEN, EXPIRED) or note in REFUSED:
+        return usage.LOCKED_OUT
+    return usage.LIMITED if note == THROTTLED else usage.UNREACHABLE
+
 
 def access_token(slug: str):
     """`(token, expires_at)` in seconds, or None. Read-only, always."""
@@ -279,8 +293,8 @@ def _stall(slug: str, status: str, detail: str, now: float, note: str = "",
     through here, so there is one place that cannot forget: a stop nobody
     recorded is a stop `due()` cannot see and the label cannot say.
     """
-    wrote = usage.record_stall(slug, status, now, retry_at=retry_at,
-                               counts=counts, note=note)
+    wrote = usage.record_stall(slug, stall_reason(status, note), now,
+                               retry_at=retry_at, counts=counts, note=note)
     return Outcome(slug, status, detail, wrote)
 
 

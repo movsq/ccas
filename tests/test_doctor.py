@@ -16,6 +16,7 @@ import ccas.accounts as accounts
 import ccas.waybar as waybar
 import ccas.doctor as doctor
 import ccas.label as label
+import ccas.usage as usage
 import ccas.cli as cli
 
 
@@ -364,3 +365,42 @@ def test_a_hidden_account_is_not_missing_from_the_bar():
     assert failures(reg) == []
     assert "#custom-cc-home" not in \
         paths.waybar_style().read_text(encoding="utf-8")
+
+
+def test_doctor_fails_an_account_whose_poll_has_stopped(monkeypatch):
+    """The row that was always informational, and the one case where it cannot
+    be. An expired token is the next poll's problem and a quiet account is a
+    measurement; a poll that has been refused for hours is neither — the widget
+    has stopped being live, and doctor going red exactly there is the whole
+    reason it reports freshness at all.
+
+    Found on 2026-09-02: 62 refused requests overnight, doctor green throughout.
+    """
+    import time
+    reg = healthy()
+    slug = reg["accounts"][0]["slug"]
+    now = time.time()
+    (paths.account_dir(slug) / paths.POLL_FAIL_FILE).write_text(json.dumps({
+        "reason": usage.LIMITED, "note": "http 429", "failures": 9,
+        "since": now - 6 * 3600, "at": now - 300, "retry_at": now + 1200}))
+    row = _named(doctor.run(reg), f"{label.display_name(reg['accounts'][0])}: "
+                                  "usage freshness")
+    assert row.ok is False
+    assert "rate limited" in row.detail
+    assert "9 failures" in row.detail
+
+
+def test_doctor_does_not_fail_a_poll_that_has_only_just_slipped(monkeypatch):
+    """One refused tick is a hiccup, and the same grace the label uses. Doctor
+    reading a different threshold from the bar would make the two disagree about
+    whether anything is wrong."""
+    import time
+    reg = healthy()
+    slug = reg["accounts"][0]["slug"]
+    now = time.time()
+    (paths.account_dir(slug) / paths.POLL_FAIL_FILE).write_text(json.dumps({
+        "reason": usage.UNREACHABLE, "note": "TimeoutError: x", "failures": 1,
+        "since": now - 60, "at": now - 60, "retry_at": now + 240}))
+    row = _named(doctor.run(reg), f"{label.display_name(reg['accounts'][0])}: "
+                                  "usage freshness")
+    assert row.ok is True

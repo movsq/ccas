@@ -622,6 +622,7 @@ def test_a_success_clears_the_backoff(monkeypatch, tmp_path):
     assert usage.stall("work") is None
     poll.poll_account("work", now=NOW + 2000, fetcher=failing(LIMITED))
     assert usage.stall("work")["failures"] == 1
+    assert usage.stall("work")["reason"] == usage.LIMITED
 
 
 def test_a_retry_after_header_wins_when_it_asks_for_longer(monkeypatch, tmp_path):
@@ -710,7 +711,7 @@ def test_an_account_with_no_token_is_recorded_as_stalled_without_asking(
     outcome = poll.poll_account("work", now=NOW, fetcher=fetcher)
     assert outcome.status == poll.NO_TOKEN
     assert fetcher.seen == []
-    assert usage.stall("work")["reason"] == poll.NO_TOKEN
+    assert usage.stall("work")["reason"] == usage.LOCKED_OUT
 
 
 def test_a_stall_that_says_the_same_thing_twice_is_not_rewritten(
@@ -722,3 +723,20 @@ def test_a_stall_that_says_the_same_thing_twice_is_not_rewritten(
     assert poll.poll_account("work", now=NOW, fetcher=answering(body())).wrote
     assert not poll.poll_account("work", now=NOW + 400,
                                  fetcher=answering(body())).wrote
+
+
+def test_each_stop_is_recorded_in_the_words_the_label_says(monkeypatch, tmp_path):
+    """A 429 and a refused token are both "the poll stopped" to `due()` and two
+    different things to the user: one lifts on its own and the other needs a
+    login. 401 counts as logged out however much time the file claims is left —
+    that was the whole of the 2026-09-02 outage."""
+    env(monkeypatch, tmp_path)
+    credentials(tmp_path, expires_at_ms=int((NOW + 36000) * 1000))
+    for reply, reason in ((LIMITED, usage.LIMITED),
+                          (DENIED, usage.LOCKED_OUT),
+                          (poll.Reply(None, "TimeoutError: x", None),
+                           usage.UNREACHABLE)):
+        usage.clear_stall("work")
+        poll.poll_account("work", now=NOW, fetcher=failing(reply),
+                          renewer=lambda slug: None, force=True)
+        assert usage.stall("work")["reason"] == reason

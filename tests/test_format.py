@@ -428,3 +428,64 @@ def test_the_two_smart_tokens_share_a_name():
 def test_a_name_is_not_the_token():
     """The whole point: the chip says what it colours, not what you type."""
     assert not any(name.startswith("%") for name in fmt.NAMES.values())
+
+
+# ── a label whose poller has stopped ──────────────────────────────────────────
+
+def stalled_reading(reason=usage.LOCKED_OUT, **kw):
+    """A reading carrying a stall, the way usage.read() hands one over."""
+    out = reading(**kw)
+    out["stall"] = {"reason": reason, "note": "", "failures": 3,
+                    "since": NOW - usage.STALL_GRACE - 1, "at": NOW,
+                    "retry_at": NOW + 600}
+    return out
+
+
+def test_a_stalled_window_says_the_stop_where_a_clock_would_go():
+    """The live label is `%5hreset %5hquotaleft`. With the poll stopped and the
+    window rolled over it read `idle 100%` — a full quota, at full brightness,
+    for an account whose token the endpoint had been refusing since midnight.
+    """
+    r = stalled_reading(five_pct=27.0, five_at=NOW - 60)
+    assert bare({}, "%5hreset %5hquotaleft", r) == "logged out"
+    assert bare({}, "%5htimeleft", r) == "logged out"
+
+
+def test_a_stalled_window_names_which_stop_it_was():
+    for reason, word in ((usage.LOCKED_OUT, "logged out"),
+                         (usage.LIMITED, "rate limited"),
+                         (usage.UNREACHABLE, "stale")):
+        r = stalled_reading(reason, five_pct=27.0, five_at=NOW - 60)
+        assert bare({}, "%5hreset", r) == word
+
+
+def test_a_stalled_window_offers_no_percentage():
+    """IDLE carries 0.0 because nothing has been spent in a window that is not
+    running. Here nobody has looked, so `%5hused` renders empty and
+    `%5hquotaleft` does not turn that into a full tank."""
+    r = stalled_reading(five_pct=27.0, five_at=NOW - 60)
+    assert bare({}, "%5hused", r) == ""
+    assert bare({}, "%5hquotaleft", r) == ""
+
+
+def test_a_stall_leaves_a_running_window_alone():
+    """`resets_at` is an absolute anchor: a reset still ahead makes the recorded
+    percentage a lower bound whoever is or is not asking."""
+    r = stalled_reading(five_pct=62.0, five_at=IN_2H20)
+    assert bare({}, "%5hreset", r) == usage.reset_clock(int(IN_2H20))
+    assert bare({}, "%5hused", r) == "62%"
+
+
+def test_a_stall_younger_than_the_grace_leaves_the_label_alone():
+    r = reading(five_pct=27.0, five_at=NOW - 60)
+    r["stall"] = {"reason": usage.LIMITED, "note": "", "failures": 1,
+                  "since": NOW - 60, "at": NOW, "retry_at": NOW + 300}
+    assert bare({}, "%5hreset", r) == usage.IDLE_MARK
+
+
+def test_the_smart_token_says_the_stop_rather_than_nothing():
+    """`%5h` answers None for an idle window, which is right — there is nothing
+    to warn about. A label whose whole format is `%5h` would then be empty for
+    an account nobody can read at all, which is the emptier of the two lies."""
+    r = stalled_reading(five_pct=27.0, five_at=NOW - 60)
+    assert bare({}, "%5h", r) == "logged out"

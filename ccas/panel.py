@@ -58,6 +58,9 @@ def _usage_rows(slug: str, now: float):
 
     An absent *plan* window keeps its row rather than disappearing: a bar that is
     not drawn and a bar at zero look identical, and they mean opposite things.
+    A stalled one keeps its row for the same reason and draws no bar at all: its
+    percentage is None, which is the fact — nobody has measured the window that
+    is running now.
     A model-scoped window has no such pair to tell apart — ABSENT there means
     the account was never told about that model, so the row is left out
     altogether rather than drawn as a limit nobody has measured.
@@ -76,6 +79,10 @@ def _usage_rows(slug: str, now: float):
             "resets": ("" if st.resets_at is None
                        else usage.reset_time(st.resets_at, now)),
             "color": None if st.percent is None else usage.color(st.percent),
+            # Which stop, for a STALLED row. `_usage_text` is handed the row and
+            # nothing else, so a reason that does not travel in it cannot be
+            # said — and "logged out" and "rate limited" are the whole point.
+            "note": usage.stall_word(reading) if st.kind == usage.STALLED else "",
         })
     return rows
 

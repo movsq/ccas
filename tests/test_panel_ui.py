@@ -808,3 +808,12 @@ def test_a_new_token_gets_its_colour_chip_without_a_switch(gtk, monkeypatch):
               for c in _walk(frame, lambda w: isinstance(w, Gtk.Button)
                              and w.has_css_class("ccas-color-chip"))]
     assert labels == ["icon", "nickname", "7d reset"]
+
+
+def test_usage_text_says_which_stop_a_stalled_window_hit():
+    """A third thing a bar can mean. "0% used" is a measured empty window and
+    "no data" is an account nothing was ever recorded for; this one is a window
+    that rolled over with nobody left able to look at the new one."""
+    stalled = {"kind": usage.STALLED, "percent": None, "resets": "",
+               "note": "rate limited"}
+    assert panel_ui._usage_text(stalled) == "rate limited"

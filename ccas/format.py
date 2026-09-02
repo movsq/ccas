@@ -147,15 +147,27 @@ def _now(ctx) -> float:
 # What the clock slots say when there is no clock. IDLE is a measurement — the
 # window is not running — so it gets a word; ABSENT is ignorance and keeps the
 # empty string, because "idle" there would be a claim we cannot make.
-def _no_clock(kind):
-    return usage_mod.IDLE_MARK if kind == usage_mod.IDLE else ""
+def _no_clock(ctx, st):
+    """What stands in a clock slot for a window that has no reset to show.
+
+    Three answers, and they are three different facts. IDLE is a measurement —
+    the window is not running — and says so in a word, because an empty slot
+    left `%5hreset %5hquotaleft` collapsed to a bare `100%`, which on a usage
+    widget reads as 100% *used*. STALLED is the absence of one, and names which
+    stop it was: "logged out" and "rate limited" want different things done
+    about them. ABSENT keeps the empty string, where any word would be a claim
+    the reading cannot support.
+    """
+    if st.kind == usage_mod.STALLED:
+        return usage_mod.stall_word(ctx["usage"])
+    return usage_mod.IDLE_MARK if st.kind == usage_mod.IDLE else ""
 
 
 def _reset(key, absolute):
     def text(ctx):
         st = _state(ctx, key)
         if st.kind != usage_mod.BOUNDED:
-            return _no_clock(st.kind)
+            return _no_clock(ctx, st)
         return usage_mod.reset_time(st.resets_at, _now(ctx)) if absolute \
             else usage_mod.reset_clock(st.resets_at)
     return text
@@ -173,7 +185,7 @@ def _reset_part(key, fmt_string):
     def text(ctx):
         st = _state(ctx, key)
         if st.kind != usage_mod.BOUNDED:
-            return _no_clock(st.kind)
+            return _no_clock(ctx, st)
         return time.strftime(fmt_string, time.localtime(st.resets_at))
     return text
 
@@ -182,7 +194,7 @@ def _timeleft_token(key):
     def text(ctx):
         st = _state(ctx, key)
         if st.kind != usage_mod.BOUNDED:
-            return _no_clock(st.kind)
+            return _no_clock(ctx, st)
         return _timeleft(st.resets_at - _now(ctx))
     return text
 

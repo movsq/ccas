@@ -1842,3 +1842,96 @@ sessions the filter drops three, all untitled, all under one deleted `/tmp`
 scratchpad path. Today the change would surface nothing anyone wants. It is
 worth doing when a real directory goes unreachable — an external disk is the
 likely first — and not before.
+
+## Sixty-two requests into a wall of 429, with nobody awake
+
+**Symptom.** Claude Code said the usage endpoint was rate limited. It was.
+
+**What the journal held.** The last good reading for `vo-sedlacek` was 2026-09-01
+at 23:45. From 00:01 the poll failed and kept failing:
+
+```
+00:01  vo-sedlacek  failed  http 401 — reading unchanged
+00:12  vo-sedlacek  failed  http 429 — reading unchanged
+…                           every 5½ minutes until 06:25
+```
+
+62 requests between 00:01 and 06:25, 45 of them answered 429, all of them
+guaranteed to fail before they were sent. At 06:25 `.credentials.json` was
+rewritten with an empty `accessToken`, and the poll has been reporting
+`no-token` — and sending nothing — ever since.
+
+**Cause, and it is three separate holes lined up.**
+
+The first is that **a failure was invisible to the thing that schedules**. `due()`
+reads `fetched_at`, which `usage.record_reading` only moves when it *writes* a
+reading, and a FAILED outcome writes nothing. So the answer to "is this account
+due?" was the same at 00:06 as at 00:01, and at every tick for six hours. The
+whole feature was built around write-on-change, and this is where that rule ran
+out: a failure has nothing to change, so nothing recorded that it happened.
+
+The second is that **renewal ran off the local expiry alone**. The file said the
+token had ten hours left; the endpoint said 401. Renewal was only ever reached
+by `expires_at <= now + LEEWAY`, so the server's opinion could not trigger it,
+and the same rejected token went out 62 times. A 401 is the server's word against
+the file's, and the server owns the answer.
+
+The third is that **the panel's `force` would have skipped a backoff had one
+existed**. `force=True` means "a human asked", which is the right thing to say to
+a freshness gate and the wrong thing to say to a rate limit. Clicking does not
+change the endpoint's answer.
+
+**Fix.** A stall is recorded in its own file beside the reading — `usage.json`
+holds measurements and a failure is the absence of one. `due()` reads it before
+either of its other tests; the wait doubles from the cadence to an hour;
+`Retry-After` is honoured where it asks for *longer* than the schedule and
+ignored where it asks for less, because it is a rate limiter saying when it will
+answer, which is a floor. A 401 is handed to claude once, and only re-tried if
+claude left a different token on disk. The panel checks the backoff itself.
+
+Replayed at the timer's real cadence, the same six and a half hours now costs
+under ten requests instead of 62 — and that is the test, counted rather than
+reasoned about.
+
+## An account nobody can read is not an account at rest
+
+The second half of the same morning, and the part that was visible on the bar.
+
+`IDLE` was built to fix the opposite bug: an account left alone lost its entire
+label the second its window rolled over, and the panel called a measurement "no
+data". So IDLE carries `0.0` and says `0% used`, because in a window that is not
+running, nothing has been spent. That is a measurement — **while something is
+still asking**.
+
+With the poll stopped it is not one. The reading still says the window we last
+saw has rolled over; whether the account has spent the *new* one is precisely
+what nobody has looked at. All morning the bar read `idle 100%` for an account
+whose token had been refused since midnight, at full brightness, with `ccs
+doctor` green.
+
+So there is a fourth state. `STALLED` is what IDLE becomes when a stall has
+lasted `usage.STALL_GRACE` — three timer ticks, so that one refused tick stays
+the hiccup it usually is. It carries `percent: None`, not `0.0`: `%5hused`
+renders empty rather than a zero nobody measured, `%5hquotaleft` does not turn
+that into a full tank, and the panel draws no bar rather than a bar at the
+bottom. It names which stop it was, because "logged out" and "rate limited" ask
+for different things and neither is fixed by waiting.
+
+Two things it deliberately does **not** touch:
+
+- **BOUNDED.** `resets_at` is an absolute anchor, so a reset still ahead makes
+  the recorded percentage a lower bound whoever is or is not asking. There is
+  nothing to withdraw.
+- **ABSENT.** No reading is no reading; a poll that could not produce one has
+  not changed that. Doctor's hook and timer checks are still the answer there.
+
+Note where the grace is: on the **stall**, not on the reading. There is still no
+staleness cutoff anywhere — for the 5-hour window, stale and rolled-over remain
+the same test. The new threshold decides whether anybody is asking, which is a
+different question and one the reading cannot answer about itself.
+
+`ccs doctor`'s freshness row was informational by design — an expired token is
+the next poll's problem, a quiet account is a measurement. A stall past the same
+grace is the exception, and the case the row exists for: it goes red, names the
+stop, and says which command fixes it. Doctor reading a different threshold from
+the bar would have the two disagreeing about whether anything is wrong.

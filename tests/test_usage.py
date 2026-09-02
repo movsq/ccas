@@ -557,3 +557,128 @@ def test_a_window_that_rolled_over_is_still_idle_when_it_is_carried(
         {"rate_limits": {"seven_day": {"used_percentage": 3, "resets_at": 500000}}},
         now=600.0))
     assert usage.state(usage.load("work"), "five_hour", 600.0).kind == usage.IDLE
+
+
+# ── the stall: a poller that has stopped is not an account at rest ────────────
+
+def stalled(tmp_path, reason=None, since=0.0, failures=1, retry_at=None,
+            slug="work"):
+    reason = usage.LOCKED_OUT if reason is None else reason
+    (tmp_path / "accts" / slug / paths.POLL_FAIL_FILE).write_text(json.dumps({
+        "reason": reason, "note": "", "since": since, "at": since,
+        "failures": failures, "retry_at": retry_at}))
+
+
+ROLLED_OVER = {"fetched_at": 100.0, "source": "oauth",
+               "five_hour": {"percent": 27.0, "resets_at": 500},
+               "seven_day": {"percent": 3.0, "resets_at": 900000}}
+
+
+def test_a_window_that_rolled_over_while_the_poll_was_stopped_is_not_idle(
+        monkeypatch, tmp_path):
+    """The whole point. IDLE is a measurement — "this window is not running, so
+    nothing has been spent in it" — and it is only worth that much while
+    something is still asking. With the poll stopped, the same reading says only
+    that the window we last saw has rolled over; whether the account has spent
+    the new one is exactly what nobody has looked at.
+
+    Measured 2026-09-02: an account whose token had been rejected since midnight
+    read `0% used` on the bar, at full brightness, all morning.
+    """
+    env(monkeypatch, tmp_path)
+    now = 500 + usage.STALL_GRACE + 1
+    usage.record_reading("work", ROLLED_OVER)
+    assert usage.state(usage.read("work"), "five_hour", now).kind == usage.IDLE
+    stalled(tmp_path, since=now - usage.STALL_GRACE - 1)
+    assert usage.state(usage.read("work"), "five_hour", now).kind == usage.STALLED
+
+
+def test_a_stalled_window_carries_no_percentage(monkeypatch, tmp_path):
+    """IDLE carries 0.0 because that is the fact. This one carries None for the
+    same reason — `%5hused` renders empty rather than a zero nobody measured,
+    and a panel bar is not drawn rather than drawn at the bottom."""
+    env(monkeypatch, tmp_path)
+    now = 500 + usage.STALL_GRACE + 1
+    usage.record_reading("work", ROLLED_OVER)
+    stalled(tmp_path, since=now - usage.STALL_GRACE - 1)
+    st = usage.state(usage.read("work"), "five_hour", now)
+    assert st.percent is None and st.resets_at is None
+
+
+def test_a_stall_leaves_a_bounded_window_alone(monkeypatch, tmp_path):
+    """`resets_at` is an absolute anchor, so a reading whose reset is still
+    ahead is a lower bound whoever is or is not asking. Nothing to withdraw."""
+    env(monkeypatch, tmp_path)
+    usage.record_reading("work", ROLLED_OVER)
+    stalled(tmp_path, since=0.0)
+    st = usage.state(usage.read("work"), "seven_day", 500 + usage.STALL_GRACE + 1)
+    assert st.kind == usage.BOUNDED and st.percent == 3.0
+
+
+def test_a_stall_younger_than_the_grace_is_a_blip(monkeypatch, tmp_path):
+    """One refused tick is a network hiccup, and the reading it could not
+    refresh is five minutes old. The label must not flicker for that."""
+    env(monkeypatch, tmp_path)
+    now = 500 + usage.STALL_GRACE + 1
+    usage.record_reading("work", ROLLED_OVER)
+    stalled(tmp_path, since=now - 60)
+    assert usage.state(usage.read("work"), "five_hour", now).kind == usage.IDLE
+
+
+def test_a_stall_does_not_invent_a_reading(monkeypatch, tmp_path):
+    """ABSENT is no reading, and a poll that could not produce one has not
+    produced one. Doctor's hook and timer checks are still the answer there."""
+    env(monkeypatch, tmp_path)
+    stalled(tmp_path, since=0.0)
+    assert usage.state(usage.read("work"), "five_hour", 99999.0).kind == usage.ABSENT
+
+
+def test_load_is_the_file_and_read_is_what_to_show(monkeypatch, tmp_path):
+    """`due()` and doctor read the reading; the label reads what to say about
+    it. Only the second carries the stall, or the poll would be deciding
+    whether to ask from a fact about how the answer is displayed."""
+    env(monkeypatch, tmp_path)
+    usage.record_reading("work", ROLLED_OVER)
+    stalled(tmp_path, since=0.0)
+    assert "stall" not in usage.load("work")
+    assert usage.read("work")["stall"]["reason"] == usage.LOCKED_OUT
+
+
+def test_a_stall_says_which_stop_it_was(monkeypatch, tmp_path):
+    """Three stops, three words. "logged out" and "rate limited" ask for
+    different things from the user, and neither is fixed by waiting."""
+    env(monkeypatch, tmp_path)
+    now = 500 + usage.STALL_GRACE + 1
+    usage.record_reading("work", ROLLED_OVER)
+    for reason, word in ((usage.LOCKED_OUT, "logged out"),
+                         (usage.LIMITED, "rate limited"),
+                         (usage.UNREACHABLE, "stale")):
+        stalled(tmp_path, reason=reason, since=0.0)
+        assert word in usage.column(usage.read("work"), "five_hour", now)
+
+
+def test_the_picker_says_a_stall_where_it_would_have_said_idle(
+        monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    now = 500 + usage.STALL_GRACE + 1
+    usage.record_reading("work", ROLLED_OVER)
+    stalled(tmp_path, since=0.0)
+    assert "logged out" in " ".join(usage.lines(usage.read("work"), now))
+
+
+def test_recording_a_stall_only_writes_when_it_changes(monkeypatch, tmp_path):
+    """The rule everything here obeys: a logged-out account is polled every five
+    minutes for as long as it stays logged out."""
+    env(monkeypatch, tmp_path)
+    assert usage.record_stall("work", usage.LOCKED_OUT, 100.0, counts=False)
+    assert not usage.record_stall("work", usage.LOCKED_OUT, 400.0, counts=False)
+    assert usage.stall("work")["since"] == 100.0
+    assert usage.record_stall("work", usage.LIMITED, 700.0, retry_at=1000.0)
+
+
+def test_clearing_a_stall_is_the_absence_of_one(monkeypatch, tmp_path):
+    env(monkeypatch, tmp_path)
+    usage.record_stall("work", usage.LOCKED_OUT, 100.0)
+    assert usage.clear_stall("work") is True
+    assert usage.stall("work") is None
+    assert usage.clear_stall("work") is False

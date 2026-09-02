@@ -1082,3 +1082,24 @@ def test_build_state_says_whether_the_account_is_on_the_bar(reg):
     registry.set_field(reg, "one", "hidden", True)
     registry.save(reg)
     assert panel.build_state("one")["hidden"] is True
+
+
+def test_a_stalled_window_carries_its_reason_into_the_row(reg):
+    """The panel's bars are the other place an idle window is claimed, and the
+    row is where the reason has to arrive — `_usage_text` is handed the row and
+    nothing else."""
+    now = 1_700_000_000.0
+    (paths.account_dir("one") / paths.USAGE_FILE).write_text(json.dumps({
+        "fetched_at": now - 40000, "source": "oauth",
+        "five_hour": {"percent": 61.0, "resets_at": int(now - 3600)},
+        "seven_day": {"percent": 3.0, "resets_at": int(now + 86400)},
+    }))
+    (paths.account_dir("one") / paths.POLL_FAIL_FILE).write_text(json.dumps({
+        "reason": usage.LIMITED, "note": "http 429", "failures": 6,
+        "since": now - 40000, "at": now - 300, "retry_at": now + 300}))
+    rows = panel.build_state("one", now=now)["usage"]
+    assert rows[0]["kind"] == usage.STALLED
+    assert rows[0]["note"] == "rate limited"
+    assert rows[0]["percent"] is None and rows[0]["color"] is None
+    # The weekly window's reset is still ahead, so it is untouched.
+    assert rows[1]["kind"] == usage.BOUNDED

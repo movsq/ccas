@@ -473,6 +473,10 @@ def _usage_text(row):
     """
     if row["kind"] == usage.ABSENT:
         return "no data"
+    if row["kind"] == usage.STALLED:
+        # A third thing a bar can mean, and the reason is the useful half:
+        # "logged out" and "rate limited" want different things done about them.
+        return row.get("note") or "stale"
     if row["kind"] == usage.IDLE:
         # A measurement, not a gap: the window is not running, so nothing has
         # been spent in it. "no data" here was the panel's half of the bug that

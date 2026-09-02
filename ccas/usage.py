@@ -78,8 +78,29 @@ WINDOWS = PLAN_WINDOWS + SCOPED
 # which window by its length, and two weekly windows cannot both do that.
 SHORT = {"five_hour": "5h", "seven_day": "7d", FABLE: "fable"}
 
-ABSENT, IDLE, BOUNDED = "absent", "idle", "bounded"
+ABSENT, IDLE, BOUNDED, STALLED = "absent", "idle", "bounded", "stalled"
 State = namedtuple("State", "kind percent resets_at")
+
+# Why the poll stopped, in the words the label says. poll.py maps its own
+# outcomes onto these — the classification is its business and the vocabulary is
+# this module's, because this is where a window is said.
+LOCKED_OUT, LIMITED, UNREACHABLE = "locked-out", "limited", "unreachable"
+STALL_WORDS = {LOCKED_OUT: "logged out", LIMITED: "rate limited",
+               UNREACHABLE: "stale"}
+
+# How long a stall must have lasted before it takes a window's word away.
+# One refused tick is a hiccup and the reading behind it is five minutes old;
+# three of them is the poller having stopped. It is a grace on the *stall*, not
+# a staleness cutoff on the reading — there is still no threshold anywhere that
+# decides a reading is too old, only this one that decides nobody is asking.
+STALL_GRACE = 900.0
+
+# What a stalled window is called where there is room for a phrase. The reason
+# is the useful half: "logged out" and "rate limited" want different things done
+# about them, and neither is fixed by waiting for the next tick.
+def stall_word(reading) -> str:
+    record = (reading or {}).get("stall") or {}
+    return STALL_WORDS.get(record.get("reason"), STALL_WORDS[UNREACHABLE])
 
 
 # ── the three input shapes ────────────────────────────────────────────────────
@@ -379,7 +400,15 @@ def record(slug: str, payload: dict, now=None) -> bool:
 
 
 def read(slug: str):
-    """The freshest reading for this account, hook or cache, or None."""
+    """The freshest reading for this account, hook or cache, or None.
+
+    This is the display path, and the only one that carries the stall: `load()`
+    is the file, which is what `due()` and doctor want. Keeping them apart is
+    what stops the poll deciding whether to ask from a fact about how the answer
+    is drawn — and it is why a stall can exist for an account with no reading at
+    all, without a windowless reading that every read path would take for an
+    idle account.
+    """
     recorded = load(slug)
     try:
         blob = json.loads((paths.account_dir(slug) / ".claude.json")
@@ -387,11 +416,17 @@ def read(slug: str):
     except (OSError, ValueError):
         blob = {}
     cached = from_cache(blob)
+    if recorded is None and cached is None:
+        return None
     if recorded is None:
-        return cached
-    if cached is None:
-        return recorded
-    return cached if cached["fetched_at"] > recorded["fetched_at"] else recorded
+        freshest = cached
+    elif cached is None:
+        freshest = recorded
+    else:
+        freshest = cached if cached["fetched_at"] > recorded["fetched_at"] \
+            else recorded
+    record = stall(slug)
+    return freshest if record is None else {**freshest, "stall": record}
 
 
 # ── classification ────────────────────────────────────────────────────────────
@@ -427,12 +462,33 @@ def state(reading, key: str, now=None) -> State:
     if reading is None:
         return State(ABSENT, None, None)
     window = reading.get(key)
+    idle = STALLED if stalling(reading, now) else IDLE
     if not window:
         return State(ABSENT, None, None) if key in SCOPED \
-            else State(IDLE, 0.0, None)
+            else State(idle, None if idle == STALLED else 0.0, None)
     if not window["resets_at"] or window["resets_at"] <= now:
-        return State(IDLE, 0.0, None)
+        return State(idle, None if idle == STALLED else 0.0, None)
     return State(BOUNDED, window["percent"], window["resets_at"])
+
+
+def stalling(reading, now: float) -> bool:
+    """Has the poll been stopped long enough to withdraw an idle window's claim?
+
+    ABSENT and BOUNDED are untouched by this and ask it for nothing. ABSENT is
+    no reading, which a poll that could not produce one has not changed; BOUNDED
+    rests on `resets_at`, an absolute anchor, so a reset still ahead makes the
+    recorded percentage a lower bound whoever is or is not asking.
+
+    IDLE is the one that cannot survive it. It says "this window is not running,
+    so nothing has been spent in it", and that is a measurement only while
+    something is still asking — with the poll stopped, the same reading says
+    only that the window we last saw has rolled over, and whether the account
+    has spent the new one is precisely what nobody has looked at.
+    """
+    record = (reading or {}).get("stall")
+    if not record:
+        return False
+    return (now - record.get("since", now)) >= STALL_GRACE
 
 
 def color(percent: float):
@@ -491,6 +547,13 @@ def bar(reading, now=None):
             # the clock. The only case where the label names a weekly window.
             return f"{SHORT[key]} {week.percent:.0f}%", f"color='{RED}'"
 
+    if five.kind == STALLED:
+        # Dim, and the reason rather than a clock. Not the ramp: a stalled
+        # window is not pressure, it is the widget saying it is no longer live,
+        # and greyed-out is what that has always looked like. Answering None
+        # here would leave a label whose format is `%5h` alone with nothing at
+        # all, which is how an idle account lost its whole label once.
+        return stall_word(reading), f"alpha='{DIM}'"
     if five.kind != BOUNDED:
         return None
     value = color(five.percent)
@@ -498,7 +561,9 @@ def bar(reading, now=None):
         (f"color='{value}'" if value else f"alpha='{DIM}'")
 
 
-def _line(key: str, st: State, now: float) -> str:
+def _line(key: str, st: State, now: float, word: str = "") -> str:
+    if st.kind == STALLED:
+        return f"{SHORT[key]} {word}"
     if st.kind == IDLE:
         return f"{SHORT[key]} {IDLE_TEXT}"
     # ≥ because usage only climbs within a window: the recorded percentage is a
@@ -514,6 +579,8 @@ def column(reading, key: str, now: float) -> str:
     st = state(reading, key, now)
     if st.kind == ABSENT:
         return f"{SHORT[key]} —"
+    if st.kind == STALLED:
+        return f"{SHORT[key]} {stall_word(reading)}"
     if st.kind == IDLE:
         return f"{SHORT[key]} {IDLE_TEXT}"
     return (f"{SHORT[key]} ≥{st.percent:.0f}% "
@@ -528,7 +595,8 @@ def lines(reading, now=None):
     seven = state(reading, "seven_day", now)
     if five.kind == ABSENT and seven.kind == ABSENT:
         return [NOT_WIRED]
-    out = [_line("five_hour", five, now)] if five.kind != ABSENT else []
+    out = [_line("five_hour", five, now, stall_word(reading))] \
+        if five.kind != ABSENT else []
     binding = _binding_weekly(reading, now)
     if binding is not None:
         out.append(_line(binding[0], binding[1], now))
