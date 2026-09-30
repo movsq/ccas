@@ -42,6 +42,18 @@ def test_the_poll_stamp_is_never_relinked_over(monkeypatch):
     assert paths.POLL_STAMP_FILE in paths.BLOCKLIST
 
 
+def test_the_oauth_refresh_lock_is_never_relinked_over():
+    """Claude Code takes `.oauth_refresh.lock` (a directory) in the config dir
+    before refreshing a token, and clears a stale one with `rmdir`. Linked in,
+    every account shared the default account's lock — and `rmdir` on a symlink
+    is ENOTDIR, so a stale lock in ~/.claude could never be cleared from an
+    account and no account could refresh at all. Measured 2026-09-30: every
+    renewal failed from the moment the token expired, `claude --debug` logging
+    `ENOTDIR: not a directory, rmdir '…/.oauth_refresh.lock'`."""
+    importlib.reload(paths)
+    assert ".oauth_refresh.lock" in paths.BLOCKLIST
+
+
 def test_trash_dir_is_under_home_and_never_deleted(monkeypatch, tmp_path):
     monkeypatch.setenv("CCAS_TRASH", str(tmp_path / "trash"))
     importlib.reload(paths)

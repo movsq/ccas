@@ -42,6 +42,30 @@ def test_relink_never_links_blocklisted_files():
     assert not (paths.account_dir("work") / ".credentials.json").is_symlink()
 
 
+def test_relink_unlinks_a_blocklisted_name_it_linked_before():
+    """A name joins the blocklist after accounts already carry a link for it —
+    which is how `.oauth_refresh.lock` was found, on 2026-09-30. Skipping the
+    name is not enough then: the old link stays, and the account keeps sharing
+    what the entry was blocklisted for. The link goes; what it pointed at in
+    ~/.claude is not touched."""
+    lock = paths.claude_home() / ".oauth_refresh.lock"
+    lock.mkdir()
+    accounts.create("work")
+    link = paths.account_dir("work") / ".oauth_refresh.lock"
+    link.symlink_to(lock)
+    accounts.relink("work")
+    assert not link.is_symlink() and not link.exists()
+    assert lock.is_dir()
+
+
+def test_relink_leaves_a_real_blocklisted_file_alone():
+    accounts.create("work")
+    own = paths.account_dir("work") / ".credentials.json"
+    own.write_text('{"mine":1}', encoding="utf-8")
+    accounts.relink("work")
+    assert own.read_text(encoding="utf-8") == '{"mine":1}'
+
+
 def test_relink_picks_up_entries_added_later():
     accounts.create("work")
     accounts.relink("work")

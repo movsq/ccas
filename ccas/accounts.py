@@ -40,8 +40,11 @@ def relink(slug: str) -> None:
             continue  # a real per-account file wins
         target.symlink_to(entry)
 
+    # A link made before its name joined the blocklist goes too. Only the link:
+    # unlink() on a symlink never follows it into ~/.claude.
     for entry in directory.iterdir():
-        if entry.is_symlink() and not entry.exists():
+        if entry.is_symlink() and (not entry.exists()
+                                   or entry.name in paths.BLOCKLIST):
             entry.unlink()
 
 

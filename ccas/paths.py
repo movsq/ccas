@@ -52,9 +52,11 @@ POLL_FAIL_FILE = "poll-fail"
 # the rest are per-account files CCAS itself used to generate. Nothing writes
 # menu.xml or history.tsv any more, but an account directory made before that
 # still has them, and a blocklist entry costs nothing where a stray link would
-# make one account read another's.
+# make one account read another's. `.oauth_refresh.lock` is Claude Code's own:
+# linked, every account shared one lock and none could clear a stale one, since
+# `rmdir` on a symlink is ENOTDIR — no account could refresh its token.
 BLOCKLIST = {".credentials.json", ".claude.json", "menu.xml", "history.tsv",
-             USAGE_FILE, POLL_STAMP_FILE, POLL_FAIL_FILE}
+             ".oauth_refresh.lock", USAGE_FILE, POLL_STAMP_FILE, POLL_FAIL_FILE}
 
 
 def _env(name: str, default: Path) -> Path:

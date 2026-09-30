@@ -1935,3 +1935,31 @@ the next poll's problem, a quiet account is a measurement. A stall past the same
 grace is the exception, and the case the row exists for: it goes red, names the
 stop, and says which command fixes it. Doctor reading a different threshold from
 the bar would have the two disagreeing about whether anything is wrong.
+
+## Every account shared one refresh lock, and none could let go of it
+
+**Symptom.** 2026-09-30, 18:36: `vo-sedlacek`'s access token reached its expiry
+and the poll's renewal failed, then failed again every five minutes after it —
+`claude did not renew it; is it logged in?` The account *was* logged in, and it
+had polled fine all day. A `/login` done ahead of time the day before was the
+first suspect, and it was the wrong one.
+
+**Cause.** `claude --debug mcp list` under that account logged, a dozen times,
+`ENOTDIR: not a directory, rmdir '…/vo-sedlacek/.oauth_refresh.lock'`, and then
+401s against the expired token. Claude Code takes a lock directory in the config
+dir before a refresh and clears a stale one with `rmdir`. `~/.claude` held one
+left over since 2026-09-25, and `relink` had linked it into the account like any
+other shared entry. So every account shared the default account's lock, found it
+held, and could not clear it: `rmdir` on a symlink is ENOTDIR. No refresh was
+ever attempted. It had worked until the token next needed one.
+
+**Fix.** `.oauth_refresh.lock` is on `paths.BLOCKLIST`, `relink` unlinks a
+blocklisted name it linked before (the link only — `~/.claude`'s stale lock is
+the default account's business, and still there), and `doctor` reports such a
+link, which otherwise resolves and reads green. After `./install.sh` the next
+`ccs poll` renewed the token and fetched.
+
+The lesson is about the blocklist, not the lock: it is an allow-by-default
+list, so anything Claude Code starts keeping in its config dir is shared across
+accounts until someone notices. A name blocklisted late also needs its old
+links removed, or the list says one thing and every existing account another.

@@ -108,6 +108,19 @@ def test_a_dangling_account_symlink_is_reported():
     assert any("work" in c.label and "link" in c.label for c in bad), bad
 
 
+def test_a_link_to_a_blocklisted_name_is_reported():
+    """An account made before a name was blocklisted still carries the link,
+    and it resolves fine — so without this row doctor stays green over the
+    exact sharing the blocklist exists to stop."""
+    reg = healthy()
+    lock = paths.claude_home() / ".oauth_refresh.lock"
+    lock.mkdir()
+    (paths.account_dir("work") / ".oauth_refresh.lock").symlink_to(lock)
+    bad = failures(reg)
+    assert any("work" in c.label and ".oauth_refresh.lock" in c.detail
+               and "ccs relink" in c.detail for c in bad), bad
+
+
 def test_a_waybar_config_out_of_step_with_the_registry_is_reported():
     """The symptom is an account with no icon, or a module Waybar cannot
     resolve — which is a config error for the whole bar, not just for us."""

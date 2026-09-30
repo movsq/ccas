@@ -55,11 +55,13 @@ def _account_checks(account: dict) -> list:
                       f"{directory} is missing; run `ccs relink`")]
 
     home = paths.claude_home()
-    dangling, strays = [], []
+    dangling, strays, blocked = [], [], []
     for entry in directory.iterdir():
         if not entry.is_symlink():
             continue
-        if not entry.exists():
+        if entry.name in paths.BLOCKLIST:
+            blocked.append(entry.name)
+        elif not entry.exists():
             dangling.append(entry.name)
         elif not str(os.path.realpath(entry)).startswith(str(home.resolve())):
             strays.append(entry.name)
@@ -70,6 +72,7 @@ def _account_checks(account: dict) -> list:
     detail = "; ".join(filter(None, [
         f"dangling: {', '.join(sorted(dangling))}" if dangling else "",
         f"not under ~/.claude: {', '.join(sorted(strays))}" if strays else "",
+        f"linked but per-account: {', '.join(sorted(blocked))}" if blocked else "",
         f"never linked: {', '.join(sorted(missing))}" if missing else "",
     ]))
     checks = [Check(not detail, f"{name}: symlinks resolve",
